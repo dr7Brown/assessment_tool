@@ -1,0 +1,20 @@
+Options -Indexes
+RewriteEngine On
+RewriteBase /apps/aceict/
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/v1/(.*)$ api/index.php [QSA,L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.html [L]
+
+<FilesMatch "\.(sql|log|env|md|sh|py)$">
+    Require all denied
+</FilesMatch>
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+php_value max_execution_time 60
+php_value memory_limit 256M

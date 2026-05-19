@@ -1,0 +1,6 @@
+intitle:"index of" chicago fire +last modified +size -inurl:(html|php|asp)
+
+intitle:"index of" [chicago fire season 14] -inurl:(jsp|pl|php|html|aspx|htm|cf|shtml)
+
+intitle:"index of" [chicago fire season 14] (mp4|mkv|avi)
+indexof:movies chicago fire season 14
