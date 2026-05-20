@@ -92,6 +92,7 @@ try {
         case 'notifications': handleNotifications($method, $id, $body); break;
         case 'ai-generate':  handleAIGenerate($method, $body); break;
         case 'questions-bulk': handleBulkQuestions($method, $body); break;
+        case 'live':       handleLive($method, $parts, $body); break;
         default:
             err("Endpoint not found: '$resource' (path: $path)", 404);
     }
@@ -393,14 +394,31 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
 
     if ($method === 'PATCH' && $id) {
         require_role($auth, 'teacher', 'admin');
-        $allowed = ['title','status','time_limit_min','max_attempts','randomise_qs','show_feedback','due_at'];
+        $allowed = ['title','status','time_limit_min','max_attempts','randomise_qs','randomise_opts','show_feedback','due_at','available_from','description','type'];
         $sets=[]; $params=[];
         foreach ($allowed as $f) {
             if (array_key_exists($f,$body)) { $sets[]="$f=?"; $params[]=$body[$f]; }
         }
         if ($sets) {
             $params[]=$id; $params[]=$auth['school_id'];
-            DB::execute('UPDATE tests SET '.implode(',',$sets).' WHERE id=? AND school_id=?', $params);
+            DB::execute('UPDATE tests SET '.implode(',',$sets).',updated_at=NOW() WHERE id=? AND school_id=?', $params);
+        }
+        // Replace questions if provided
+        if (isset($body['question_ids']) && is_array($body['question_ids'])) {
+            DB::execute('DELETE FROM test_questions WHERE test_id=?', [$id]);
+            foreach ($body['question_ids'] as $order => $qid) {
+                if ($qid) DB::execute(
+                    'INSERT INTO test_questions (test_id,question_id,sort_order) VALUES (?,?,?)',
+                    [$id, (int)$qid, $order]
+                );
+            }
+        }
+        // Replace class assignments if provided
+        if (isset($body['class_ids']) && is_array($body['class_ids'])) {
+            DB::execute('DELETE FROM test_assignments WHERE test_id=? AND class_id IS NOT NULL', [$id]);
+            foreach ($body['class_ids'] as $cid) {
+                if ($cid) DB::execute('INSERT INTO test_assignments (test_id,class_id) VALUES (?,?)', [$id,(int)$cid]);
+            }
         }
         respond(['message'=>'Test updated']);
     }
@@ -910,4 +928,250 @@ function handleBulkQuestions(string $method, array $body): void {
         'errors'   => $failed,
         'message'  => "$imported question(s) imported successfully",
     ]);
+}
+
+// ══════════════════════════════════════════════════════════════
+// LIVE QUIZ
+// POST   /live                   — teacher creates session
+// GET    /live/{code}            — get session state (teacher + student poll)
+// POST   /live/{code}/join       — student joins lobby
+// PATCH  /live/{code}/start      — teacher starts (releases Q0)
+// PATCH  /live/{code}/next       — teacher advances to next question
+// PATCH  /live/{code}/end        — teacher force-ends
+// POST   /live/{code}/answer     — student submits answer
+// GET    /live/{code}/results    — final leaderboard
+// ══════════════════════════════════════════════════════════════
+function handleLive(string $method, array $parts, array $body): void {
+    $auth   = require_auth();
+    $code   = strtoupper(trim($parts[1] ?? ''));
+    $action = $parts[2] ?? null;
+
+    ensureLiveTables();
+
+    // ── POST /live — teacher creates a new live session ──────────
+    if ($method === 'POST' && !$code) {
+        require_role($auth, 'teacher', 'admin');
+        $testId = (int)($body['test_id'] ?? 0);
+        if (!$testId) err('test_id required');
+        $test = DB::fetchOne('SELECT id, title FROM tests WHERE id=? AND school_id=?', [$testId, $auth['school_id']]);
+        if (!$test) err('Test not found', 404);
+
+        // End any previous open session for this test by this teacher
+        DB::execute('UPDATE live_sessions SET status="ended", ended_at=NOW() WHERE test_id=? AND teacher_id=? AND status != "ended"', [$testId, $auth['user_id']]);
+
+        // Generate unique 6-char alphanumeric code
+        do {
+            $chars    = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            $roomCode = '';
+            for ($i = 0; $i < 6; $i++) $roomCode .= $chars[random_int(0, strlen($chars) - 1)];
+            $clash = DB::fetchOne("SELECT id FROM live_sessions WHERE room_code=? AND status != 'ended'", [$roomCode]);
+        } while ($clash);
+
+        $sid = DB::insert(
+            'INSERT INTO live_sessions (test_id, room_code, teacher_id, school_id) VALUES (?,?,?,?)',
+            [$testId, $roomCode, $auth['user_id'], $auth['school_id']]
+        );
+        $qCount = DB::fetchOne('SELECT COUNT(*) AS n FROM test_questions WHERE test_id=?', [$testId])['n'] ?? 0;
+        respond(['session_id' => $sid, 'room_code' => $roomCode, 'test_title' => $test['title'], 'question_count' => (int)$qCount], 201);
+    }
+
+    // ── GET /live/{code} — poll for session state ─────────────────
+    if ($method === 'GET' && $code && !$action) {
+        $sess = DB::fetchOne(
+            'SELECT ls.*, t.title AS test_title FROM live_sessions ls JOIN tests t ON t.id=ls.test_id WHERE ls.room_code=?',
+            [$code]
+        );
+        if (!$sess) err('Room not found', 404);
+
+        $participants = DB::fetchAll(
+            'SELECT lp.student_id, lp.score, lp.last_q_answered, u.first_name, u.last_name, u.avatar_color
+             FROM live_participants lp JOIN users u ON u.id=lp.student_id
+             WHERE lp.session_id=? ORDER BY lp.score DESC',
+            [$sess['id']]
+        );
+
+        $question    = null;
+        $answeredCnt = 0;
+        $totalQ      = (int)(DB::fetchOne('SELECT COUNT(*) AS n FROM test_questions WHERE test_id=?', [$sess['test_id']])['n'] ?? 0);
+
+        if ($sess['status'] === 'active' && $sess['current_q'] >= 0) {
+            $hideAnswers = ($auth['role'] === 'student');
+            $question = DB::fetchOne(
+                "SELECT q.id, q.question_text, q.marks, q.sub_strand, q.difficulty,
+                        (SELECT JSON_ARRAYAGG(JSON_OBJECT('id',qo.id,'label',qo.option_label,'text',qo.option_text" .
+                        ($hideAnswers ? '' : ",'correct',qo.is_correct") . "))
+                         FROM question_options qo WHERE qo.question_id=q.id ORDER BY qo.sort_order) AS options
+                 FROM test_questions tq JOIN questions q ON q.id=tq.question_id
+                 WHERE tq.test_id=? ORDER BY tq.sort_order LIMIT 1 OFFSET " . (int)$sess['current_q'],
+                [$sess['test_id']]
+            );
+            $answeredCnt = (int)(DB::fetchOne(
+                'SELECT COUNT(*) AS n FROM live_answers WHERE session_id=? AND q_index=?',
+                [$sess['id'], $sess['current_q']]
+            )['n'] ?? 0);
+        }
+
+        // For student: was their answer correct for current question?
+        $myAnswer = null;
+        if ($auth['role'] === 'student' && $sess['status'] === 'active') {
+            $myAnswer = DB::fetchOne(
+                'SELECT selected_opt, is_correct FROM live_answers WHERE session_id=? AND student_id=? AND q_index=?',
+                [$sess['id'], $auth['user_id'], $sess['current_q']]
+            );
+        }
+
+        respond([
+            'session'           => $sess,
+            'participants'      => $participants,
+            'participant_count' => count($participants),
+            'question'          => $question,
+            'answered_count'    => $answeredCnt,
+            'total_questions'   => $totalQ,
+            'my_answer'         => $myAnswer,
+        ]);
+    }
+
+    // ── POST /live/{code}/join — student joins lobby ──────────────
+    if ($method === 'POST' && $code && $action === 'join') {
+        $sess = DB::fetchOne('SELECT * FROM live_sessions WHERE room_code=?', [$code]);
+        if (!$sess) err('Room not found — check the code', 404);
+        if ($sess['status'] === 'ended') err('This quiz session has already ended', 409);
+        DB::execute(
+            'INSERT IGNORE INTO live_participants (session_id, student_id) VALUES (?,?)',
+            [$sess['id'], $auth['user_id']]
+        );
+        $title = DB::fetchOne('SELECT title FROM tests WHERE id=?', [$sess['test_id']])['title'] ?? '';
+        respond(['joined' => true, 'session_id' => $sess['id'], 'test_title' => $title, 'status' => $sess['status']]);
+    }
+
+    // ── POST /live/{code}/answer — student submits answer ─────────
+    if ($method === 'POST' && $code && $action === 'answer') {
+        $sess = DB::fetchOne('SELECT * FROM live_sessions WHERE room_code=?', [$code]);
+        if (!$sess) err('Room not found', 404);
+        if ($sess['status'] !== 'active') err('Quiz is not active');
+        $uid     = $auth['user_id'];
+        $qIdx    = (int)($body['q_index'] ?? $sess['current_q']);
+        $selected = strtoupper(trim($body['selected'] ?? ''));
+        if (!$selected) err('selected option required');
+
+        // Ignore if already answered this question
+        $existing = DB::fetchOne('SELECT id FROM live_answers WHERE session_id=? AND student_id=? AND q_index=?', [$sess['id'], $uid, $qIdx]);
+        if ($existing) respond(['already_answered' => true]);
+
+        // Look up correct answer
+        $qRow = DB::fetchOne(
+            'SELECT q.id, q.marks FROM test_questions tq JOIN questions q ON q.id=tq.question_id WHERE tq.test_id=? ORDER BY tq.sort_order LIMIT 1 OFFSET ' . $qIdx,
+            [$sess['test_id']]
+        );
+        $isCorrect = false; $marks = 0;
+        if ($qRow) {
+            $correct = DB::fetchOne('SELECT option_label FROM question_options WHERE question_id=? AND is_correct=1', [$qRow['id']]);
+            $isCorrect = $correct && strtoupper($correct['option_label']) === $selected;
+            $marks = $isCorrect ? (int)($qRow['marks'] ?? 1) : 0;
+        }
+
+        DB::execute(
+            'INSERT IGNORE INTO live_answers (session_id, student_id, q_index, selected_opt, is_correct, marks_awarded) VALUES (?,?,?,?,?,?)',
+            [$sess['id'], $uid, $qIdx, $selected, $isCorrect ? 1 : 0, $marks]
+        );
+        DB::execute(
+            'UPDATE live_participants SET score=score+?, last_q_answered=? WHERE session_id=? AND student_id=?',
+            [$marks, $qIdx, $sess['id'], $uid]
+        );
+        respond(['is_correct' => $isCorrect, 'marks' => $marks]);
+    }
+
+    // ── PATCH /live/{code}/start — teacher releases Q0 ────────────
+    if ($method === 'PATCH' && $code && $action === 'start') {
+        require_role($auth, 'teacher', 'admin');
+        $sess = DB::fetchOne('SELECT * FROM live_sessions WHERE room_code=?', [$code]);
+        if (!$sess) err('Room not found', 404);
+        if ($sess['teacher_id'] != $auth['user_id']) err('Forbidden', 403);
+        DB::execute('UPDATE live_sessions SET status="active", current_q=0, started_at=NOW() WHERE id=?', [$sess['id']]);
+        respond(['status' => 'active', 'current_q' => 0]);
+    }
+
+    // ── PATCH /live/{code}/next — advance question ────────────────
+    if ($method === 'PATCH' && $code && $action === 'next') {
+        require_role($auth, 'teacher', 'admin');
+        $sess = DB::fetchOne('SELECT * FROM live_sessions WHERE room_code=?', [$code]);
+        if (!$sess) err('Room not found', 404);
+        if ($sess['teacher_id'] != $auth['user_id']) err('Forbidden', 403);
+        $totalQ = (int)(DB::fetchOne('SELECT COUNT(*) AS n FROM test_questions WHERE test_id=?', [$sess['test_id']])['n'] ?? 0);
+        $nextQ  = (int)$sess['current_q'] + 1;
+        if ($nextQ >= $totalQ) {
+            DB::execute('UPDATE live_sessions SET status="ended", ended_at=NOW() WHERE id=?', [$sess['id']]);
+            respond(['status' => 'ended', 'current_q' => (int)$sess['current_q']]);
+        } else {
+            DB::execute('UPDATE live_sessions SET current_q=? WHERE id=?', [$nextQ, $sess['id']]);
+            respond(['status' => 'active', 'current_q' => $nextQ]);
+        }
+    }
+
+    // ── PATCH /live/{code}/end — teacher force-ends ───────────────
+    if ($method === 'PATCH' && $code && $action === 'end') {
+        require_role($auth, 'teacher', 'admin');
+        $sess = DB::fetchOne('SELECT * FROM live_sessions WHERE room_code=?', [$code]);
+        if (!$sess) err('Room not found', 404);
+        if ($sess['teacher_id'] != $auth['user_id']) err('Forbidden', 403);
+        DB::execute('UPDATE live_sessions SET status="ended", ended_at=NOW() WHERE id=?', [$sess['id']]);
+        respond(['status' => 'ended']);
+    }
+
+    // ── GET /live/{code}/results — final leaderboard ──────────────
+    if ($method === 'GET' && $code && $action === 'results') {
+        $sess = DB::fetchOne(
+            'SELECT ls.*, t.title AS test_title FROM live_sessions ls JOIN tests t ON t.id=ls.test_id WHERE ls.room_code=?',
+            [$code]
+        );
+        if (!$sess) err('Room not found', 404);
+        $lb = DB::fetchAll(
+            'SELECT lp.student_id, lp.score, u.first_name, u.last_name, u.avatar_color,
+                    (SELECT COUNT(*) FROM live_answers WHERE session_id=lp.session_id AND student_id=lp.student_id AND is_correct=1) AS correct_count,
+                    (SELECT COUNT(*) FROM live_answers WHERE session_id=lp.session_id AND student_id=lp.student_id) AS answered_count
+             FROM live_participants lp JOIN users u ON u.id=lp.student_id
+             WHERE lp.session_id=? ORDER BY lp.score DESC',
+            [$sess['id']]
+        );
+        respond(['session' => $sess, 'leaderboard' => $lb]);
+    }
+
+    err('Live endpoint not found', 404);
+}
+
+function ensureLiveTables(): void {
+    DB::execute("CREATE TABLE IF NOT EXISTS live_sessions (
+        id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        test_id     INT UNSIGNED NOT NULL,
+        room_code   VARCHAR(8) UNIQUE NOT NULL,
+        teacher_id  INT UNSIGNED NOT NULL,
+        school_id   INT UNSIGNED NOT NULL,
+        status      ENUM('waiting','active','ended') DEFAULT 'waiting',
+        current_q   SMALLINT DEFAULT -1,
+        started_at  TIMESTAMP NULL,
+        ended_at    TIMESTAMP NULL,
+        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_room (room_code),
+        INDEX idx_teacher (teacher_id)
+    ) ENGINE=InnoDB");
+    DB::execute("CREATE TABLE IF NOT EXISTS live_participants (
+        session_id  INT UNSIGNED NOT NULL,
+        student_id  INT UNSIGNED NOT NULL,
+        score       INT UNSIGNED DEFAULT 0,
+        last_q_answered SMALLINT DEFAULT -1,
+        joined_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (session_id, student_id)
+    ) ENGINE=InnoDB");
+    DB::execute("CREATE TABLE IF NOT EXISTS live_answers (
+        id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        session_id   INT UNSIGNED NOT NULL,
+        student_id   INT UNSIGNED NOT NULL,
+        q_index      SMALLINT UNSIGNED NOT NULL,
+        selected_opt CHAR(1),
+        is_correct   TINYINT(1) DEFAULT 0,
+        marks_awarded DECIMAL(5,2) DEFAULT 0,
+        answered_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_ans (session_id, student_id, q_index),
+        INDEX idx_session_q (session_id, q_index)
+    ) ENGINE=InnoDB");
 }

@@ -491,6 +491,27 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
   </div>
 </div>
 
+<!-- ═══ JOIN LIVE QUIZ MODAL ═══ -->
+<div class="modal-bg" id="join-live-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <div><div class="modal-title">Join Live Quiz</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">Enter the room code shown on your teacher's screen</div></div>
+      <button class="modal-close" onclick="closeModal('join-live-modal')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div id="jl-err" class="info-box coral" style="display:none;margin-bottom:12px"></div>
+      <div class="form-group">
+        <label class="form-label">Room code</label>
+        <input class="form-input" id="jl-code" maxlength="6" placeholder="e.g. ABC123" autocomplete="off"
+          style="font-size:28px;font-weight:800;letter-spacing:8px;text-align:center;font-family:'JetBrains Mono',monospace;text-transform:uppercase"
+          oninput="this.value=this.value.toUpperCase()"
+          onkeydown="if(event.key==='Enter')joinLiveQuiz()">
+      </div>
+      <button class="btn btn-primary" id="jl-btn" style="width:100%;justify-content:center;padding:11px" onclick="joinLiveQuiz()">Join quiz →</button>
+    </div>
+  </div>
+</div>
+
 <script>
 
 // ════════════════════════════════════════════════════════════
@@ -1263,6 +1284,7 @@ async function loadDash(m) {
       </button>
       <div id="notif-dd" style="display:none;position:absolute;top:calc(100%+8px);right:0;width:340px;max-height:420px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-lg);z-index:100"></div>
     </div>
+    <button class="btn btn-secondary" onclick="openJoinLiveModal()">⚡ Join live</button>
     <button class="btn btn-primary" onclick="startPractice()">Practice now →</button>
   </div>
 </div>
@@ -1333,6 +1355,7 @@ async function loadMyTests(m) {
     <button class="tab-btn active" onclick="switchTab(this,'td-due')">Due (${due.length})</button>
     <button class="tab-btn" onclick="switchTab(this,'td-done')">Completed (${completed.length})</button>
     <button class="tab-btn" onclick="switchTab(this,'td-prac')">Practice</button>
+    <button class="tab-btn" onclick="openJoinLiveModal()">⚡ Join live quiz</button>
   </div>
   <div id="td-due" class="tab-pane active">
     ${due.length ? due.map(t=>`
@@ -1950,7 +1973,7 @@ async function loadTDash(m){
       <td style="color:var(--text-3)">${t.due_at?fmtDate(t.due_at):'—'}</td>
       <td style="display:flex;gap:4px">
         <button class="btn btn-ghost btn-sm" onclick="viewTestResults(${t.id})">Results</button>
-        <button class="btn btn-ghost btn-sm" onclick="openModal('test-settings-modal')">Settings</button>
+        <button class="btn btn-ghost btn-sm" onclick="editExistingTest(${t.id})">Edit</button>
       </td>
     </tr>`).join('')}</tbody></table>`:
     '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No tests yet</div><div class="empty-desc">Create your first test to get started.</div></div>'}
@@ -2133,143 +2156,458 @@ async function loadTAnalytics(m){
   setTimeout(drawItemChart,100);
 }
 
-async function loadTCreate(m){
-  let classes=null;
-  try{classes=await GET('/classes');}catch(e){}
+async function loadTCreate(m, prefill) {
+  // prefill: optional {test, questions, classes_selected} for edit mode
+  testQIds.clear(); testQData.clear();
+  if (prefill) {
+    currentEditTestId = prefill.test.id;
+    (prefill.questions || []).forEach(q => {
+      testQIds.add(q.id);
+      testQData.set(q.id, q);
+    });
+  } else {
+    currentEditTestId = null;
+  }
 
-  m.innerHTML=`
-<div class="topbar"><div class="topbar-title">Create new test</div>
+  let classes = null;
+  try { classes = await GET('/classes'); } catch(e) {}
+
+  const isEdit    = !!prefill;
+  const t         = prefill?.test || {};
+  const selClass  = prefill?.class_id || classes?.[0]?.id || 1;
+  const dueVal    = t.due_at ? t.due_at.replace(' ', 'T').slice(0, 16) : '';
+
+  m.innerHTML = `
+<div class="topbar">
+  <div>
+    <div class="topbar-title" id="create-title-display">${isEdit ? 'Edit test' : 'Create new test'}</div>
+    <div class="topbar-sub" id="create-status-badge">
+      ${isEdit ? `<span class="badge badge-${t.status==='published'?'green':t.status==='draft'?'amber':'gray'}">${t.status}</span>` : 'New test · not saved'}
+    </div>
+  </div>
   <div class="topbar-actions">
-    <button class="btn btn-secondary" onclick="openModal('test-settings-modal')">⚙ Settings</button>
-    <button class="btn btn-primary" onclick="publishNewTest()">Publish →</button>
+    <button class="btn btn-secondary" onclick="saveDraftTest()">Save draft</button>
+    ${isEdit && t.status === 'published'
+      ? `<button class="btn btn-secondary" onclick="unpublishTest(${t.id})">Unpublish</button>`
+      : ''}
+    <button class="btn btn-primary" id="publish-btn" onclick="publishNewTest()">
+      ${isEdit ? 'Save &amp; publish →' : 'Publish →'}
+    </button>
   </div>
 </div>
 <div class="page">
-  <div class="ai-panel">
-    <div class="ai-panel-title"><span style="font-size:18px">✨</span> AI question generator</div>
-    <div class="ai-panel-sub">Describe a topic — questions generated via Anthropic API, aligned to Ghana GES curriculum</div>
-    <textarea class="ai-input" id="ai-topic" rows="3" placeholder="e.g. 'Generate 5 questions on CIA Triad and malware types for SHS Year 1' or paste any textbook paragraph..."></textarea>
-    <div class="ai-controls">
-      <select class="ai-select" id="ai-year" onchange="refreshStrandSelect('ai-year','ai-strand','ai-sub')">
-        <option value="">All years</option>
-        <option value="1">Year 1</option>
-        <option value="2">Year 2</option>
-        <option value="3">Year 3</option>
-      </select>
-      <select class="ai-select" id="ai-strand" onchange="refreshSubSelect('ai-year','ai-strand','ai-sub')">
-        <option value="">All strands</option>
-      </select>
-      <select class="ai-select" id="ai-sub">
-        <option value="">All sub-strands</option>
-      </select>
-      <select class="ai-select" id="ai-count"><option value="5">5 questions</option><option value="10">10 questions</option></select>
-      <select class="ai-select" id="ai-diff"><option>Mixed</option><option>Easy</option><option>Medium</option><option>Hard</option></select>
-      <button class="ai-generate-btn" onclick="generateAI()">✨ Generate</button>
-    </div>
-    <div class="ai-generating" id="ai-status"><div class="spinner"></div>Generating questions...</div>
-  </div>
-  <div id="gen-out" style="display:none;margin-bottom:20px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div style="font-size:15px;font-weight:700">Generated <span id="ap-count" style="color:var(--green)"></span></div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary btn-sm" onclick="approveAll()">Approve all</button>
-        <button class="btn btn-primary btn-sm" onclick="saveApproved()">Save approved to bank →</button>
-      </div>
-    </div>
-    <div id="gen-list"></div>
-  </div>
-  <div class="divider"></div>
-  <div class="grid-2">
+  <div style="display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start">
+
+    <!-- LEFT: AI / Browse bank tabs -->
     <div>
-      <div style="font-size:15px;font-weight:700;margin-bottom:14px">Test settings</div>
-      <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="new-test-title" value="New Assessment"></div>
-      <div class="form-group"><label class="form-label">Assign to class</label>
-        <select class="form-select" id="new-test-class">
-          ${classes?.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')||'<option value="1">SHS2A</option><option value="2">SHS2B</option>'}
-        </select>
+      <div class="tab-bar" style="margin-bottom:0">
+        <button class="tab-btn active" onclick="switchTab(this,'tab-ai')">✨ AI generator</button>
+        <button class="tab-btn" onclick="switchTab(this,'tab-bank');loadBankForCreate()">📚 Browse bank</button>
       </div>
-      <div class="form-group"><label class="form-label">Time limit</label>
-        <select class="form-select" id="new-test-time">
-          <option value="0">No limit</option><option value="30">30 min</option><option value="45" selected>45 min</option>
-          <option value="60">60 min</option><option value="90">90 min</option><option value="150">150 min (WASSCE)</option>
-        </select>
-      </div>
-      <div class="form-group"><label class="form-label">Due date</label><input class="form-input" id="new-test-due" type="datetime-local"></div>
-      <div class="form-group"><label class="form-label">Attempts allowed</label>
-        <select class="form-select" id="new-test-attempts"><option value="1">1 attempt</option><option value="2">2 attempts</option><option value="0">Unlimited</option></select>
-      </div>
-      <label class="checkbox-row"><input type="checkbox" id="new-test-rand" checked>Randomise question order</label>
-      <label class="checkbox-row"><input type="checkbox" id="new-test-feedback" checked>Show feedback after submission</label>
-    </div>
-    <div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <div style="font-size:15px;font-weight:700">Questions in this test</div>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-secondary btn-sm" onclick="openModal('qbuilder-modal')">+ New</button>
-          <button class="btn btn-ghost btn-sm" onclick="loadWASSCETemplate()">WASSCE template</button>
+
+      <!-- AI tab -->
+      <div id="tab-ai" class="tab-pane active">
+        <div class="ai-panel" style="border-radius:0 var(--radius) var(--radius) var(--radius)">
+          <div class="ai-panel-title"><span style="font-size:18px">✨</span> AI question generator</div>
+          <div class="ai-panel-sub">Describe a topic — generated via Anthropic API, aligned to Ghana GES curriculum</div>
+          <textarea class="ai-input" id="ai-topic" rows="3" placeholder="e.g. '5 questions on CIA Triad and malware for SHS Year 1' or paste any textbook paragraph…"></textarea>
+          <div class="ai-controls">
+            <select class="ai-select" id="ai-year" onchange="refreshStrandSelect('ai-year','ai-strand','ai-sub')">
+              <option value="">All years</option><option value="1">Year 1</option><option value="2">Year 2</option><option value="3">Year 3</option>
+            </select>
+            <select class="ai-select" id="ai-strand" onchange="refreshSubSelect('ai-year','ai-strand','ai-sub')"><option value="">All strands</option></select>
+            <select class="ai-select" id="ai-sub"><option value="">All sub-strands</option></select>
+            <select class="ai-select" id="ai-count"><option value="5">5 questions</option><option value="10">10 questions</option></select>
+            <select class="ai-select" id="ai-diff"><option>Mixed</option><option>Easy</option><option>Medium</option><option>Hard</option></select>
+            <button class="ai-generate-btn" onclick="generateAI()">✨ Generate</button>
+          </div>
+          <div class="ai-generating" id="ai-status"><div class="spinner"></div>Generating questions…</div>
+        </div>
+        <div id="gen-out" style="display:none;margin-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:14px;font-weight:700">Generated <span id="ap-count" style="color:var(--green)"></span></div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-sm" onclick="approveAll()">Approve all</button>
+              <button class="btn btn-primary btn-sm" onclick="saveApproved()">Add approved to test →</button>
+            </div>
+          </div>
+          <div id="gen-list"></div>
         </div>
       </div>
-      <div id="test-q-list">
-        <div style="text-align:center;padding:24px;border:1.5px dashed var(--border);border-radius:var(--radius-sm);color:var(--text-3);font-size:13px">
-          Generate questions above, or browse the question bank and click "+ Add to test"
+
+      <!-- Browse bank tab -->
+      <div id="tab-bank" class="tab-pane" style="display:none">
+        <div class="card" style="border-radius:0 var(--radius) var(--radius) var(--radius)">
+          <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+            <input class="form-input" id="create-bank-search" style="flex:1;min-width:160px" placeholder="Search…"
+              oninput="debounce(()=>loadBankForCreate(),400)">
+            <select class="form-select" id="create-bank-sub" style="width:auto" onchange="loadBankForCreate()">
+              <option value="">All sub-strands</option>
+              ${getAllSubstrands().map(s => `<option value="${s.code}">${s.code} — ${s.label.split('—')[1]?.trim()||s.label}</option>`).join('')}
+            </select>
+            <select class="form-select" id="create-bank-diff" style="width:auto" onchange="loadBankForCreate()">
+              <option value="">All difficulty</option><option>Easy</option><option>Medium</option><option>Hard</option>
+            </select>
+          </div>
+          <div id="create-bank-list" style="max-height:480px;overflow-y:auto">
+            <div style="color:var(--text-3);font-size:13px;padding:20px 0;text-align:center">Click "Browse bank" tab to load questions</div>
+          </div>
+          <div style="display:flex;justify-content:center;margin-top:10px">
+            <button class="btn btn-ghost btn-sm" id="create-bank-more" style="display:none" onclick="loadBankForCreate(true)">Load more</button>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Settings + question list -->
+    <div style="position:sticky;top:20px">
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:16px">Test settings</div>
+        <div class="form-group"><label class="form-label">Title</label>
+          <input class="form-input" id="new-test-title" value="${(t.title||'New Assessment').replace(/"/g,'&quot;')}">
+        </div>
+        <div class="form-group"><label class="form-label">Assign to class</label>
+          <select class="form-select" id="new-test-class">
+            ${(classes||[]).map(c => `<option value="${c.id}" ${c.id==selClass?'selected':''}>${c.name}</option>`).join('') || '<option value="1">SHS2A</option><option value="2">SHS2B</option>'}
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Type</label>
+          <select class="form-select" id="new-test-type">
+            <option value="quiz" ${t.type==='quiz'||!t.type?'selected':''}>Quiz</option>
+            <option value="mock" ${t.type==='mock'?'selected':''}>Mock exam</option>
+            <option value="practice" ${t.type==='practice'?'selected':''}>Practice (ungraded)</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Time limit</label>
+          <select class="form-select" id="new-test-time">
+            <option value="0" ${!t.time_limit_min?'selected':''}>No limit</option>
+            <option value="30" ${t.time_limit_min==30?'selected':''}>30 min</option>
+            <option value="45" ${t.time_limit_min==45?'selected':''}>45 min</option>
+            <option value="60" ${t.time_limit_min==60?'selected':''}>60 min</option>
+            <option value="90" ${t.time_limit_min==90?'selected':''}>90 min</option>
+            <option value="150" ${t.time_limit_min==150?'selected':''}>150 min (WASSCE)</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Due date</label>
+          <input class="form-input" id="new-test-due" type="datetime-local" value="${dueVal}">
+        </div>
+        <div class="form-group"><label class="form-label">Attempts allowed</label>
+          <select class="form-select" id="new-test-attempts">
+            <option value="1" ${t.max_attempts==1||!t.max_attempts?'selected':''}>1 attempt</option>
+            <option value="2" ${t.max_attempts==2?'selected':''}>2 attempts</option>
+            <option value="0" ${t.max_attempts==0?'selected':''}>Unlimited</option>
+          </select>
+        </div>
+        <label class="checkbox-row"><input type="checkbox" id="new-test-rand" ${t.randomise_qs||!isEdit?'checked':''}>Randomise question order</label>
+        <label class="checkbox-row"><input type="checkbox" id="new-test-feedback" ${t.show_feedback||!isEdit?'checked':''}>Show feedback after submission</label>
+      </div>
+
+      <!-- Question list -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div>
+            <div class="card-title">Questions in test</div>
+            <div style="font-size:12px;color:var(--text-3);margin-top:2px" id="test-q-header">
+              ${testQIds.size} question${testQIds.size!==1?'s':''} · ${[...testQData.values()].reduce((s,q)=>s+(parseInt(q.marks)||1),0)} marks
+            </div>
+          </div>
+          <div style="display:flex;gap:5px">
+            <button class="btn btn-ghost btn-sm" onclick="openModal('qbuilder-modal')">+ New</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadWASSCETemplate()">WASSCE</button>
+          </div>
+        </div>
+        <div id="test-q-list"></div>
+      </div>
+    </div>
+  </div>
+</div>`;
+
+  renderTestQList();
+  setTimeout(() => refreshStrandSelect('ai-year','ai-strand','ai-sub'), 50);
+}
+
+
+
+
+
+// ── Live quiz state ───────────────────────────────────────────
+const LS = {
+  phase: 'setup',   // setup | lobby | question | reveal | ended
+  roomCode: null,
+  sessionId: null,
+  testTitle: '',
+  totalQ: 0,
+  currentQ: -1,
+  answeredCount: 0,
+  participants: [],
+  question: null,
+  pollTimer: null,
+  myMainEl: null,
+};
+
+function lsClear() {
+  clearInterval(LS.pollTimer);
+  Object.assign(LS, {phase:'setup',roomCode:null,sessionId:null,testTitle:'',totalQ:0,currentQ:-1,answeredCount:0,participants:[],question:null,pollTimer:null});
+}
+
+async function loadTLive(m) {
+  lsClear();
+  LS.myMainEl = m;
+  let tests = null;
+  try { tests = await GET('/tests'); } catch(e) {}
+  const published = (tests||[]).filter(t => t.status === 'published');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Live quiz</div><div class="topbar-sub" id="lv-sub">Select a test and launch</div></div>
+  <div class="topbar-actions" id="lv-actions"></div>
+</div>
+<div class="page">
+  <div id="lv-body">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title" style="margin-bottom:14px">Select test to run live</div>
+        ${published.length ? published.map(t => `
+        <div class="gen-q-card" id="lt-${t.id}" style="cursor:pointer;margin-bottom:6px" onclick="lvSelectTest(${t.id},'${t.title.replace(/'/g,"\\'").replace(/"/g,"&quot;")}',${t.question_count||0},this)">
+          <div style="font-weight:700;font-size:14px;margin-bottom:3px">${t.title}</div>
+          <div style="font-size:12px;color:var(--text-3)">${t.type} · ${t.question_count||'?'} questions</div>
+        </div>`).join('') : '<div class="info-box amber">No published tests. Publish a test first.</div>'}
+      </div>
+      <div class="card" style="text-align:center;padding:32px">
+        <div style="font-size:14px;color:var(--text-3);margin-bottom:24px">Select a test on the left, then launch</div>
+        <button class="btn btn-primary" id="lv-launch-btn" style="width:100%;justify-content:center;padding:12px;font-size:15px" disabled onclick="lvLaunch()">⚡ Launch Live Quiz</button>
+        <div style="font-size:12px;color:var(--text-3);margin-top:12px">Students join from their dashboard using the room code</div>
       </div>
     </div>
   </div>
 </div>`;
 }
 
-
-
-
-
-async function loadTLive(m){
-  const code=Math.random().toString(36).substring(2,6).toUpperCase()+Math.floor(Math.random()*100);
-  m.innerHTML=`
-<div class="topbar"><div><div class="topbar-title">Live quiz mode</div></div></div>
-<div class="page"><div class="grid-2">
-  <div class="card" style="text-align:center;padding:32px">
-    <div style="font-size:60px;font-weight:800;letter-spacing:8px;color:var(--green);font-family:'JetBrains Mono',monospace;margin-bottom:8px">${code}</div>
-    <div style="font-size:13px;color:var(--text-3);margin-bottom:20px">Students enter this code at aceict.app</div>
-    <div style="font-size:14px;color:var(--text-2);margin-bottom:20px" id="live-join-count">Waiting for students...</div>
-    <button class="btn btn-primary" id="live-start-btn" style="width:100%;justify-content:center" onclick="startLive()">Start live quiz →</button>
-    <div id="live-display" style="display:none;margin-top:20px;text-align:left"></div>
-  </div>
-  <div class="card">
-    <div class="card-title" style="margin-bottom:14px">Select quiz to run</div>
-    <div id="live-quiz-list"><div class="spinner" style="border-color:var(--border-2);border-top-color:var(--green);width:20px;height:20px;margin:20px auto"></div></div>
-  </div>
-</div></div>`;
-
-  // Simulate join counter
-  let joined=0;
-  const jInt=setInterval(()=>{
-    joined=Math.min(24,joined+Math.floor(Math.random()*3));
-    const el=document.getElementById('live-join-count');
-    if(el)el.textContent=`${joined} students joined`;
-    else clearInterval(jInt);
-  },1500);
-
-  try{
-    const tests=await GET('/tests');
-    const list=document.getElementById('live-quiz-list');
-    if(list&&tests?.length){
-      list.innerHTML=tests.filter(t=>t.status==='published').map(t=>`
-      <div class="gen-q-card" style="cursor:pointer;margin-bottom:6px" onclick="selectLive('${t.title.replace(/'/g,"\\'")}',${t.id})">
-        <div style="font-weight:700;font-size:14px;margin-bottom:3px">${t.title}</div>
-        <div style="font-size:12px;color:var(--text-3)">${t.type} · ${t.question_count||'?'} questions</div>
-      </div>`).join('');
-    }else if(list){
-      list.innerHTML=['Productivity Tools — Quick Fire','Emerging Technologies Revision','Network Systems','Connecting And Communicating Online'].map(t=>`
-      <div class="gen-q-card" style="cursor:pointer;margin-bottom:6px" onclick="selectLive('${t}',0)">
-        <div style="font-weight:700;font-size:14px">${t}</div>
-        <div style="font-size:12px;color:var(--text-3)">Practice quiz · ~5 questions</div>
-      </div>`).join('');
-    }
-  }catch(e){}
+function lvSelectTest(id, title, qCount, el) {
+  document.querySelectorAll('[id^="lt-"]').forEach(c => c.classList.remove('approved'));
+  el.classList.add('approved');
+  liveTestId = id; liveTitle = title; LS.totalQ = qCount;
+  document.getElementById('lv-launch-btn')?.removeAttribute('disabled');
+  notify('Selected: ' + title, '');
 }
 
-function selectLive(title,id){liveTitle=title;liveTestId=id;notify('Quiz selected: '+title,'success');}
+async function lvLaunch() {
+  if (!liveTestId) { notify('Select a test first', 'error'); return; }
+  const btn = document.getElementById('lv-launch-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating session...'; }
+  try {
+    const res = await POST('/live', { test_id: liveTestId });
+    LS.roomCode  = res.room_code;
+    LS.sessionId = res.session_id;
+    LS.testTitle = res.test_title;
+    LS.totalQ    = res.question_count;
+    LS.phase     = 'lobby';
+    lvRenderLobby();
+    LS.pollTimer = setInterval(lvPollTeacher, 3000);
+  } catch(e) {
+    notify('Could not create session: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Launch Live Quiz'; }
+  }
+}
+
+function lvRenderLobby() {
+  const m = LS.myMainEl; if (!m) return;
+  document.getElementById('lv-sub').textContent = 'Waiting for students to join';
+  document.getElementById('lv-actions').innerHTML =
+    `<button class="btn btn-primary" onclick="lvStart()">Start quiz →</button>
+     <button class="btn btn-danger btn-sm" onclick="lvEnd()">Cancel</button>`;
+  document.getElementById('lv-body').innerHTML = `
+  <div class="grid-2">
+    <div class="card" style="text-align:center;padding:40px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:8px">Room Code</div>
+      <div style="font-size:72px;font-weight:800;letter-spacing:12px;color:var(--green);font-family:'JetBrains Mono',monospace;line-height:1;margin-bottom:16px">${LS.roomCode}</div>
+      <div style="font-size:13px;color:var(--text-2);margin-bottom:4px">${LS.testTitle}</div>
+      <div style="font-size:13px;color:var(--text-3);margin-bottom:24px">${LS.totalQ} questions</div>
+      <div style="font-size:22px;font-weight:800;color:var(--text)" id="lv-join-count">0 students joined</div>
+      <div class="live-dot" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px">Students in lobby</div>
+      <div id="lv-participants" style="display:flex;flex-direction:column;gap:8px">
+        <div style="color:var(--text-3);font-size:13px;padding:20px 0;text-align:center">Waiting...</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function lvRenderQuestion(data) {
+  const q    = data.question;
+  const qNum = (LS.currentQ + 1);
+  const opts = typeof q.options === 'string' ? JSON.parse(q.options) : (q.options || []);
+  document.getElementById('lv-sub').textContent = `Question ${qNum} of ${LS.totalQ}`;
+  document.getElementById('lv-actions').innerHTML =
+    `<div style="font-size:13px;color:var(--text-2);font-weight:600" id="lv-ans-count">${data.answered_count}/${data.participant_count} answered</div>
+     ${qNum < LS.totalQ
+       ? `<button class="btn btn-primary" onclick="lvNext()">Next question →</button>`
+       : `<button class="btn btn-primary" onclick="lvNext()">End & show results →</button>`}
+     <button class="btn btn-ghost btn-sm" onclick="lvEnd()">End quiz</button>`;
+  document.getElementById('lv-body').innerHTML = `
+  <div class="grid-2">
+    <div>
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span class="badge badge-${sub2badge(q.sub_strand)}">${q.sub_strand}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--green)" id="lv-ans-pct">${data.participant_count ? Math.round(data.answered_count/data.participant_count*100) : 0}% answered</span>
+        </div>
+        <div style="font-size:18px;line-height:1.6;font-family:'Lora',serif;margin-bottom:20px">${q.question_text}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${opts.map(o => `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg)">
+            <div style="width:28px;height:28px;border-radius:6px;background:var(--surface);border:1px solid var(--border-2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">${o.label}</div>
+            <div style="flex:1;font-size:14px">${o.text}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="card card-sm">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:13px;font-weight:600">Responses</span>
+          <div style="display:flex;align-items:center;gap:6px"><div class="live-dot"></div><span style="font-size:12px;color:var(--text-3)">Live</span></div>
+        </div>
+        <div class="progress-bar" style="margin-top:8px;height:10px">
+          <div class="progress-fill" id="lv-prog" style="width:${data.participant_count ? Math.round(data.answered_count/data.participant_count*100) : 0}%"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:14px">Live leaderboard</div>
+      <div id="lv-lb"></div>
+    </div>
+  </div>`;
+  lvRenderLB(data.participants);
+}
+
+function lvRenderEnded(data) {
+  document.getElementById('lv-sub').textContent = 'Quiz ended';
+  document.getElementById('lv-actions').innerHTML =
+    `<button class="btn btn-secondary" onclick="loadTLive(LS.myMainEl)">New session</button>`;
+  const lb = data.participants || [];
+  document.getElementById('lv-body').innerHTML = `
+  <div class="card" style="max-width:600px;margin:0 auto;text-align:center;padding:32px">
+    <div style="font-size:36px;margin-bottom:12px">🏆</div>
+    <div style="font-size:22px;font-weight:800;margin-bottom:4px">Quiz Complete!</div>
+    <div style="font-size:14px;color:var(--text-3);margin-bottom:28px">${LS.testTitle} · ${lb.length} participants</div>
+    <div>
+      ${lb.map((p, i) => `
+      <div class="leaderboard-row" style="background:${i===0?'var(--green-lt)':i===1?'var(--amber-lt)':i===2?'var(--coral-lt)':'var(--bg)'}">
+        <div class="lb-rank" style="color:${i===0?'var(--green)':i===1?'var(--amber)':i===2?'var(--coral)':'var(--text-3)'}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+        <div class="student-avatar" style="background:${p.avatar_color||'var(--teal)'};width:32px;height:32px;font-size:11px">${((p.first_name||'?')[0]+(p.last_name||'?')[0]).toUpperCase()}</div>
+        <div style="font-size:14px;font-weight:600;flex:1;text-align:left">${p.first_name} ${p.last_name}</div>
+        <div class="lb-bar"><div class="lb-fill" style="width:${LS.totalQ?Math.round(p.score/LS.totalQ*100):0}%;background:${i===0?'var(--green)':'var(--green)'}"></div></div>
+        <div style="font-size:16px;font-weight:800;color:${i===0?'var(--green)':'var(--text-2)'};min-width:36px;text-align:right">${p.score}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+  lsClear();
+}
+
+function lvRenderLB(participants) {
+  const el = document.getElementById('lv-lb'); if (!el) return;
+  if (!participants?.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:13px;padding:12px 0">No participants yet</div>'; return; }
+  el.innerHTML = participants.map((p, i) => `
+  <div class="leaderboard-row" style="background:${i===0?'var(--green-lt)':'var(--bg)'}">
+    <div class="lb-rank" style="color:${i===0?'var(--green)':i===1?'var(--amber)':i===2?'var(--coral)':'var(--text-3)'}">${i+1}</div>
+    <div class="student-avatar" style="background:${p.avatar_color||'var(--teal)'};width:28px;height:28px;font-size:10px">${((p.first_name||'?')[0]+(p.last_name||'?')[0]).toUpperCase()}</div>
+    <div style="font-size:13px;font-weight:600;flex:1">${p.first_name} ${p.last_name}</div>
+    <div class="lb-bar"><div class="lb-fill" style="width:${LS.totalQ?Math.round(p.score/LS.totalQ*100):0}%;transition:width .5s"></div></div>
+    <div style="font-size:14px;font-weight:800;color:${i===0?'var(--green)':'var(--text-2)'}">${p.score}</div>
+  </div>`).join('');
+}
+
+async function lvPollTeacher() {
+  if (!LS.roomCode) return;
+  try {
+    const data = await GET('/live/' + LS.roomCode);
+    const sess = data.session;
+    LS.participants  = data.participants || [];
+    LS.answeredCount = data.answered_count || 0;
+    LS.totalQ        = data.total_questions || LS.totalQ;
+
+    if (sess.status === 'ended' && LS.phase !== 'ended') {
+      LS.phase = 'ended';
+      clearInterval(LS.pollTimer);
+      lvRenderEnded(data);
+      return;
+    }
+
+    if (sess.status === 'waiting') {
+      // Update lobby participant list
+      const cnt = document.getElementById('lv-join-count');
+      if (cnt) cnt.textContent = data.participant_count + ' student' + (data.participant_count !== 1 ? 's' : '') + ' joined';
+      const pEl = document.getElementById('lv-participants');
+      if (pEl) pEl.innerHTML = LS.participants.length ? LS.participants.map(p =>
+        `<div style="display:flex;align-items:center;gap:8px">
+           <div class="student-avatar" style="background:${p.avatar_color||'var(--teal)'};width:28px;height:28px;font-size:10px">${((p.first_name||'?')[0]+(p.last_name||'?')[0]).toUpperCase()}</div>
+           <span style="font-size:13px;font-weight:600">${p.first_name} ${p.last_name}</span>
+         </div>`).join('') : '<div style="color:var(--text-3);font-size:13px;padding:20px 0;text-align:center">Waiting...</div>';
+    }
+
+    if (sess.status === 'active') {
+      const newQ = parseInt(sess.current_q);
+      if (LS.phase !== 'question' || LS.currentQ !== newQ) {
+        LS.phase     = 'question';
+        LS.currentQ  = newQ;
+        lvRenderQuestion(data);
+      } else {
+        // Just refresh counts and leaderboard
+        const ac = document.getElementById('lv-ans-count');
+        const ap = document.getElementById('lv-ans-pct');
+        const pg = document.getElementById('lv-prog');
+        const pc = data.participant_count || 1;
+        if (ac) ac.textContent = data.answered_count + '/' + data.participant_count + ' answered';
+        if (ap) ap.textContent = Math.round(data.answered_count/pc*100) + '% answered';
+        if (pg) pg.style.width = Math.round(data.answered_count/pc*100) + '%';
+        lvRenderLB(LS.participants);
+      }
+    }
+  } catch(e) { /* keep polling */ }
+}
+
+async function lvStart() {
+  try {
+    await PATCH('/live/' + LS.roomCode + '/start', {});
+    LS.phase    = 'question';
+    LS.currentQ = 0;
+    clearInterval(LS.pollTimer);
+    const data  = await GET('/live/' + LS.roomCode);
+    lvRenderQuestion(data);
+    LS.pollTimer = setInterval(lvPollTeacher, 2500);
+  } catch(e) { notify('Could not start: ' + e.message, 'error'); }
+}
+
+async function lvNext() {
+  try {
+    const res = await PATCH('/live/' + LS.roomCode + '/next', {});
+    if (res.status === 'ended') {
+      LS.phase = 'ended';
+      clearInterval(LS.pollTimer);
+      const data = await GET('/live/' + LS.roomCode);
+      lvRenderEnded(data);
+    } else {
+      LS.currentQ = res.current_q;
+      const data  = await GET('/live/' + LS.roomCode);
+      lvRenderQuestion(data);
+    }
+  } catch(e) { notify('Error: ' + e.message, 'error'); }
+}
+
+async function lvEnd() {
+  if (!confirm('End this live quiz session?')) return;
+  try {
+    await PATCH('/live/' + LS.roomCode + '/end', {});
+    LS.phase = 'ended';
+    clearInterval(LS.pollTimer);
+    const data = await GET('/live/' + LS.roomCode);
+    lvRenderEnded(data);
+  } catch(e) {
+    lsClear();
+    loadTLive(LS.myMainEl);
+  }
+}
 
 
 async function loadTClasses(m){
@@ -2755,8 +3093,69 @@ async function saveQuestion(){
   }catch(e){notify('Save failed: '+e.message,'error');}
 }
 
-const testQIds=new Set();
-function addQToTestBank(qid){testQIds.add(qid);notify('Question added to active test','success');}
+const testQIds  = new Set();       // qids in test being built
+const testQData = new Map();       // qid → question object (for display)
+const BANK_CACHE= {};              // qid → question object (populated by renderBankList)
+let   currentEditTestId = null;    // null=new test, number=editing existing
+
+function addQToTest(q) {
+  if (!q?.id) return;
+  if (testQIds.has(q.id)) { notify('Already in test', ''); return; }
+  testQIds.add(q.id);
+  testQData.set(q.id, q);
+  renderTestQList();
+  // Grey out the button in bank if visible
+  const addBtn = document.getElementById('addq-' + q.id);
+  if (addBtn) { addBtn.textContent = 'Added ✓'; addBtn.disabled = true; addBtn.classList.add('done'); }
+  notify('Added to test', 'success');
+}
+
+function addQToTestBank(qid) {
+  // Called from bank list — look up full data from cache
+  const q = BANK_CACHE[qid];
+  if (q) addQToTest(q);
+  else { testQIds.add(qid); notify('Question added to test', 'success'); }
+}
+
+function removeQFromTest(qid) {
+  testQIds.delete(qid);
+  testQData.delete(qid);
+  renderTestQList();
+  const addBtn = document.getElementById('addq-' + qid);
+  if (addBtn) { addBtn.textContent = '+ Add to test'; addBtn.disabled = false; addBtn.classList.remove('done'); }
+}
+
+function renderTestQList() {
+  const el = document.getElementById('test-q-list');
+  if (!el) return;
+  const qs    = [...testQData.values()];
+  const total = qs.reduce((s, q) => s + (parseInt(q.marks) || 1), 0);
+  const hdr   = document.getElementById('test-q-header');
+  if (hdr) hdr.textContent = `${qs.length} question${qs.length !== 1 ? 's' : ''} · ${total} mark${total !== 1 ? 's' : ''}`;
+
+  if (qs.length === 0) {
+    el.innerHTML = `<div style="text-align:center;padding:24px;border:1.5px dashed var(--border);border-radius:var(--radius-sm);color:var(--text-3);font-size:13px">
+      Generate questions with AI, or browse the question bank and click "+ Add to test"</div>`;
+    return;
+  }
+  el.innerHTML = qs.map((q, i) => {
+    const sub  = q.sub_strand || q.sub || '';
+    const diff = q.difficulty  || q.diff || 'Medium';
+    const text = (q.question_text || q.q || '').substring(0, 90) + ((q.question_text || q.q || '').length > 90 ? '…' : '');
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--surface)">
+      <div style="font-size:11px;font-weight:700;color:var(--text-3);width:18px;padding-top:2px;flex-shrink:0">${i + 1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px;line-height:1.4">${text}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          ${sub ? `<span class="badge badge-${sub2badge(sub)}">${sub}</span>` : ''}
+          <span class="badge badge-${diff==='Easy'?'green':diff==='Hard'?'coral':'amber'}">${diff}</span>
+          <span class="badge badge-gray">${q.marks||1} mark${(q.marks||1)>1?'s':''}</span>
+        </div>
+      </div>
+      <button class="opt-remove" onclick="removeQFromTest(${q.id})" title="Remove from test" style="flex-shrink:0">✕</button>
+    </div>`;
+  }).join('');
+}
 
 // ── AI GENERATOR ──────────────────────────────────────────────
 async function generateAI(){
@@ -2794,6 +3193,7 @@ function renderAIQFromAPI(questions){
   const list=document.getElementById('gen-list');
   const out=document.getElementById('gen-out');
   if(!list||!out)return;
+  window._lastAIQuestions = questions; // store for saveApproved
   list.innerHTML='';approvedSet.clear();
   questions.forEach((q,i)=>{
     const card=document.createElement('div');
@@ -2849,17 +3249,43 @@ function updateApCount(){const el=document.getElementById('ap-count');if(el)el.t
 
 async function saveApproved(){
   if(approvedSet.size===0){notify('Approve at least one question first','error');return;}
-  const toSave=[...approvedSet].map(i=>AI_QS[i]);
+  // Determine the source — API questions (have .question property) or local AI_QS fallback
+  const toSave=[...approvedSet].map(i=>{
+    const apiQ = window._lastAIQuestions?.[i];
+    return apiQ || AI_QS[i];
+  });
   let saved=0;
   for(const q of toSave){
     try{
-      await POST('/questions',{type:'mcq',sub_strand:'S2/SS2',topic:q.topic,
-        difficulty:q.diff,bloom_level:'Understand',marks:1,question_text:q.q,
-        options:q.opts.map((o,i)=>({label:String.fromCharCode(65+i),text:o,correct:i===q.c?1:0}))});
-      saved++;
+      const isAPI = !!q.question; // API shape has .question; fallback has .q
+      const payload = {
+        type:'mcq',
+        sub_strand: q.sub_strand || 'S2/SS2',
+        topic: q.topic || q.sub_strand || 'General',
+        difficulty: q.difficulty || q.diff || 'Medium',
+        bloom_level: q.bloom || 'Understand',
+        marks: 1,
+        question_text: isAPI ? q.question : q.q,
+        explanation: q.explanation || '',
+        options: isAPI
+          ? q.options.map(o=>({label:o.label,text:o.text,correct:o.correct?1:0}))
+          : q.opts.map((o,i)=>({label:String.fromCharCode(65+i),text:o,correct:i===q.c?1:0})),
+      };
+      const res = await POST('/questions', payload);
+      if(res?.question_id){
+        saved++;
+        // Also add to the active test being built
+        addQToTest({
+          id: res.question_id,
+          question_text: payload.question_text,
+          sub_strand: payload.sub_strand,
+          difficulty: payload.difficulty,
+          marks: payload.marks,
+        });
+      }
     }catch(e){}
   }
-  notify(`${saved} question(s) saved to bank!`,'success');
+  notify(`${saved} question${saved!==1?'s':''} saved to bank and added to test.`,'success');
   approvedSet.clear();updateApCount();
 }
 
@@ -3124,51 +3550,7 @@ function editTeacherModal(t) {
   notify('Teacher editing: contact admin to change teacher details', 'warn');
 }
 
-// ── Live quiz — real leaderboard update ───────────────────────
-let liveInterval = null;
-function startLive() {
-  if (!liveTitle) { notify('Select a quiz first', 'error'); return; }
-  const btn  = document.getElementById('live-start-btn');
-  const disp = document.getElementById('live-display');
-  const lb   = document.getElementById('live-leaderboard');
-  if (btn)  btn.style.display = 'none';
-  if (disp) { disp.style.display=''; disp.innerHTML='<div class="info-box green"><b>Live quiz started!</b><br>Students see Question 1 on their screens.</div>'; }
-  if (lb)   lb.style.display = '';
-  updateLB();
-  liveStarted = true;
-  // Simulate live score updates every 3 seconds
-  let tick = 0;
-  liveInterval = setInterval(() => {
-    tick++;
-    updateLB(tick);
-    if (tick > 20) clearInterval(liveInterval);
-  }, 3000);
-  notify('Live quiz running — ' + liveTitle, 'success');
-}
-
-function updateLB(tick = 0) {
-  const lb = document.getElementById('lb-rows');
-  if (!lb) return;
-  // Simulate live scores changing as students answer
-  const base = [
-    {n:'Ama Darko',   s:95, col:'#3730A3', i:'AD'},
-    {n:'Abena Boateng',s:88,col:'#1A7A4A', i:'AB'},
-    {n:'Akua Asante', s:82, col:'#5A3D9A', i:'AA'},
-    {n:'Kofi Mensah',  s:75, col:'#0F6E6A', i:'KM'},
-    {n:'Nana Adjei',   s:68, col:'#0D5C35', i:'NA'},
-  ];
-  // Add slight randomness per tick to simulate live changes
-  const scores = base.map(p => ({...p, s: Math.min(100, p.s + (tick > 0 ? Math.floor(Math.random()*4-1) : 0))}));
-  scores.sort((a,b) => b.s - a.s);
-  lb.innerHTML = scores.map((p,i) => `
-    <div class="leaderboard-row" style="background:${i===0?'var(--green-lt)':'var(--bg)'}">
-      <div class="lb-rank" style="color:${i===0?'var(--green)':i===1?'var(--amber)':i===2?'var(--coral)':'var(--text-3)'}">${i+1}</div>
-      <div class="student-avatar" style="background:${p.col};width:28px;height:28px;font-size:10px">${p.i}</div>
-      <div style="font-size:13px;font-weight:600;flex:1">${p.n}</div>
-      <div class="lb-bar"><div class="lb-fill" style="width:${p.s}%;transition:width 0.5s ease"></div></div>
-      <div style="font-size:14px;font-weight:800;color:${i===0?'var(--green)':'var(--text-2)'}">${p.s}</div>
-    </div>`).join('');
-}
+// startLive / updateLB replaced by lvStart / lvRenderLB above
 
 // ── Student results review (after test from history) ──────────
 async function reviewAttemptById(attemptId) {
@@ -3425,34 +3807,231 @@ async function exportGradebook() {
   notify('Gradebook downloaded — open in Excel or Google Sheets','success');
 }
 
-// ── Publish test with questions ────────────────────────────────
+// ── Shared helper: read form values ──────────────────────────
+function readTestForm() {
+  return {
+    title:          document.getElementById('new-test-title')?.value?.trim() || '',
+    type:           document.getElementById('new-test-type')?.value || 'quiz',
+    time_limit_min: parseInt(document.getElementById('new-test-time')?.value || '0'),
+    max_attempts:   parseInt(document.getElementById('new-test-attempts')?.value || '1'),
+    due_at:         document.getElementById('new-test-due')?.value || null,
+    randomise_qs:   document.getElementById('new-test-rand')?.checked ? 1 : 0,
+    show_feedback:  document.getElementById('new-test-feedback')?.checked ? 1 : 0,
+    class_ids:      [parseInt(document.getElementById('new-test-class')?.value || '0')].filter(Boolean),
+    question_ids:   [...testQIds],
+  };
+}
+
+// ── Save draft ────────────────────────────────────────────────
+async function saveDraftTest() {
+  await _saveTest('draft');
+}
+
+// ── Publish ───────────────────────────────────────────────────
 async function publishNewTest() {
-  const title = document.getElementById('new-test-title')?.value?.trim();
-  if (!title) { notify('Enter a test title first', 'error'); return; }
+  const form = readTestForm();
+  if (!form.title) { notify('Enter a test title first', 'error'); return; }
+  if (form.question_ids.length === 0) {
+    if (!confirm('Publish with no questions? Students will see an empty test.')) return;
+  }
+  await _saveTest('published');
+}
 
-  // Collect question IDs from the test-q-list if any were manually added
-  const qCards = document.querySelectorAll('#test-q-list .gen-q-card.approved');
-
-  showLoader('Publishing test...');
+// ── Unpublish (back to draft) ─────────────────────────────────
+async function unpublishTest(testId) {
+  if (!confirm('Unpublish this test? Students will no longer see it.')) return;
+  showLoader('Unpublishing...');
   try {
-    const res = await POST('/tests', {
-      title,
-      type: 'quiz',
-      time_limit_min: parseInt(document.getElementById('new-test-time')?.value || '45'),
-      max_attempts:   parseInt(document.getElementById('new-test-attempts')?.value || '1'),
-      due_at:         document.getElementById('new-test-due')?.value || null,
-      randomise_qs:   document.getElementById('new-test-rand')?.checked ? 1 : 0,
-      show_feedback:  document.getElementById('new-test-feedback')?.checked ? 1 : 0,
-      class_ids: [parseInt(document.getElementById('new-test-class')?.value || '1')],
-      question_ids: [],
-    });
-    await PATCH(`/tests/${res.test_id}`, { status: 'published' });
-    notify('Test "' + title + '" published! Students can now see it.', 'success');
+    await PATCH('/tests/' + testId, { status: 'draft' });
+    notify('Test moved back to draft', 'success');
     tRender('dashboard');
+  } catch(e) { notify(e.message, 'error'); }
+  finally { hideLoader(); }
+}
+
+// ── Core save/publish logic ───────────────────────────────────
+async function _saveTest(status) {
+  const form = readTestForm();
+  if (!form.title) { notify('Enter a test title first', 'error'); return; }
+
+  const verb = status === 'published' ? 'Publishing…' : 'Saving draft…';
+  showLoader(verb);
+  try {
+    if (currentEditTestId) {
+      // Update existing test
+      await PATCH('/tests/' + currentEditTestId, {
+        ...form,
+        status,
+      });
+      const badge = document.getElementById('create-status-badge');
+      if (badge) badge.innerHTML = `<span class="badge badge-${status==='published'?'green':'amber'}">${status}</span>`;
+      notify(status === 'published' ? 'Test published — students can see it now.' : 'Draft saved.', 'success');
+      if (status === 'published') {
+        setTimeout(() => tNav('dashboard', null), 800);
+      }
+    } else {
+      // Create new
+      const res = await POST('/tests', { ...form, status });
+      currentEditTestId = res.test_id;
+      const badge = document.getElementById('create-status-badge');
+      if (badge) badge.innerHTML = `<span class="badge badge-${status==='published'?'green':'amber'}">${status}</span>`;
+      notify(status === 'published'
+        ? `"${form.title}" published — students can now take it!`
+        : `"${form.title}" saved as draft.`, 'success');
+      if (status === 'published') {
+        setTimeout(() => tNav('dashboard', null), 800);
+      }
+    }
   } catch(e) {
-    notify('Publish failed: ' + e.message, 'error');
+    notify((status === 'published' ? 'Publish' : 'Save') + ' failed: ' + e.message, 'error');
   } finally {
     hideLoader();
+  }
+}
+
+// ── Load existing test into create form (edit mode) ───────────
+async function editExistingTest(testId) {
+  showLoader('Loading test…');
+  try {
+    const test = await GET('/tests/' + testId);
+    if (!test) throw new Error('Test not found');
+    const m = document.getElementById('t-main');
+    if (!m) return;
+    // Mark create nav item active
+    document.querySelectorAll('#t-sidebar .nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelector('#t-sidebar .nav-item[onclick*="create"]')?.classList.add('active');
+    await loadTCreate(m, {
+      test,
+      questions: test.questions || [],
+      class_id:  null,
+    });
+  } catch(e) {
+    notify('Could not load test: ' + e.message, 'error');
+  } finally {
+    hideLoader();
+  }
+}
+
+// ── Browse bank panel inside Create Test ──────────────────────
+let _bankCreatePage = 0;
+async function loadBankForCreate(loadMore = false) {
+  const listEl = document.getElementById('create-bank-list');
+  if (!listEl) return;
+  if (!loadMore) _bankCreatePage = 0;
+  if (!loadMore) listEl.innerHTML = '<div style="padding:24px;text-align:center"><div style="width:20px;height:20px;border:2px solid var(--border-2);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto"></div></div>';
+
+  const search = document.getElementById('create-bank-search')?.value?.trim() || '';
+  const sub    = document.getElementById('create-bank-sub')?.value || '';
+  const diff   = document.getElementById('create-bank-diff')?.value || '';
+  const limit  = 20;
+  const offset = _bankCreatePage * limit;
+
+  try {
+    const params = { limit };
+    if (search) params.search = search;
+    if (sub)    params.sub_strand = sub;
+    if (diff)   params.difficulty = diff;
+    if (offset) params.page = _bankCreatePage + 1;
+
+    const res = await GET('/questions', params);
+    const qs  = res?.items || [];
+    const total = res?.total || qs.length;
+
+    // Cache for addQToTestBank
+    qs.forEach(q => { BANK_CACHE[q.id] = q; });
+
+    const html = qs.map(q => {
+      const sub2 = q.sub_strand || '';
+      const diff2= q.difficulty || 'Medium';
+      const inTest = testQIds.has(q.id);
+      return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;margin-bottom:3px;line-height:1.4">${(q.question_text||'').substring(0,80)}${q.question_text?.length>80?'…':''}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <span class="badge badge-${sub2badge(sub2)}">${sub2}</span>
+            <span class="badge badge-${diff2==='Easy'?'green':diff2==='Hard'?'coral':'amber'}">${diff2}</span>
+            <span class="badge badge-gray">${q.marks||1}m</span>
+          </div>
+        </div>
+        <button id="addq-${q.id}" class="approve-btn${inTest?' done':''}" onclick="addQToTestBank(${q.id})" ${inTest?'disabled':''}>
+          ${inTest ? 'Added ✓' : '+ Add'}
+        </button>
+      </div>`;
+    }).join('');
+
+    if (loadMore) {
+      listEl.innerHTML = listEl.innerHTML.replace(/<div[^>]*id="no-more-bank"[^>]*>.*?<\/div>/s, '');
+      listEl.insertAdjacentHTML('beforeend', html);
+    } else {
+      listEl.innerHTML = html || '<div style="color:var(--text-3);font-size:13px;padding:20px 0;text-align:center">No questions found</div>';
+    }
+
+    _bankCreatePage++;
+    const moreBtn = document.getElementById('create-bank-more');
+    if (moreBtn) moreBtn.style.display = (_bankCreatePage * limit < total) ? '' : 'none';
+  } catch(e) {
+    if (!loadMore) listEl.innerHTML = '<div class="info-box coral">Could not load questions: ' + e.message + '</div>';
+  }
+}
+
+// ── View test results (proper modal) ─────────────────────────
+async function viewTestResults(testId) {
+  showLoader('Loading results…');
+  try {
+    const res = await GET('/tests/' + testId + '/results');
+    hideLoader();
+    const attempts = res?.attempts || [];
+    const stats    = res?.stats    || {};
+    const avg      = Math.round(stats.avg_pct || 0);
+    const passC    = stats.pass_count || 0;
+    const total    = stats.total || 0;
+
+    // Build results modal content
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-bg open';
+    overlay.innerHTML = `
+      <div class="modal modal-lg">
+        <div class="modal-header">
+          <div>
+            <div class="modal-title">Test results</div>
+            <div style="font-size:12px;color:var(--text-3);margin-top:2px">${total} submission${total!==1?'s':''} · Average: ${avg}% · Pass rate: ${total?Math.round(passC/total*100):0}%</div>
+          </div>
+          <button class="modal-close" onclick="this.closest('.modal-bg').remove()">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+          <div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+            <div class="stat-card"><div class="label">Submissions</div><div class="value">${total}</div></div>
+            <div class="stat-card"><div class="label">Average score</div><div class="value" style="color:${col(avg)}">${avg}%</div></div>
+            <div class="stat-card"><div class="label">Pass rate</div><div class="value" style="color:${total&&passC/total>=.5?'var(--green)':'var(--coral)'}">${total?Math.round(passC/total*100):0}%</div></div>
+          </div>
+          ${attempts.length ? `
+          <table class="data-table">
+            <thead><tr><th>Student</th><th>Class</th><th>Score</th><th>Time taken</th><th>Status</th></tr></thead>
+            <tbody>
+              ${attempts.map(a => {
+                const pct = Math.round(a.pct_score || 0);
+                const mins = a.time_taken_s ? Math.round(a.time_taken_s/60) + ' min' : '—';
+                return `<tr>
+                  <td><b>${a.student_name || '—'}</b></td>
+                  <td><span class="badge badge-gray">${a.class_name||'—'}</span></td>
+                  <td><b style="color:${col(pct)}">${pct}%</b> <span style="color:var(--text-3);font-size:12px">(${Math.round(a.score_total||0)}/${Math.round(a.max_score||0)})</span></td>
+                  <td style="color:var(--text-3)">${mins}</td>
+                  <td><span class="badge badge-${a.status==='marked'?'green':a.status==='submitted'?'amber':'gray'}">${a.status}</span></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>` : '<div class="info-box amber">No submissions yet for this test.</div>'}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="editExistingTest(${testId})">Edit test</button>
+          <button class="btn btn-primary" onclick="this.closest('.modal-bg').remove()">Close</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  } catch(e) {
+    hideLoader();
+    notify('Could not load results: ' + e.message, 'error');
   }
 }
 
@@ -3476,21 +4055,6 @@ async function inviteTeacher() {
     aRender('teachers');
   } catch(e) {
     notify(e.message, 'error');
-  } finally {
-    hideLoader();
-  }
-}
-
-// ── View test results from dashboard ─────────────────────────
-async function viewTestResults(testId) {
-  showLoader('Loading results...');
-  try {
-    const res = await GET(`/tests/${testId}/results`);
-    if (!res) throw new Error('No data returned');
-    notify(`${res.attempts?.length || 0} submissions · Average: ${Math.round(res.stats?.avg_pct || 0)}%`, 'success');
-    tNav('analytics', null);
-  } catch(e) {
-    notify('Could not load results: ' + e.message, 'error');
   } finally {
     hideLoader();
   }
@@ -3933,6 +4497,8 @@ async function loadBankQuestions() {
 }
 
 function renderBankList(listEl, questions) {
+  // Populate BANK_CACHE so addQToTestBank has full objects
+  questions.forEach(q => { BANK_CACHE[q.id] = q; });
   if (!questions.length) {
     listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📚</div><div class="empty-title">No questions found</div><div class="empty-desc">Try a different filter or add new questions.</div></div>';
     return;
@@ -4086,6 +4652,265 @@ async function startCustomPractice() {
   } finally {
     hideLoader();
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// STUDENT LIVE QUIZ
+// ════════════════════════════════════════════════════════════
+const SL = {
+  roomCode: null, sessionId: null, testTitle: '',
+  currentQ: -1, totalQ: 0, status: 'waiting',
+  answered: false, myScore: 0, participants: 0,
+  pollTimer: null, lastCorrect: null,
+};
+
+function slClear() {
+  clearInterval(SL.pollTimer);
+  Object.assign(SL, {roomCode:null,sessionId:null,testTitle:'',currentQ:-1,totalQ:0,status:'waiting',answered:false,myScore:0,participants:0,pollTimer:null,lastCorrect:null});
+}
+
+function openJoinLiveModal() {
+  document.getElementById('jl-code').value = '';
+  const err = document.getElementById('jl-err');
+  if (err) err.style.display = 'none';
+  openModal('join-live-modal');
+  setTimeout(() => document.getElementById('jl-code')?.focus(), 80);
+}
+
+async function joinLiveQuiz() {
+  const code = document.getElementById('jl-code')?.value?.trim().toUpperCase();
+  const errEl = document.getElementById('jl-err');
+  const btn   = document.getElementById('jl-btn');
+  if (!code || code.length < 4) {
+    if (errEl) { errEl.textContent = 'Enter the room code from your teacher'; errEl.style.display = ''; }
+    return;
+  }
+  if (btn)  { btn.disabled = true; btn.textContent = 'Joining...'; }
+  if (errEl) errEl.style.display = 'none';
+  try {
+    const res = await POST('/live/' + code + '/join', {});
+    SL.roomCode  = code;
+    SL.sessionId = res.session_id;
+    SL.testTitle = res.test_title;
+    SL.status    = res.status;
+    closeModal('join-live-modal');
+    sRender('live');
+    SL.pollTimer = setInterval(slPoll, 2000);
+  } catch(e) {
+    if (errEl) { errEl.textContent = e.message; errEl.style.display = ''; }
+    if (btn)   { btn.disabled = false; btn.textContent = 'Join quiz →'; }
+  }
+}
+
+function sNavLive() {
+  document.querySelectorAll('#s-sidebar .nav-item').forEach(n => n.classList.remove('active'));
+  sRender('live');
+}
+
+// sRender already handles 'live' — add it:
+const _origSRender = sRender;
+sRender = function(v) {
+  if (v === 'live') {
+    const m = document.getElementById('s-main');
+    if (!m) return;
+    const nav = document.getElementById('s-mobile-nav');
+    if (nav) nav.style.display = 'none';
+    slRenderScreen(m);
+  } else {
+    if (v !== 'quiz' && v !== 'results') slClear();
+    _origSRender(v);
+  }
+};
+
+function slRenderScreen(m) {
+  if (!SL.roomCode) {
+    m.innerHTML = `
+<div class="topbar"><div class="topbar-title">Live quiz</div></div>
+<div class="page"><div class="info-box coral">No active session. <button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="openJoinLiveModal()">Join a quiz</button></div></div>`;
+    return;
+  }
+  if (SL.status === 'waiting') {
+    m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Live quiz — Lobby</div><div class="topbar-sub">${SL.testTitle}</div></div>
+  <div class="topbar-actions"><button class="btn btn-ghost btn-sm" onclick="slLeave()">Leave</button></div>
+</div>
+<div class="page" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center">
+  <div style="font-size:60px;margin-bottom:20px">⏳</div>
+  <div style="font-size:22px;font-weight:800;margin-bottom:8px">Waiting for teacher to start…</div>
+  <div style="font-size:14px;color:var(--text-3);margin-bottom:24px">Room: <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green)">${SL.roomCode}</span></div>
+  <div id="sl-pcount" style="font-size:14px;color:var(--text-2)">${SL.participants} student${SL.participants!==1?'s':''} in lobby</div>
+  <div class="live-dot" style="margin-top:12px"></div>
+</div>`;
+    return;
+  }
+  if (SL.status === 'active') {
+    slRenderQuestion(m);
+    return;
+  }
+  if (SL.status === 'ended') {
+    slRenderEnded(m);
+    return;
+  }
+}
+
+function slRenderQuestion(m) {
+  // Will be populated by slPoll when question data arrives
+}
+
+async function slPoll() {
+  if (!SL.roomCode) return;
+  try {
+    const data = await GET('/live/' + SL.roomCode);
+    const sess = data.session;
+    SL.participants = data.participant_count || 0;
+    SL.totalQ       = data.total_questions  || SL.totalQ;
+
+    if (sess.status === 'ended' && SL.status !== 'ended') {
+      SL.status = 'ended';
+      clearInterval(SL.pollTimer);
+      const m = document.getElementById('s-main');
+      if (m) slRenderEnded(m, data.participants);
+      return;
+    }
+
+    if (sess.status === 'waiting') {
+      const pc = document.getElementById('sl-pcount');
+      if (pc) pc.textContent = SL.participants + ' student' + (SL.participants !== 1 ? 's' : '') + ' in lobby';
+      return;
+    }
+
+    if (sess.status === 'active') {
+      const newQ = parseInt(sess.current_q);
+      SL.status = 'active';
+      if (SL.currentQ !== newQ) {
+        // New question released
+        SL.currentQ   = newQ;
+        SL.answered   = !!data.my_answer;
+        SL.lastCorrect = data.my_answer ? !!data.my_answer.is_correct : null;
+        const m = document.getElementById('s-main');
+        if (m) slShowQuestion(m, data);
+      } else if (!SL.answered && data.my_answer) {
+        // Answer was recorded — refresh to show feedback
+        SL.answered   = true;
+        SL.lastCorrect = !!data.my_answer.is_correct;
+        const m = document.getElementById('s-main');
+        if (m) slShowQuestion(m, data);
+      }
+    }
+  } catch(e) { /* keep polling */ }
+}
+
+function slShowQuestion(m, data) {
+  const q    = data.question;
+  if (!q) { m.innerHTML = panelLoader(); return; }
+  const opts = typeof q.options === 'string' ? JSON.parse(q.options) : (q.options || []);
+  const qNum = SL.currentQ + 1;
+  const pct  = data.participant_count ? Math.round(data.answered_count / data.participant_count * 100) : 0;
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">${SL.testTitle}</div>
+  <div class="topbar-sub">Question ${qNum} of ${SL.totalQ} · <span class="live-dot"></span> Live</div></div>
+  <div class="topbar-actions"><button class="btn btn-ghost btn-sm" onclick="slLeave()">Leave</button></div>
+</div>
+<div style="background:var(--bg)"><div class="quiz-shell" style="max-width:640px">
+  <div class="quiz-header" style="margin-bottom:16px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <span class="badge badge-${sub2badge(q.sub_strand)}">${q.sub_strand}</span>
+      <span class="badge badge-gray">${q.marks} mark${q.marks!==1?'s':''}</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${Math.round(qNum/SL.totalQ*100)}%"></div></div>
+    <div style="font-size:12px;color:var(--text-3);margin-top:6px;text-align:right">${pct}% of class answered</div>
+  </div>
+  <div class="question-card">
+    <div class="q-text">${q.question_text}</div>
+    ${SL.answered ? slAnsweredHTML(opts, data.my_answer) : `
+    <div class="q-options" id="sl-opts">
+      ${opts.map(o => `
+      <button class="q-option" onclick="slAnswer('${o.label}')">
+        <div class="opt-letter">${o.label}</div>
+        <div class="opt-text">${o.text}</div>
+      </button>`).join('')}
+    </div>`}
+  </div>
+  ${SL.answered ? `
+  <div class="card card-sm" style="text-align:center;margin-top:12px">
+    <div style="font-size:14px;color:var(--text-3)">Waiting for teacher to advance…<div class="live-dot" style="display:inline-block;margin-left:6px"></div></div>
+    <div style="font-size:13px;color:var(--text-2);margin-top:4px">Your score: <b style="color:var(--green)">${SL.myScore}</b> pts</div>
+  </div>` : ''}
+</div></div>`;
+}
+
+function slAnsweredHTML(opts, myAnswer) {
+  const myOpt  = myAnswer?.selected_opt;
+  const correct = myAnswer?.is_correct;
+  return `<div class="q-options">
+    ${opts.map(o => {
+      const isMe = o.label === myOpt;
+      const cls  = isMe ? (correct ? 'correct' : 'wrong') : '';
+      return `<div class="q-option ${cls}" style="cursor:default">
+        <div class="opt-letter">${o.label}</div>
+        <div class="opt-text">${o.text}</div>
+        ${isMe ? `<div style="margin-left:auto;font-size:14px">${correct?'✓':'✗'}</div>` : ''}
+      </div>`;
+    }).join('')}
+  </div>
+  <div class="info-box ${correct?'green':'coral'}" style="margin-top:14px;text-align:center;font-size:15px;font-weight:700">
+    ${correct ? '✓ Correct! +' + (myAnswer?.marks||1) + ' point' + ((myAnswer?.marks||1)!==1?'s':'') : '✗ Incorrect'}
+  </div>`;
+}
+
+async function slAnswer(label) {
+  if (SL.answered) return;
+  // Optimistically disable buttons
+  document.querySelectorAll('#sl-opts .q-option').forEach(b => b.disabled = true);
+  try {
+    const res = await POST('/live/' + SL.roomCode + '/answer', { selected: label, q_index: SL.currentQ });
+    SL.answered    = true;
+    SL.lastCorrect = res.is_correct;
+    if (res.is_correct) SL.myScore += (res.marks || 1);
+    // Re-render with feedback — next poll will refresh properly
+    const data = await GET('/live/' + SL.roomCode);
+    const m = document.getElementById('s-main');
+    if (m) slShowQuestion(m, data);
+  } catch(e) {
+    notify('Could not submit answer: ' + e.message, 'error');
+    document.querySelectorAll('#sl-opts .q-option').forEach(b => b.disabled = false);
+  }
+}
+
+function slRenderEnded(m, participants) {
+  clearInterval(SL.pollTimer);
+  const lb = participants || SL.participants || [];
+  m.innerHTML = `
+<div class="topbar"><div class="topbar-title">Quiz finished!</div>
+  <div class="topbar-actions"><button class="btn btn-primary" onclick="slLeave()">← Dashboard</button></div>
+</div>
+<div class="page" style="max-width:560px;margin:0 auto">
+  <div class="results-hero" style="margin-bottom:20px">
+    <div style="font-size:48px;margin-bottom:12px">🏆</div>
+    <div style="font-size:28px;font-weight:800;margin-bottom:4px">${SL.testTitle}</div>
+    <div style="font-size:15px;color:var(--text-3)">Live quiz complete</div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:14px">Final leaderboard</div>
+    ${Array.isArray(lb) && lb.length ? lb.map((p, i) => `
+    <div class="leaderboard-row" style="background:${i===0?'var(--green-lt)':i===1?'var(--amber-lt)':i===2?'var(--coral-lt)':'var(--bg)'}">
+      <div class="lb-rank" style="color:${i===0?'var(--green)':i===1?'var(--amber)':i===2?'var(--coral)':'var(--text-3)'}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+      <div class="student-avatar" style="background:${p.avatar_color||'var(--teal)'};width:28px;height:28px;font-size:10px">${((p.first_name||'?')[0]+(p.last_name||'?')[0]).toUpperCase()}</div>
+      <div style="font-size:13px;font-weight:${p.student_id===(CURRENT_USER?.id)?800:600};flex:1">${p.first_name} ${p.last_name}${p.student_id===(CURRENT_USER?.id)?' (you)':''}</div>
+      <div class="lb-bar"><div class="lb-fill" style="width:${SL.totalQ?Math.round(p.score/SL.totalQ*100):0}%"></div></div>
+      <div style="font-size:14px;font-weight:800;color:${i===0?'var(--green)':'var(--text-2)'}">${p.score}</div>
+    </div>`).join('') : '<div style="color:var(--text-3);font-size:13px;padding:12px 0">No leaderboard data available</div>'}
+  </div>
+</div>`;
+  slClear();
+}
+
+function slLeave() {
+  slClear();
+  sNav('dashboard', null);
 }
 </script>
 </body>
