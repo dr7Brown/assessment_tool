@@ -44,10 +44,12 @@ CREATE TABLE users (
     last_login    TIMESTAMP NULL,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    must_change_password TINYINT(1) NOT NULL DEFAULT 0,
     FOREIGN KEY (school_id) REFERENCES schools(id) ON DELETE CASCADE,
     INDEX idx_school_role (school_id, role),
     INDEX idx_email (email)
 ) ENGINE=InnoDB;
+--     try { DB::execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password TINYINT(1) NOT NULL DEFAULT 0"); } catch(Throwable $e) {}
 
 -- ============================================================
 -- SESSIONS  (API tokens / remember-me)

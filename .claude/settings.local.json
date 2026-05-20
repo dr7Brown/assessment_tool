@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -l \"c:/xampp/htdocs/aceict assessments/api/index.php\")",
+      "PowerShell(& \"C:\\\\xampp\\\\php\\\\php.exe\" -l \"C:\\\\xampp\\\\htdocs\\\\aceict assessments\\\\api\\\\index.php\" 2>&1)",
+      "PowerShell(& \"C:\\\\xampp\\\\php\\\\php.exe\" -r \"echo ini_get\\('opcache.enable'\\) ? 'OPCache ON' : 'OPCache OFF';\" 2>&1)",
+      "PowerShell($f = Get-Item \"C:\\\\xampp\\\\htdocs\\\\aceict assessments\\\\api\\\\index.php\"; Write-Host \"Modified: $\\($f.LastWriteTime\\)   Size: $\\($f.Length\\) bytes\")",
+      "Bash(curl -s -X POST \"http://localhost/apps/aceict/api/v1/health\" -H \"Content-Type: application/json\")",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost/apps/aceict/api/v1/health\" -Method GET -ErrorAction Stop; $r.Content } catch { \"Error: $_\" })",
+      "PowerShell(& \"C:\\\\xampp\\\\php\\\\php.exe\" -l \"C:\\\\xampp\\\\htdocs\\\\aceict assessments\\\\api\\\\index.php\")"
+    ]
+  }
+}

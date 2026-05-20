@@ -4,3 +4,18 @@ intitle:"index of" [chicago fire season 14] -inurl:(jsp|pl|php|html|aspx|htm|cf|
 
 intitle:"index of" [chicago fire season 14] (mp4|mkv|avi)
 indexof:movies chicago fire season 14
+
+timer for live quiz should show for both instructor and student dashboard
+learner page stacked on loading quiz, students dont see the live quiz question 
+
+i want admin to be able to create and edit a class
+
+admin should assign classes to teachers. Teachers should only have access to classes they are assigned to.
+
+Admin should create, edit and delete departments, then he add teachers to departments they belong. a teacher can only belong to one departments.
+one class could be assigned to multiple teachers because of subject teaching. 
+
+
+
+
+

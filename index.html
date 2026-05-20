@@ -13,7 +13,7 @@
 body{font-family:'Syne',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;overflow-x:hidden;}
 button{font-family:inherit;cursor:pointer;border:none;}input,select,textarea{font-family:inherit;}a{text-decoration:none;color:inherit;}
 .screen{display:none;min-height:100vh;}.screen.active{display:flex;flex-direction:column;}
-#landing{background:var(--green-dk);display:flex;flex-direction:column;min-height:100vh;}
+#landing{background:var(--green-dk);min-height:100vh;}
 .landing-nav{display:flex;align-items:center;justify-content:space-between;padding:20px 5vw;}
 .logo{display:flex;align-items:center;gap:10px;}
 .logo-mark{width:40px;height:40px;border-radius:10px;background:var(--green-mid);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:var(--green-dk);}
@@ -189,8 +189,49 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 .mobile-nav-badge{position:absolute;top:-2px;right:-4px;background:var(--coral);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:8px;min-width:14px;text-align:center;}
 .mn-wrap{position:relative;display:flex;align-items:center;justify-content:center;}
 @media(max-width:900px){.mobile-nav{display:flex;}.page{padding-bottom:80px;}.quiz-shell{padding-bottom:80px;}}
-@media(max-width:900px){.app-shell{grid-template-columns:1fr;}.sidebar{display:none;}.stats-row{grid-template-columns:1fr 1fr;}.grid-2{grid-template-columns:1fr;}.page{padding:20px 16px;}.topbar{padding:14px 16px;}}
+@media(max-width:900px){
+  .app-shell{grid-template-columns:1fr;}
+  .sidebar{
+    display:flex !important;          /* override display:none — drawer is always in DOM */
+    position:fixed;top:0;left:0;
+    height:100vh;width:260px;
+    z-index:500;
+    transform:translateX(-100%);
+    transition:transform .25s cubic-bezier(.4,0,.2,1);
+    box-shadow:4px 0 24px rgba(0,0,0,.18);
+  }
+  .sidebar.mobile-open{transform:translateX(0);}
+  .stats-row{grid-template-columns:1fr 1fr;}
+  .grid-2{grid-template-columns:1fr;}
+  .page{padding:20px 16px;}
+  .topbar{padding:14px 16px;padding-left:58px;}
+}
 @media(max-width:600px){.hero-roles{flex-direction:column;}.stats-row{grid-template-columns:1fr;}.grid-3{grid-template-columns:1fr 1fr;}.qb-type-grid{grid-template-columns:1fr 1fr;}}
+
+/* ── Mobile sidebar toggle button & backdrop ── */
+.sidebar-toggle{
+  display:none;position:fixed;top:12px;left:12px;z-index:600;
+  width:36px;height:36px;border-radius:9px;
+  background:var(--surface);border:1px solid var(--border-2);
+  font-size:18px;line-height:1;cursor:pointer;
+  align-items:center;justify-content:center;
+  box-shadow:0 1px 6px rgba(0,0,0,.1);font-family:inherit;color:var(--text);
+}
+.sidebar-backdrop{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.45);z-index:499;
+}
+.sidebar-backdrop.open{display:block;}
+/* Close (✕) button inside sidebar — only visible on mobile */
+.sidebar-close{
+  display:none;margin-left:auto;
+  background:none;border:none;font-size:20px;cursor:pointer;
+  color:var(--text-2);padding:4px;border-radius:6px;font-family:inherit;
+}
+@media(max-width:900px){
+  .sidebar-toggle{display:flex;}
+  .sidebar-close{display:block;}
+}
 
 </style>
 </head>
@@ -224,9 +265,14 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 </div>
 
 <div class="screen" id="student-app">
+  <button class="sidebar-toggle" onclick="openDrawer('s')" aria-label="Menu">&#9776;</button>
+  <div class="sidebar-backdrop" id="s-bd" onclick="closeDrawer('s')"></div>
   <div class="app-shell">
     <aside class="sidebar" id="s-sidebar">
-      <div class="sidebar-logo"><div class="logo-mark">A</div><div class="logo-name">Ace<span style="color:var(--green-mid)">ICT</span></div></div>
+      <div class="sidebar-logo">
+        <div class="logo-mark">A</div><div class="logo-name">Ace<span style="color:var(--green-mid)">ICT</span></div>
+        <button class="sidebar-close" onclick="closeDrawer('s')" aria-label="Close menu">&#x2715;</button>
+      </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">Overview</div>
         <div class="nav-item active" onclick="sNav('dashboard',this)"><div class="ni-icon">📊</div>Dashboard</div>
@@ -242,7 +288,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="user-chip">
           <div class="user-avatar" style="background:var(--teal)">KM</div>
           <div><div class="user-name">Kofi Mensah</div><div class="user-role">SHS2A · Student</div></div>
-          <button class="logout-btn" onclick="showLanding()">←</button>
+          <button class="logout-btn" onclick="doLogout()" title="Sign out">←</button>
         </div>
       </div>
     </aside>
@@ -251,9 +297,14 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 </div>
 
 <div class="screen" id="teacher-app">
+  <button class="sidebar-toggle" onclick="openDrawer('t')" aria-label="Menu">&#9776;</button>
+  <div class="sidebar-backdrop" id="t-bd" onclick="closeDrawer('t')"></div>
   <div class="app-shell">
     <aside class="sidebar" id="t-sidebar">
-      <div class="sidebar-logo"><div class="logo-mark">A</div><div class="logo-name">Ace<span style="color:var(--green-mid)">ICT</span></div></div>
+      <div class="sidebar-logo">
+        <div class="logo-mark">A</div><div class="logo-name">Ace<span style="color:var(--green-mid)">ICT</span></div>
+        <button class="sidebar-close" onclick="closeDrawer('t')" aria-label="Close menu">&#x2715;</button>
+      </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">Teaching</div>
         <div class="nav-item active" onclick="tNav('dashboard',this)"><div class="ni-icon">📊</div>Dashboard</div>
@@ -271,7 +322,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="user-chip">
           <div class="user-avatar" style="background:var(--amber)">AK</div>
           <div><div class="user-name">Ama Kyereh</div><div class="user-role">ICT Teacher</div></div>
-          <button class="logout-btn" onclick="showLanding()">←</button>
+          <button class="logout-btn" onclick="doLogout()" title="Sign out">←</button>
         </div>
       </div>
     </aside>
@@ -280,13 +331,19 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 </div>
 
 <div class="screen" id="admin-app">
+  <button class="sidebar-toggle" onclick="openDrawer('a')" aria-label="Menu">&#9776;</button>
+  <div class="sidebar-backdrop" id="a-bd" onclick="closeDrawer('a')"></div>
   <div class="app-shell">
     <aside class="sidebar" id="a-sidebar">
-      <div class="sidebar-logo"><div class="logo-mark">A</div><div class="logo-name">Ace<span style="color:var(--green-mid)">ICT</span></div></div>
+      <div class="sidebar-logo">
+        <div class="logo-mark">A</div><div class="logo-name">Ace<span style="color:var(--green-mid)">ICT</span></div>
+        <button class="sidebar-close" onclick="closeDrawer('a')" aria-label="Close menu">&#x2715;</button>
+      </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">School</div>
         <div class="nav-item active" onclick="aNav('overview',this)"><div class="ni-icon">🏫</div>School overview</div>
-        <div class="nav-item" onclick="aNav('departments',this)"><div class="ni-icon">📚</div>Departments</div>
+        <div class="nav-item" onclick="aNav('departments',this)"><div class="ni-icon">🏢</div>Departments</div>
+        <div class="nav-item" onclick="aNav('classes',this)"><div class="ni-icon">🗂️</div>Classes</div>
         <div class="nav-item" onclick="aNav('reports',this)"><div class="ni-icon">📊</div>Reports</div>
       </div>
       <div class="sidebar-section">
@@ -299,7 +356,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="user-chip">
           <div class="user-avatar" style="background:var(--blue)">PB</div>
           <div><div class="user-name">Prof. Baah</div><div class="user-role">Headmaster</div></div>
-          <button class="logout-btn" onclick="showLanding()">←</button>
+          <button class="logout-btn" onclick="doLogout()" title="Sign out">←</button>
         </div>
       </div>
     </aside>
@@ -599,7 +656,14 @@ async function doLogin(email, password, role) {
     localStorage.setItem('aceict_user', JSON.stringify(res.user));
 
     document.getElementById('login-modal-bg')?.remove();
-    goApp(res.user.role);
+    if (res.user.must_change_password) {
+      // Show app shell behind the modal so layout is ready
+      showScreen(res.user.role + '-app');
+      updateSidebarUser(res.user.role);
+      showForcePasswordChange(res.user.role);
+    } else {
+      goApp(res.user.role);
+    }
   } catch (e) {
     throw e;
   }
@@ -613,21 +677,117 @@ function doLogout() {
   showLanding();
 }
 
+// ── Force password change (first login) ───────────────────────
+function showForcePasswordChange(role) {
+  document.getElementById('force-pw-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'force-pw-modal';
+  overlay.className = 'modal-bg open';
+  overlay.style.zIndex = '9999';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header" style="border-bottom-color:var(--amber)">
+        <div>
+          <div class="modal-title" style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:20px">🔒</span> Set your password
+          </div>
+          <div style="font-size:12px;color:var(--text-3);margin-top:2px">
+            Your account was created with a temporary password — please choose a secure one before continuing
+          </div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="info-box amber" style="margin-bottom:16px">
+          For your security, you must set a personal password before accessing the system. This only happens once.
+        </div>
+        <div id="fpc-err" class="info-box coral" style="display:none;margin-bottom:12px"></div>
+        <div class="form-group">
+          <label class="form-label">New password</label>
+          <input class="form-input" id="fpc-new" type="password" placeholder="Minimum 8 characters"
+            oninput="document.getElementById('fpc-err').style.display='none'">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm password</label>
+          <input class="form-input" id="fpc-confirm" type="password" placeholder="Repeat your new password"
+            onkeydown="if(event.key==='Enter')submitForcePasswordChange('${role}')">
+        </div>
+      </div>
+      <div class="modal-footer" style="flex-direction:column;gap:8px">
+        <button class="btn btn-primary" id="fpc-btn" style="width:100%;justify-content:center;padding:11px"
+          onclick="submitForcePasswordChange('${role}')">
+          Set password &amp; continue →
+        </button>
+        <div style="font-size:12px;color:var(--text-3);text-align:center">
+          You cannot access the app until this is done
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  // No backdrop click — blocking modal
+  setTimeout(() => document.getElementById('fpc-new')?.focus(), 80);
+}
+
+async function submitForcePasswordChange(role) {
+  const newPw   = document.getElementById('fpc-new')?.value || '';
+  const confirm = document.getElementById('fpc-confirm')?.value || '';
+  const errEl   = document.getElementById('fpc-err');
+  const btn     = document.getElementById('fpc-btn');
+
+  if (newPw.length < 8) {
+    errEl.textContent = 'Password must be at least 8 characters'; errEl.style.display = ''; return;
+  }
+  if (newPw !== confirm) {
+    errEl.textContent = 'Passwords do not match'; errEl.style.display = ''; return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  errEl.style.display = 'none';
+
+  try {
+    await POST('/auth/force-change-password', { new_password: newPw });
+    // Clear the flag locally so a page refresh doesn't re-show the modal
+    if (CURRENT_USER) {
+      CURRENT_USER.must_change_password = 0;
+      localStorage.setItem('aceict_user', JSON.stringify(CURRENT_USER));
+    }
+    document.getElementById('force-pw-modal')?.remove();
+    notify('Password set! Welcome to AceICT.', 'success');
+    goApp(role);
+  } catch(e) {
+    errEl.textContent = e.message || 'Could not save password. Try again.';
+    errEl.style.display = '';
+    btn.disabled = false;
+    btn.textContent = 'Set password & continue →';
+  }
+}
+
 function tryRestoreSession() {
   if (AUTH_TOKEN && CURRENT_USER) {
-    // Verify token still valid
     GET('/auth/me').then(user => {
+      hideLoader();
       if (user) {
         CURRENT_USER = user;
         localStorage.setItem('aceict_user', JSON.stringify(user));
-        goApp(user.role);
+        if (user.must_change_password) {
+          showScreen(user.role + '-app');
+          updateSidebarUser(user.role);
+          showForcePasswordChange(user.role);
+        } else {
+          goApp(user.role);
+        }
       } else {
         doLogout();
       }
     }).catch(() => {
-      // Backend down but we have a token — use mock mode
-      if (USE_MOCK) goApp(CURRENT_USER.role);
-      else doLogout();
+      hideLoader();
+      // Network down — use cached user; still enforce password change if flagged
+      if (CURRENT_USER?.must_change_password) {
+        showScreen(CURRENT_USER.role + '-app');
+        updateSidebarUser(CURRENT_USER.role);
+        showForcePasswordChange(CURRENT_USER.role);
+      } else {
+        goApp(CURRENT_USER.role);
+      }
     });
   }
 }
@@ -1180,7 +1340,30 @@ document.addEventListener('click',()=>{
 // ROUTING
 // ════════════════════════════════════════════════════════════
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id)?.classList.add('active');}
-function showLanding(){showScreen('landing');}
+
+function showLanding() {
+  // Guard: if the user is still authenticated, never show the landing — send them to their dashboard
+  if (AUTH_TOKEN && CURRENT_USER) {
+    goApp(CURRENT_USER.role);
+    return;
+  }
+  showScreen('landing');
+}
+
+// ── Mobile sidebar drawer ──────────────────────────────────────
+function openDrawer(prefix) {
+  document.getElementById(prefix + '-sidebar')?.classList.add('mobile-open');
+  document.getElementById(prefix + '-bd')?.classList.add('open');
+}
+function closeDrawer(prefix) {
+  document.getElementById(prefix + '-sidebar')?.classList.remove('mobile-open');
+  document.getElementById(prefix + '-bd')?.classList.remove('open');
+}
+// Close whichever drawer is open (called from nav functions on mobile)
+function closeAnyDrawer() {
+  if (window.innerWidth > 900) return;
+  ['s','t','a'].forEach(p => closeDrawer(p));
+}
 
 
 
@@ -1202,6 +1385,7 @@ function setupLandingClicks() {
 // STUDENT APP
 // ════════════════════════════════════════════════════════════
 function sNav(v,el){
+  closeAnyDrawer();
   if(el){document.querySelectorAll('#s-sidebar .nav-item').forEach(n=>n.classList.remove('active'));el.classList.add('active');}
   sRender(v);
 }
@@ -1887,6 +2071,7 @@ function showResults(){
 // TEACHER APP
 // ════════════════════════════════════════════════════════════
 function tNav(v,el){
+  closeAnyDrawer();
   if(el){document.querySelectorAll('#t-sidebar .nav-item').forEach(n=>n.classList.remove('active'));el.classList.add('active');}
   tRender(v);
 }
@@ -2266,10 +2451,45 @@ async function loadTCreate(m, prefill) {
         <div class="form-group"><label class="form-label">Title</label>
           <input class="form-input" id="new-test-title" value="${(t.title||'New Assessment').replace(/"/g,'&quot;')}">
         </div>
-        <div class="form-group"><label class="form-label">Assign to class</label>
-          <select class="form-select" id="new-test-class">
-            ${(classes||[]).map(c => `<option value="${c.id}" ${c.id==selClass?'selected':''}>${c.name}</option>`).join('') || '<option value="1">SHS2A</option><option value="2">SHS2B</option>'}
-          </select>
+        <div class="form-group">
+          <label class="form-label">Assign to classes</label>
+          ${(() => {
+            if (!classes?.length) return '<div class="info-box amber">No classes found. Create classes in Admin → Classes first.</div>';
+            // Group by year group
+            const byYear = {};
+            classes.forEach(c => { if (!byYear[c.year_group]) byYear[c.year_group] = []; byYear[c.year_group].push(c); });
+            const preIds = new Set(prefill?.test?.class_ids || []);
+            const rows = Object.entries(byYear).sort((a,b)=>a[0]-b[0]).map(([yr, yrCls]) => `
+              <div style="margin-bottom:8px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;font-size:12px;font-weight:700;color:var(--text-2)">
+                  <input type="checkbox" class="cls-yr" data-year="${yr}"
+                    onchange="toggleYearClasses('${yr}',this.checked)"
+                    style="width:15px;height:15px;accent-color:var(--green);cursor:pointer">
+                  Year ${yr} — all classes
+                </label>
+                ${yrCls.map(c => `
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:3px 0 3px 22px;font-size:13px" title="${c.name}">
+                  <input type="checkbox" class="cls-chk" value="${c.id}" data-year="${yr}"
+                    ${preIds.has(c.id)?'checked':''}
+                    onchange="updateClsState()"
+                    style="width:14px;height:14px;accent-color:var(--green);cursor:pointer">
+                  <span>${c.name}</span>
+                  <span style="font-size:11px;color:var(--text-3)">(Year ${yr} · ${c.student_count||0} students)</span>
+                </label>`).join('')}
+              </div>`).join('');
+            return `
+            <div style="border:1px solid var(--border-2);border-radius:var(--radius-sm);overflow:hidden">
+              <div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700">
+                  <input type="checkbox" id="cls-all" onchange="toggleAllClasses(this.checked)"
+                    style="width:15px;height:15px;accent-color:var(--green);cursor:pointer">
+                  All classes
+                </label>
+              </div>
+              <div style="max-height:170px;overflow-y:auto;padding:10px 12px 4px">${rows}</div>
+            </div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:5px" id="cls-summary"></div>`;
+          })()}
         </div>
         <div class="form-group"><label class="form-label">Type</label>
           <select class="form-select" id="new-test-type">
@@ -2323,7 +2543,10 @@ async function loadTCreate(m, prefill) {
 </div>`;
 
   renderTestQList();
-  setTimeout(() => refreshStrandSelect('ai-year','ai-strand','ai-sub'), 50);
+  setTimeout(() => {
+    refreshStrandSelect('ai-year','ai-strand','ai-sub');
+    updateClsState(); // initialise the "All classes" checkbox state + summary line
+  }, 50);
 }
 
 
@@ -2332,43 +2555,86 @@ async function loadTCreate(m, prefill) {
 
 // ── Live quiz state ───────────────────────────────────────────
 const LS = {
-  phase: 'setup',   // setup | lobby | question | reveal | ended
-  roomCode: null,
-  sessionId: null,
-  testTitle: '',
-  totalQ: 0,
-  currentQ: -1,
-  answeredCount: 0,
-  participants: [],
-  question: null,
-  pollTimer: null,
-  myMainEl: null,
+  phase: 'setup',
+  roomCode: null, sessionId: null, testTitle: '',
+  totalQ: 0, currentQ: -1, answeredCount: 0,
+  participants: [], question: null,
+  pollTimer: null, timerInterval: null,
+  startedAt: null, timeLimitMin: 0,
+  elapsedBase: 0, elapsedBaseAt: 0, myMainEl: null,
 };
 
 function lsClear() {
   clearInterval(LS.pollTimer);
-  Object.assign(LS, {phase:'setup',roomCode:null,sessionId:null,testTitle:'',totalQ:0,currentQ:-1,answeredCount:0,participants:[],question:null,pollTimer:null});
+  clearInterval(LS.timerInterval);
+  Object.assign(LS, {phase:'setup',roomCode:null,sessionId:null,testTitle:'',totalQ:0,currentQ:-1,answeredCount:0,participants:[],question:null,pollTimer:null,timerInterval:null,startedAt:null,timeLimitMin:0,elapsedBase:0,elapsedBaseAt:0});
+  // Note: localStorage NOT wiped here — only wiped when session actually ends
+}
+function lsEnd() {
+  localStorage.removeItem('aceict_live_t');
+  lsClear();
 }
 
 async function loadTLive(m) {
   lsClear();
   LS.myMainEl = m;
+
+  // Always render the persistent shell first (ids lv-sub, lv-actions, lv-body exist immediately)
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Live quiz</div><div class="topbar-sub" id="lv-sub">Loading…</div></div>
+  <div class="topbar-actions" id="lv-actions"></div>
+</div>
+<div class="page"><div id="lv-body">${panelLoader()}</div></div>`;
+
+  // ── Try to restore a session that survived a page refresh ──────
+  const saved = localStorage.getItem('aceict_live_t');
+  if (saved) {
+    try {
+      const sv = JSON.parse(saved);
+      if (sv.roomCode) {
+        const data = await GET('/live/' + sv.roomCode);
+        const sess = data?.session;
+        if (sess && sess.status !== 'ended') {
+          // Session still alive on the server — restore it
+          LS.roomCode      = sv.roomCode;
+          LS.sessionId     = sv.sessionId || sess.id;
+          LS.testTitle     = sess.test_title || sv.testTitle;
+          LS.totalQ        = data.total_questions || sv.totalQ || 0;
+          LS.participants  = data.participants || [];
+          LS.timeLimitMin  = parseInt(sess.time_limit_min) || 0;
+          LS.startedAt     = sess.started_at || null;
+          LS.elapsedBase   = parseInt(data.elapsed_seconds) || 0;
+          LS.elapsedBaseAt = Date.now();
+          if (sess.status === 'waiting') {
+            LS.phase = 'lobby';
+            lvRenderLobby();
+          } else {
+            LS.phase = 'active';
+            lvRenderActive(data);
+          }
+          LS.pollTimer = setInterval(lvPollTeacher, 2500);
+          notify('Session restored: ' + LS.testTitle, 'success');
+          return;
+        }
+      }
+    } catch(e) { /* session gone — fall through to setup */ }
+    localStorage.removeItem('aceict_live_t');
+  }
+
+  // ── No saved session — show test-selection setup ───────────────
   let tests = null;
   try { tests = await GET('/tests'); } catch(e) {}
   const published = (tests||[]).filter(t => t.status === 'published');
 
-  m.innerHTML = `
-<div class="topbar">
-  <div><div class="topbar-title">Live quiz</div><div class="topbar-sub" id="lv-sub">Select a test and launch</div></div>
-  <div class="topbar-actions" id="lv-actions"></div>
-</div>
-<div class="page">
-  <div id="lv-body">
+  document.getElementById('lv-sub').textContent = 'Select a test and launch';
+  document.getElementById('lv-body').innerHTML = `
     <div class="grid-2">
       <div class="card">
         <div class="card-title" style="margin-bottom:14px">Select test to run live</div>
         ${published.length ? published.map(t => `
-        <div class="gen-q-card" id="lt-${t.id}" style="cursor:pointer;margin-bottom:6px" onclick="lvSelectTest(${t.id},'${t.title.replace(/'/g,"\\'").replace(/"/g,"&quot;")}',${t.question_count||0},this)">
+        <div class="gen-q-card" id="lt-${t.id}" style="cursor:pointer;margin-bottom:6px"
+          onclick="lvSelectTest(${t.id},'${t.title.replace(/'/g,"\\'").replace(/"/g,"&quot;")}',${t.question_count||0},this)">
           <div style="font-weight:700;font-size:14px;margin-bottom:3px">${t.title}</div>
           <div style="font-size:12px;color:var(--text-3)">${t.type} · ${t.question_count||'?'} questions</div>
         </div>`).join('') : '<div class="info-box amber">No published tests. Publish a test first.</div>'}
@@ -2378,9 +2644,7 @@ async function loadTLive(m) {
         <button class="btn btn-primary" id="lv-launch-btn" style="width:100%;justify-content:center;padding:12px;font-size:15px" disabled onclick="lvLaunch()">⚡ Launch Live Quiz</button>
         <div style="font-size:12px;color:var(--text-3);margin-top:12px">Students join from their dashboard using the room code</div>
       </div>
-    </div>
-  </div>
-</div>`;
+    </div>`;
 }
 
 function lvSelectTest(id, title, qCount, el) {
@@ -2402,6 +2666,11 @@ async function lvLaunch() {
     LS.testTitle = res.test_title;
     LS.totalQ    = res.question_count;
     LS.phase     = 'lobby';
+    // Persist so a page refresh can restore the session
+    localStorage.setItem('aceict_live_t', JSON.stringify({
+      roomCode: LS.roomCode, sessionId: LS.sessionId,
+      testTitle: LS.testTitle, totalQ: LS.totalQ,
+    }));
     lvRenderLobby();
     LS.pollTimer = setInterval(lvPollTeacher, 3000);
   } catch(e) {
@@ -2435,41 +2704,67 @@ function lvRenderLobby() {
   </div>`;
 }
 
-function lvRenderQuestion(data) {
-  const q    = data.question;
-  const qNum = (LS.currentQ + 1);
-  const opts = typeof q.options === 'string' ? JSON.parse(q.options) : (q.options || []);
-  document.getElementById('lv-sub').textContent = `Question ${qNum} of ${LS.totalQ}`;
+// Teacher: all-questions overview (replaces single-question view)
+function lvRenderActive(data) {
+  const qs      = data.questions || [];
+  const pc      = data.participant_count || 0;
+  const total   = data.total_possible   || (pc * qs.length) || 1;
+  const answered= data.answered_count   || 0;
+  const pct     = total ? Math.round(answered / total * 100) : 0;
+  const counts  = data.answer_counts    || {};
+
+  // Capture server-side elapsed baseline + time limit, then start the clock
+  if (data.session?.status === 'active') {
+    LS.startedAt    = data.session.started_at || null;
+    LS.timeLimitMin = parseInt(data.session.time_limit_min) || 0;
+    LS.elapsedBase  = parseInt(data.elapsed_seconds) || 0;
+    LS.elapsedBaseAt= Date.now();
+    lvStartTimer();
+  }
+
+  document.getElementById('lv-sub').textContent =
+    `${pc} student${pc!==1?'s':''} · ${pct}% complete`;
+
+  // Compute correct initial timer text so it never flashes 00:00
+  const _lvLimitSecs = LS.timeLimitMin * 60;
+  const _lvInitRemaining = _lvLimitSecs > 0 ? Math.max(0, _lvLimitSecs - (LS.elapsedBase || 0)) : -1;
+  const _lvTimerHTML = _lvInitRemaining >= 0
+    ? `<div class="quiz-timer${_lvInitRemaining <= 300 ? ' warning' : ''}" id="lv-timer" style="font-size:18px;letter-spacing:2px">${fmtTime(_lvInitRemaining)}</div>`
+    : ''; // no timer when no time limit
+
   document.getElementById('lv-actions').innerHTML =
-    `<div style="font-size:13px;color:var(--text-2);font-weight:600" id="lv-ans-count">${data.answered_count}/${data.participant_count} answered</div>
-     ${qNum < LS.totalQ
-       ? `<button class="btn btn-primary" onclick="lvNext()">Next question →</button>`
-       : `<button class="btn btn-primary" onclick="lvNext()">End & show results →</button>`}
-     <button class="btn btn-ghost btn-sm" onclick="lvEnd()">End quiz</button>`;
+    `${_lvTimerHTML}
+     <div style="font-size:13px;color:var(--text-2);font-weight:600" id="lv-ans-count">${answered}/${total} answers in</div>
+     <button class="btn btn-danger btn-sm" onclick="lvEnd()">End quiz</button>`;
+
   document.getElementById('lv-body').innerHTML = `
   <div class="grid-2">
     <div>
       <div class="card" style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <span class="badge badge-${sub2badge(q.sub_strand)}">${q.sub_strand}</span>
-          <span style="font-size:13px;font-weight:700;color:var(--green)" id="lv-ans-pct">${data.participant_count ? Math.round(data.answered_count/data.participant_count*100) : 0}% answered</span>
-        </div>
-        <div style="font-size:18px;line-height:1.6;font-family:'Lora',serif;margin-bottom:20px">${q.question_text}</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          ${opts.map(o => `
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg)">
-            <div style="width:28px;height:28px;border-radius:6px;background:var(--surface);border:1px solid var(--border-2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">${o.label}</div>
-            <div style="flex:1;font-size:14px">${o.text}</div>
-          </div>`).join('')}
-        </div>
-      </div>
-      <div class="card card-sm">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:13px;font-weight:600">Responses</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:14px;font-weight:700">Overall progress</span>
           <div style="display:flex;align-items:center;gap:6px"><div class="live-dot"></div><span style="font-size:12px;color:var(--text-3)">Live</span></div>
         </div>
-        <div class="progress-bar" style="margin-top:8px;height:10px">
-          <div class="progress-fill" id="lv-prog" style="width:${data.participant_count ? Math.round(data.answered_count/data.participant_count*100) : 0}%"></div>
+        <div class="progress-bar" style="height:10px;margin-bottom:6px">
+          <div class="progress-fill" id="lv-prog" style="width:${pct}%;transition:width .6s"></div>
+        </div>
+        <div style="font-size:12px;color:var(--text-3)">${pct}% of all answers submitted</div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="margin-bottom:12px">Questions (${qs.length})</div>
+        <div style="display:flex;flex-direction:column;gap:0">
+          ${qs.map((q, i) => {
+            const qAns = parseInt(counts[i] || 0);
+            const qPct = pc ? Math.round(qAns / pc * 100) : 0;
+            return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+              <div style="font-size:11px;font-weight:800;color:var(--text-3);width:22px;flex-shrink:0">${i+1}</div>
+              <div style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-2)">${(q.question_text||'').substring(0,70)}${(q.question_text||'').length>70?'…':''}</div>
+              <div id="lv-qcnt-${i}" style="font-size:12px;color:var(--text-3);flex-shrink:0;min-width:40px;text-align:right">${qAns}/${pc}</div>
+              <div style="width:56px;height:5px;border-radius:3px;background:var(--border);overflow:hidden;flex-shrink:0">
+                <div id="lv-qbar-${i}" style="height:100%;border-radius:3px;background:${qPct>=80?'var(--green)':qPct>=40?'var(--amber)':'var(--coral)'};width:${qPct}%;transition:width .5s"></div>
+              </div>
+            </div>`;
+          }).join('')}
         </div>
       </div>
     </div>
@@ -2481,7 +2776,28 @@ function lvRenderQuestion(data) {
   lvRenderLB(data.participants);
 }
 
+function lvStartTimer() {
+  clearInterval(LS.timerInterval);
+  if (!LS.timeLimitMin) return; // no limit — nothing to count down
+  const limitSecs = LS.timeLimitMin * 60;
+  LS.timerInterval = setInterval(() => {
+    const el = document.getElementById('lv-timer');
+    if (!el) { clearInterval(LS.timerInterval); return; }
+    const elapsed   = LS.elapsedBase + Math.floor((Date.now() - LS.elapsedBaseAt) / 1000);
+    const remaining = Math.max(0, limitSecs - elapsed);
+    el.textContent = fmtTime(remaining);
+    el.className   = 'quiz-timer' + (remaining <= 300 ? ' warning' : '');
+    if (remaining === 0) {
+      clearInterval(LS.timerInterval);
+      notify('Time limit reached — ending quiz', 'warn');
+      lvEnd(true);
+    }
+  }, 1000);
+}
+
 function lvRenderEnded(data) {
+  clearInterval(LS.timerInterval); // stop clock when quiz ends
+  localStorage.removeItem('aceict_live_t'); // session over — clear persistence
   document.getElementById('lv-sub').textContent = 'Quiz ended';
   document.getElementById('lv-actions').innerHTML =
     `<button class="btn btn-secondary" onclick="loadTLive(LS.myMainEl)">New session</button>`;
@@ -2535,7 +2851,6 @@ async function lvPollTeacher() {
     }
 
     if (sess.status === 'waiting') {
-      // Update lobby participant list
       const cnt = document.getElementById('lv-join-count');
       if (cnt) cnt.textContent = data.participant_count + ' student' + (data.participant_count !== 1 ? 's' : '') + ' joined';
       const pEl = document.getElementById('lv-participants');
@@ -2547,21 +2862,38 @@ async function lvPollTeacher() {
     }
 
     if (sess.status === 'active') {
-      const newQ = parseInt(sess.current_q);
-      if (LS.phase !== 'question' || LS.currentQ !== newQ) {
-        LS.phase     = 'question';
-        LS.currentQ  = newQ;
-        lvRenderQuestion(data);
+      if (LS.phase !== 'active') {
+        // First time entering active state — do a full render
+        LS.phase = 'active';
+        lvRenderActive(data);
       } else {
-        // Just refresh counts and leaderboard
+        // Incremental update: progress bar, counts, leaderboard
         const ac = document.getElementById('lv-ans-count');
-        const ap = document.getElementById('lv-ans-pct');
         const pg = document.getElementById('lv-prog');
-        const pc = data.participant_count || 1;
-        if (ac) ac.textContent = data.answered_count + '/' + data.participant_count + ' answered';
-        if (ap) ap.textContent = Math.round(data.answered_count/pc*100) + '% answered';
-        if (pg) pg.style.width = Math.round(data.answered_count/pc*100) + '%';
+        const total = data.total_possible || 1;
+        const pct   = Math.round((data.answered_count || 0) / total * 100);
+        if (ac) ac.textContent = (data.answered_count||0) + '/' + total + ' answers in';
+        if (pg) pg.style.width = pct + '%';
+        // Refresh per-question rows
+        const counts = data.answer_counts || {};
+        const pc = data.participant_count || 0;
+        (data.questions || []).forEach((_, i) => {
+          const qAns = parseInt(counts[i] || 0);
+          const qPct = pc ? Math.round(qAns / pc * 100) : 0;
+          const barEl = document.getElementById('lv-qbar-' + i);
+          const cntEl = document.getElementById('lv-qcnt-' + i);
+          if (barEl) barEl.style.width = qPct + '%';
+          if (cntEl) cntEl.textContent = qAns + '/' + pc;
+        });
         lvRenderLB(LS.participants);
+        // Refresh elapsed baseline from server so timer stays accurate
+        if (data.elapsed_seconds !== undefined) {
+          LS.elapsedBase   = parseInt(data.elapsed_seconds);
+          LS.elapsedBaseAt = Date.now();
+        }
+        // Update sub-title
+        const sub = document.getElementById('lv-sub');
+        if (sub) sub.textContent = `${pc} student${pc!==1?'s':''} · ${pct}% complete`;
       }
     }
   } catch(e) { /* keep polling */ }
@@ -2570,33 +2902,16 @@ async function lvPollTeacher() {
 async function lvStart() {
   try {
     await PATCH('/live/' + LS.roomCode + '/start', {});
-    LS.phase    = 'question';
-    LS.currentQ = 0;
+    LS.phase = 'active';
     clearInterval(LS.pollTimer);
-    const data  = await GET('/live/' + LS.roomCode);
-    lvRenderQuestion(data);
+    const data = await GET('/live/' + LS.roomCode);
+    lvRenderActive(data);
     LS.pollTimer = setInterval(lvPollTeacher, 2500);
   } catch(e) { notify('Could not start: ' + e.message, 'error'); }
 }
 
-async function lvNext() {
-  try {
-    const res = await PATCH('/live/' + LS.roomCode + '/next', {});
-    if (res.status === 'ended') {
-      LS.phase = 'ended';
-      clearInterval(LS.pollTimer);
-      const data = await GET('/live/' + LS.roomCode);
-      lvRenderEnded(data);
-    } else {
-      LS.currentQ = res.current_q;
-      const data  = await GET('/live/' + LS.roomCode);
-      lvRenderQuestion(data);
-    }
-  } catch(e) { notify('Error: ' + e.message, 'error'); }
-}
-
-async function lvEnd() {
-  if (!confirm('End this live quiz session?')) return;
+async function lvEnd(skipConfirm = false) {
+  if (!skipConfirm && !confirm('End this live quiz session?')) return;
   try {
     await PATCH('/live/' + LS.roomCode + '/end', {});
     LS.phase = 'ended';
@@ -2604,7 +2919,7 @@ async function lvEnd() {
     const data = await GET('/live/' + LS.roomCode);
     lvRenderEnded(data);
   } catch(e) {
-    lsClear();
+    lsEnd();
     loadTLive(LS.myMainEl);
   }
 }
@@ -2655,86 +2970,481 @@ async function loadTClasses(m){
 // ADMIN APP
 // ════════════════════════════════════════════════════════════
 function aNav(v,el){
+  closeAnyDrawer();
   if(el){document.querySelectorAll('#a-sidebar .nav-item').forEach(n=>n.classList.remove('active'));el.classList.add('active');}
   aRender(v);
 }
 function aRender(v){
   const m=document.getElementById('a-main');if(!m)return;
   m.innerHTML=panelLoader();
-  if(v==='overview')    loadAOverview(m);
+  if(v==='overview')         loadAOverview(m);
   else if(v==='departments') loadADepts(m);
+  else if(v==='classes')     loadAClasses(m);
   else if(v==='reports')     loadAReports(m);
   else if(v==='teachers')    loadATeachers(m);
   else if(v==='students')    loadAStudents(m);
   else if(v==='settings')    loadASettings(m);
 }
 
-async function loadAOverview(m){
-  let analytics=null;
-  try{analytics=await GET('/analytics/school');}catch(e){}
-  const ov=analytics?.overview||{student_count:342,school_avg:61,class_count:3,test_count:47};
-  const byS=analytics?.by_substrand||[{sub_strand:'S1/SS1',avg_pct:78},{sub_strand:'S1/SS2',avg_pct:71},{sub_strand:'S1/SS3',avg_pct:65},{sub_strand:'S2/SS1',avg_pct:52},{sub_strand:'S2/SS2',avg_pct:38}];
-  const atR=analytics?.at_risk||MOCK_STUDENTS.filter(s=>s.risk);
+async function loadAOverview(m) {
+  let analytics = null, classes = [], students = [];
+  try {
+    [analytics, classes, students] = await Promise.all([
+      GET('/analytics/school'),
+      GET('/classes'),
+      GET('/students'),
+    ]);
+  } catch(e) {}
 
-  m.innerHTML=`
-<div class="topbar"><div><div class="topbar-title">School overview</div><div class="topbar-sub">Bright Future SHS · Term 2, 2025</div></div>
-  <div class="topbar-actions"><button class="btn btn-secondary" onclick="aNav('reports',null)">Download report</button></div>
+  const ov   = analytics?.overview || {};
+  const byS  = analytics?.by_substrand || [];
+  const atR  = analytics?.at_risk || [];
+  const cls  = classes || [];
+  const s    = students || [];
+
+  const schoolAvg  = Math.round(ov.school_avg || 0);
+  const grade      = wassceGrade(schoolAvg);
+  const atRiskCnt  = atR.length || s.filter(x=>(x.avg_pct||0)<50).length;
+  const u          = CURRENT_USER || {};
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">School overview</div>
+  <div class="topbar-sub">${u.first_name ? u.first_name + ' · ' : ''}Administrator dashboard</div></div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="aNav('reports',null)">📊 Reports</button>
+    <button class="btn btn-primary" onclick="aOpenStudentModal(null,${JSON.stringify(cls).replace(/"/g,'&quot;')})">+ Add student</button>
+  </div>
 </div>
 <div class="page">
+
+  <!-- Stats row -->
   <div class="stats-row">
-    <div class="stat-card"><div class="label">Students</div><div class="value">${ov.student_count}</div></div>
-    <div class="stat-card"><div class="label">School average</div><div class="value" style="color:${col(Math.round(ov.school_avg||0))}">${Math.round(ov.school_avg||0)}%</div></div>
-    <div class="stat-card"><div class="label">WASSCE prediction</div><div class="value" style="color:${wassceGrade(Math.round(ov.school_avg||0)).c}">${wassceGrade(Math.round(ov.school_avg||0)).g}</div></div>
-    <div class="stat-card"><div class="label">Tests this term</div><div class="value">${ov.test_count}</div></div>
+    <div class="stat-card" style="cursor:pointer" onclick="aNav('students',null)">
+      <div class="label">Total students</div>
+      <div class="value">${ov.student_count || s.length}</div>
+      <div class="trend">Click to manage</div>
+    </div>
+    <div class="stat-card" style="cursor:pointer" onclick="aNav('classes',null)">
+      <div class="label">Classes</div>
+      <div class="value">${ov.class_count || cls.length}</div>
+      <div class="trend">Click to manage</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">School average</div>
+      <div class="value" style="color:${col(schoolAvg)}">${schoolAvg || '—'}%</div>
+      <div class="trend">WASSCE: <b style="color:${grade.c}">${grade.g}</b></div>
+    </div>
+    <div class="stat-card" style="cursor:pointer" onclick="aNav('students',null)">
+      <div class="label">At-risk students</div>
+      <div class="value" style="color:${atRiskCnt>0?'var(--coral)':'var(--green)'}">${atRiskCnt}</div>
+      <div class="trend trend-${atRiskCnt>0?'down':'up'}">${atRiskCnt>0?'Need intervention':'All passing 🎉'}</div>
+    </div>
   </div>
-  <div class="grid-2" style="margin-bottom:16px">
+
+  <!-- Main content grid -->
+  <div class="grid-2" style="margin-bottom:20px">
+
+    <!-- Sub-strand performance -->
     <div class="card">
-      <div class="card-title" style="margin-bottom:16px">Sub-strand performance school-wide</div>
-      <div class="bar-chart">
+      <div class="card-header"><div class="card-title">Sub-strand performance</div><div class="card-sub">School-wide averages</div></div>
+      ${byS.length ? `<div class="bar-chart">
         ${byS.map(row=>{const v=Math.round(row.avg_pct||0);return`
-        <div class="bar-row"><div class="bar-label" style="width:130px">${row.sub_strand}</div>
+        <div class="bar-row"><div class="bar-label">${row.sub_strand}</div>
         <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
         <div class="bar-val" style="color:${col(v)}">${v}%</div></div>`;}).join('')}
-      </div>
+      </div>` : '<div style="color:var(--text-3);font-size:13px;padding:16px 0">No test data yet — assign tests to classes to see performance.</div>'}
     </div>
+
+    <!-- At-risk students -->
     <div class="card">
-      <div class="card-title" style="margin-bottom:16px">At-risk students</div>
-      ${atR.slice(0,5).map(s=>`
-      <div class="student-row">
-        <div class="student-avatar" style="background:var(--coral);font-size:11px">${initials(s)}</div>
-        <div><div class="student-name">${fullName(s)}</div><div class="student-class">${s.class_name||'—'}</div></div>
-        <div class="student-score at-risk">${Math.round(s.avg_pct||0)}%</div>
-      </div>`).join('')||'<div style="color:var(--text-3);font-size:13px;padding:12px 0">No at-risk students 🎉</div>'}
+      <div class="card-header">
+        <div><div class="card-title">At-risk students</div><div class="card-sub">Below 50% — need intervention</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="aNav('students',null)">View all</button>
+      </div>
+      ${atR.slice(0,6).map(s2=>`
+      <div class="student-row" style="cursor:pointer" onclick="openStudentDetail(${s2.id})">
+        <div class="student-avatar" style="background:var(--coral);font-size:11px;width:32px;height:32px">${((s2.first_name||'?')[0]+(s2.last_name||'?')[0]).toUpperCase()}</div>
+        <div><div class="student-name">${s2.first_name} ${s2.last_name}</div><div class="student-class">${s2.class_name||'—'}</div></div>
+        <div class="student-score at-risk">${Math.round(s2.avg_pct||0)}%</div>
+      </div>`).join('') || '<div style="color:var(--text-3);font-size:13px;padding:12px 0">No at-risk students 🎉</div>'}
     </div>
   </div>
-  <div class="grid-3">
-    <div class="card" style="text-align:center;padding:24px;cursor:pointer" onclick="aNav('reports',null)"><div style="font-size:32px;margin-bottom:10px">📊</div><div style="font-weight:700">Term Report</div><div style="font-size:12px;color:var(--text-3)">GES format download</div></div>
-    <div class="card" style="text-align:center;padding:24px;cursor:pointer" onclick="aNav('teachers',null)"><div style="font-size:32px;margin-bottom:10px">✏️</div><div style="font-weight:700">Manage Teachers</div><div style="font-size:12px;color:var(--text-3)">2 teachers · 3 classes</div></div>
-    <div class="card" style="text-align:center;padding:24px;cursor:pointer" onclick="aNav('settings',null)"><div style="font-size:32px;margin-bottom:10px">⚙️</div><div style="font-weight:700">Settings</div><div style="font-size:12px;color:var(--text-3)">Subscription · Security</div></div>
+
+  <!-- Quick actions -->
+  <div class="card-title" style="margin-bottom:12px">Quick actions</div>
+  <div class="grid-4">
+    <div class="card card-sm" style="cursor:pointer;text-align:center;padding:20px" onclick="aOpenClassModal(null)">
+      <div style="font-size:28px;margin-bottom:8px">🗂️</div>
+      <div style="font-size:13px;font-weight:700">New class</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:3px">${cls.length} class${cls.length!==1?'es':''} active</div>
+    </div>
+    <div class="card card-sm" style="cursor:pointer;text-align:center;padding:20px" onclick="aOpenStudentModal(null,${JSON.stringify(cls).replace(/"/g,'&quot;')})">
+      <div style="font-size:28px;margin-bottom:8px">🎓</div>
+      <div style="font-size:13px;font-weight:700">Add student</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:3px">${ov.student_count||s.length} enrolled</div>
+    </div>
+    <div class="card card-sm" style="cursor:pointer;text-align:center;padding:20px" onclick="aNav('teachers',null)">
+      <div style="font-size:28px;margin-bottom:8px">✏️</div>
+      <div style="font-size:13px;font-weight:700">Teachers</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:3px">Manage staff</div>
+    </div>
+    <div class="card card-sm" style="cursor:pointer;text-align:center;padding:20px" onclick="aNav('settings',null)">
+      <div style="font-size:28px;margin-bottom:8px">⚙️</div>
+      <div style="font-size:13px;font-weight:700">Settings</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:3px">School · Billing</div>
+    </div>
   </div>
 </div>`;
 }
 
-function loadADepts(m){
-  const depts=[{n:'ICT Department',h:'Ama Kyereh',t:2,c:3,s:87,a:61},{n:'Mathematics',h:'Kweku Boateng',t:3,c:5,s:150,a:68},{n:'Science',h:'Yaw Asante',t:4,c:5,s:148,a:65}];
-  m.innerHTML=`
-<div class="topbar"><div class="topbar-title">Departments</div><div class="topbar-actions"><button class="btn btn-primary" onclick="notify('Department added','success')">+ Add department</button></div></div>
-<div class="page">
-  ${depts.map(d=>`<div class="card" style="margin-bottom:14px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <div><div style="font-size:16px;font-weight:700">${d.n}</div><div style="font-size:13px;color:var(--text-3)">Head: ${d.h} · ${d.t} teachers · ${d.c} classes · ${d.s} students</div></div>
-      <div style="display:flex;align-items:center;gap:12px">
-        <div style="font-size:24px;font-weight:800;color:${col(d.a)}">${d.a}%</div>
-        <button class="btn btn-secondary btn-sm" onclick="notify('Viewing department','')">View</button>
+// ── Reusable admin modal helper ───────────────────────────────
+function adminModal(title, bodyHTML, onSave, saveLabel='Save →') {
+  document.getElementById('adm-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'adm-modal';
+  overlay.className = 'modal-bg open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:500px">
+      <div class="modal-header">
+        <div class="modal-title">${title}</div>
+        <button class="modal-close" onclick="document.getElementById('adm-modal').remove()">&#x2715;</button>
       </div>
-    </div>
-    <div class="progress-bar"><div class="bar-fill" style="width:${d.a}%;height:8px;border-radius:4px;background:${d.a>=65?'var(--green)':'var(--amber)'}"></div></div>
-    <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
-      <span class="badge badge-green">${Math.round(d.a*.8)}% pass rate</span>
-      <span class="badge badge-gray">${Math.round(d.s*.15)} at-risk</span>
-    </div>
-  </div>`).join('')}
+      <div class="modal-body" id="adm-modal-body">${bodyHTML}</div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('adm-modal').remove()">Cancel</button>
+        <button class="btn btn-primary" id="adm-modal-save">${saveLabel}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('adm-modal-save').onclick = onSave;
+}
+
+// ── Classes CRUD ──────────────────────────────────────────────
+async function loadAClasses(m) {
+  let classes = [], teachers = [];
+  try { [classes, teachers] = await Promise.all([GET('/classes'), GET('/students').then(() => null).catch(() => null)]); } catch(e) {}
+  try { teachers = await GET('/students') || []; } catch(e) {}
+  // Fetch actual teachers list
+  let teacherList = [];
+  try {
+    const resp = await fetch(API_BASE + '/classes', {headers:{'Authorization':'Bearer '+AUTH_TOKEN}});
+    // teachers come from the users endpoint - use what we have
+  } catch(e) {}
+
+  const cls = classes || [];
+  const totalStudents = cls.reduce((s,c) => s + (parseInt(c.student_count)||0), 0);
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Classes</div><div class="topbar-sub">${cls.length} class${cls.length!==1?'es':''} · ${totalStudents} students total</div></div>
+  <div class="topbar-actions"><button class="btn btn-primary" onclick="aOpenClassModal(null)">+ Create class</button></div>
+</div>
+<div class="page">
+  <div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+    <div class="stat-card"><div class="label">Total classes</div><div class="value">${cls.length}</div></div>
+    <div class="stat-card"><div class="label">Total students</div><div class="value">${totalStudents}</div></div>
+    <div class="stat-card"><div class="label">School avg</div><div class="value" style="color:var(--green)">${cls.length ? Math.round(cls.reduce((s,c)=>s+(parseFloat(c.class_avg)||0),0)/cls.length) : 0}%</div></div>
+  </div>
+  <div class="card">
+    ${cls.length ? `<table class="data-table"><thead><tr><th>Class</th><th>Year</th><th>Form teacher</th><th>Subject teachers</th><th>Students</th><th>Avg</th><th></th></tr></thead><tbody>
+    ${cls.map(c => {
+      const avg2   = Math.round(c.class_avg || 0);
+      const subTs  = c.subject_teachers || [];
+      const cData  = JSON.stringify({...c, subject_teachers: subTs}).replace(/"/g,'&quot;');
+      return `<tr>
+        <td><b style="font-size:15px">${c.name}</b></td>
+        <td><span class="badge badge-gray">Year ${c.year_group}</span></td>
+        <td style="color:var(--text-2)">${c.teacher_name||'—'}</td>
+        <td style="font-size:12px">${subTs.length ? subTs.map(t=>`<span class="badge badge-blue" style="margin:1px">${t.name}</span>`).join('') : '<span style="color:var(--text-3)">—</span>'}</td>
+        <td>${c.student_count||0}</td>
+        <td><b style="color:${col(avg2)}">${avg2 ? avg2+'%' : '—'}</b></td>
+        <td style="display:flex;gap:4px">
+          <button class="btn btn-ghost btn-sm" onclick='aOpenClassModal(${cData})'>Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteClass(${c.id},'${c.name.replace(/'/g,"\\'")}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')}
+    </tbody></table>` :
+    `<div style="text-align:center;padding:40px;color:var(--text-3)">
+      <div style="font-size:36px;margin-bottom:12px">🗂️</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px">No classes yet</div>
+      <div style="font-size:13px;margin-bottom:16px">Create your first class to assign students and teachers.</div>
+      <button class="btn btn-primary" onclick="aOpenClassModal(null)">+ Create first class</button>
+    </div>`}
+  </div>
 </div>`;
+}
+
+async function aOpenClassModal(cls) {
+  const isEdit   = !!cls;
+  let teachers = [];
+  try { teachers = await GET('/teachers'); } catch(e) {}
+
+  // Subject teachers already on this class (for edit mode)
+  const subjectTeachers = (cls?.subject_teachers || []);
+  const subjectTeacherIds = new Set(subjectTeachers.map(t => t.id));
+
+  const subTeacherRows = subjectTeachers.map(t =>
+    `<div id="sct-${t.id}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+       <div class="student-avatar" style="background:${t.avatar_color||'#1A7A4A'};width:24px;height:24px;font-size:9px">${((t.name||'??').split(' ').map(w=>w[0]).join('')).toUpperCase()}</div>
+       <span style="font-size:13px;font-weight:600;flex:1">${t.name}</span>
+       <span class="badge badge-gray" style="font-size:10px">${t.subject||'ICT'}</span>
+       ${isEdit ? `<button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aRemoveSubjectTeacher(${cls.id},${t.id},'${(t.name||'').replace(/'/g,"\\'")}')">Remove</button>` : ''}
+     </div>`
+  ).join('');
+
+  adminModal(
+    isEdit ? `Edit class — ${cls.name}` : 'Create new class',
+    `<div class="form-group">
+       <label class="form-label">Class name</label>
+       <input class="form-input" id="ac-name" placeholder="e.g. SHS2A" value="${isEdit ? cls.name : ''}">
+     </div>
+     <div class="form-group">
+       <label class="form-label">Year group</label>
+       <select class="form-select" id="ac-year">
+         <option value="1" ${(!isEdit||cls.year_group==1)?'selected':''}>Year 1</option>
+         <option value="2" ${cls?.year_group==2?'selected':''}>Year 2</option>
+         <option value="3" ${cls?.year_group==3?'selected':''}>Year 3</option>
+       </select>
+     </div>
+     <div class="form-group">
+       <label class="form-label">Form teacher <span style="font-size:11px;color:var(--text-3)">(primary / class teacher)</span></label>
+       <select class="form-select" id="ac-teacher">
+         <option value="">— No form teacher —</option>
+         ${teachers.map(t => `<option value="${t.id}" ${cls?.teacher_id==t.id?'selected':''}>${t.first_name} ${t.last_name}</option>`).join('')}
+       </select>
+     </div>
+     ${isEdit ? `
+     <div class="divider"></div>
+     <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Subject teachers</div>
+     <div id="sct-list">${subTeacherRows || '<div style="color:var(--text-3);font-size:13px;padding:8px 0">No subject teachers assigned yet.</div>'}</div>
+     <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+       <select class="form-select" id="sct-add-id" style="flex:1">
+         <option value="">— Add a subject teacher —</option>
+         ${teachers.filter(t=>!subjectTeacherIds.has(t.id)).map(t=>`<option value="${t.id}">${t.first_name} ${t.last_name}</option>`).join('')}
+       </select>
+       <input class="form-input" id="sct-subject" placeholder="Subject" style="width:110px" value="ICT">
+       <button class="btn btn-secondary btn-sm" onclick="aAddSubjectTeacher(${cls.id})">+ Add</button>
+     </div>
+     <div class="info-box blue" style="margin-top:10px;font-size:12px">Each teacher sees only classes they are assigned to (as form teacher or subject teacher).</div>` : ''}`,
+    async () => {
+      const name      = document.getElementById('ac-name')?.value?.trim();
+      const year      = document.getElementById('ac-year')?.value;
+      const teacherId = document.getElementById('ac-teacher')?.value || null;
+      if (!name) { notify('Enter a class name', 'error'); return; }
+      const btn = document.getElementById('adm-modal-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const payload = { name, year_group: parseInt(year), teacher_id: teacherId ? parseInt(teacherId) : null };
+        if (isEdit) {
+          await PATCH('/classes/' + cls.id, payload);
+        } else {
+          const res = await POST('/classes', payload);
+          // If a form teacher was set, add to class_teachers too
+          if (teacherId && res?.class_id) {
+            await POST('/classes/' + res.class_id + '/teachers', { teacher_id: parseInt(teacherId), subject: 'ICT' }).catch(()=>{});
+          }
+        }
+        document.getElementById('adm-modal')?.remove();
+        notify(isEdit ? 'Class updated' : 'Class created', 'success');
+        const m = document.getElementById('a-main');
+        if (m) loadAClasses(m);
+      } catch(e) {
+        notify(e.message, 'error');
+        btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Create class';
+      }
+    },
+    isEdit ? 'Save changes' : 'Create class'
+  );
+  setTimeout(() => document.getElementById('ac-name')?.focus(), 80);
+}
+
+async function aDeleteClass(id, name) {
+  if (!confirm(`Delete class "${name}"?\n\nStudents in this class will not be deleted, but their class assignment will be removed.`)) return;
+  try {
+    await fetch(API_BASE + '/classes/' + id, { method:'DELETE', headers:{'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'} });
+    notify(`Class "${name}" deleted`, 'success');
+    const m = document.getElementById('a-main');
+    if (m) loadAClasses(m);
+  } catch(e) { notify('Delete failed: ' + e.message, 'error'); }
+}
+
+async function aAddSubjectTeacher(classId) {
+  const tid     = document.getElementById('sct-add-id')?.value;
+  const subject = document.getElementById('sct-subject')?.value?.trim() || 'ICT';
+  if (!tid) { notify('Select a teacher to add', 'error'); return; }
+  try {
+    await POST('/classes/' + classId + '/teachers', { teacher_id: parseInt(tid), subject });
+    notify('Teacher assigned to class', 'success');
+    // Reload the modal with fresh data
+    document.getElementById('adm-modal')?.remove();
+    const clsData = await GET('/classes');
+    const updated = (clsData || []).find(c => c.id === classId);
+    if (updated) aOpenClassModal(updated);
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+async function aRemoveSubjectTeacher(classId, teacherId, teacherName) {
+  if (!confirm(`Remove "${teacherName}" as a subject teacher from this class?`)) return;
+  try {
+    await fetch(API_BASE + '/classes/' + classId + '/teachers', {
+      method: 'DELETE',
+      headers: {'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'},
+      body: JSON.stringify({ teacher_id: teacherId }),
+    });
+    notify(`"${teacherName}" removed from class`, 'success');
+    document.getElementById('adm-modal')?.remove();
+    const clsData = await GET('/classes');
+    const updated = (clsData || []).find(c => c.id === classId);
+    if (updated) aOpenClassModal(updated);
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+// ── Departments CRUD ──────────────────────────────────────────
+async function loadADepts(m) {
+  let depts = [], teachers = [];
+  try { [depts, teachers] = await Promise.all([GET('/departments'), GET('/teachers')]); } catch(e) {}
+  const d = depts || [];
+  const t = teachers || [];
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Departments</div><div class="topbar-sub">${d.length} department${d.length!==1?'s':''}</div></div>
+  <div class="topbar-actions"><button class="btn btn-primary" onclick="aOpenDeptModal(null)">+ Create department</button></div>
+</div>
+<div class="page">
+  ${d.length ? d.map(dept => {
+    const tListData = JSON.stringify(t).replace(/"/g,'&quot;');
+    const dData     = JSON.stringify({id:dept.id,name:dept.name,description:dept.description||'',head_teacher_id:dept.head_teacher_id}).replace(/"/g,'&quot;');
+    return `<div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px">
+        <div>
+          <div style="font-size:17px;font-weight:800">${dept.name}</div>
+          ${dept.description ? `<div style="font-size:13px;color:var(--text-3);margin-top:2px">${dept.description}</div>` : ''}
+          <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+            <span class="badge badge-gray">${dept.teacher_count||0} teacher${(dept.teacher_count||0)!==1?'s':''}</span>
+            ${dept.head_name ? `<span class="badge badge-blue">Head: ${dept.head_name}</span>` : ''}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-secondary btn-sm" onclick='aOpenDeptModal(${dData},${tListData})'>Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteDept(${dept.id},'${dept.name.replace(/'/g,"\\'")}')">Delete</button>
+        </div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Teachers</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        ${(dept.teachers||[]).map(tx => `
+        <div style="display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px 4px 6px">
+          <div class="student-avatar" style="background:${tx.avatar_color||'var(--amber)'};width:22px;height:22px;font-size:9px">${((tx.first_name||'?')[0]+(tx.last_name||'?')[0]).toUpperCase()}</div>
+          <span style="font-size:12px;font-weight:600">${tx.first_name} ${tx.last_name}</span>
+          <button onclick="aRemoveTeacherFromDept(${dept.id},${tx.id},'${tx.first_name} ${tx.last_name}')"
+            style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;line-height:1;padding:0 0 0 4px;font-family:inherit">×</button>
+        </div>`).join('')}
+        <button class="btn btn-ghost btn-sm" onclick='aAddTeacherToDept(${dept.id},${tListData})'>+ Add teacher</button>
+      </div>
+    </div>`;
+  }).join('') : `<div style="text-align:center;padding:60px;color:var(--text-3)">
+    <div style="font-size:36px;margin-bottom:12px">🏢</div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:6px">No departments yet</div>
+    <div style="font-size:13px;margin-bottom:16px">Group your teachers into departments (e.g. ICT, Science, Maths).</div>
+    <button class="btn btn-primary" onclick="aOpenDeptModal(null)">+ Create first department</button>
+  </div>`}
+</div>`;
+}
+
+function aOpenDeptModal(dept, teachers) {
+  const isEdit = !!dept;
+  const t = Array.isArray(teachers) ? teachers : [];
+  adminModal(
+    isEdit ? `Edit department — ${dept.name}` : 'Create new department',
+    `<div class="form-group"><label class="form-label">Department name</label>
+       <input class="form-input" id="ad-name" placeholder="e.g. ICT Department" value="${isEdit?dept.name:''}"></div>
+     <div class="form-group"><label class="form-label">Description (optional)</label>
+       <input class="form-input" id="ad-desc" placeholder="Brief description" value="${isEdit?(dept.description||''):''}"></div>
+     <div class="form-group"><label class="form-label">Head of department</label>
+       <select class="form-select" id="ad-head">
+         <option value="">— No head assigned —</option>
+         ${t.map(tx=>`<option value="${tx.id}" ${dept?.head_teacher_id==tx.id?'selected':''}>${tx.first_name} ${tx.last_name}</option>`).join('')}
+       </select>
+     </div>`,
+    async () => {
+      const name = document.getElementById('ad-name')?.value?.trim();
+      if (!name) { notify('Enter a department name', 'error'); return; }
+      const btn = document.getElementById('adm-modal-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const payload = {
+          name,
+          description: document.getElementById('ad-desc')?.value?.trim() || null,
+          head_teacher_id: document.getElementById('ad-head')?.value || null,
+        };
+        if (isEdit) await PATCH('/departments/' + dept.id, payload);
+        else        await POST('/departments', payload);
+        document.getElementById('adm-modal')?.remove();
+        notify(isEdit ? 'Department updated' : 'Department created', 'success');
+        const m = document.getElementById('a-main');
+        if (m) loadADepts(m);
+      } catch(e) {
+        notify(e.message, 'error');
+        btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Create department';
+      }
+    },
+    isEdit ? 'Save changes' : 'Create department'
+  );
+  setTimeout(() => document.getElementById('ad-name')?.focus(), 80);
+}
+
+async function aDeleteDept(id, name) {
+  if (!confirm(`Delete department "${name}"?\n\nTeachers in this department will be unassigned but not deleted.`)) return;
+  try {
+    await fetch(API_BASE + '/departments/' + id, {method:'DELETE',headers:{'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'}});
+    notify(`"${name}" deleted`, 'success');
+    const m = document.getElementById('a-main');
+    if (m) loadADepts(m);
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+function aAddTeacherToDept(deptId, teachers) {
+  const t = Array.isArray(teachers) ? teachers : [];
+  adminModal(
+    'Add teacher to department',
+    `<div class="form-group"><label class="form-label">Select teacher</label>
+       <select class="form-select" id="adt-teacher">
+         <option value="">— Choose a teacher —</option>
+         ${t.map(tx=>`<option value="${tx.id}">${tx.first_name} ${tx.last_name}${tx.department_name?' ('+tx.department_name+')':''}</option>`).join('')}
+       </select>
+     </div>
+     <div class="info-box blue" style="margin-top:8px">A teacher can only belong to one department. If they are already assigned, they will be moved here.</div>`,
+    async () => {
+      const tid = document.getElementById('adt-teacher')?.value;
+      if (!tid) { notify('Select a teacher', 'error'); return; }
+      const btn = document.getElementById('adm-modal-save');
+      btn.disabled = true; btn.textContent = 'Adding…';
+      try {
+        await POST('/departments/' + deptId + '/teachers', { teacher_id: parseInt(tid) });
+        document.getElementById('adm-modal')?.remove();
+        notify('Teacher added to department', 'success');
+        const m = document.getElementById('a-main');
+        if (m) loadADepts(m);
+      } catch(e) {
+        notify(e.message, 'error');
+        btn.disabled = false; btn.textContent = 'Add teacher →';
+      }
+    },
+    'Add teacher →'
+  );
+}
+
+async function aRemoveTeacherFromDept(deptId, teacherId, teacherName) {
+  if (!confirm(`Remove "${teacherName}" from this department?`)) return;
+  try {
+    await fetch(API_BASE + '/departments/' + deptId + '/teachers/' + teacherId, {method:'DELETE',headers:{'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'}});
+    notify(`"${teacherName}" removed from department`, 'success');
+    const m = document.getElementById('a-main');
+    if (m) loadADepts(m);
+  } catch(e) { notify(e.message, 'error'); }
 }
 
 function loadAReports(m){
@@ -2751,67 +3461,519 @@ function loadAReports(m){
 </div></div>`;
 }
 
-async function loadATeachers(m){
-  m.innerHTML=`
-<div class="topbar"><div class="topbar-title">Teachers</div><div class="topbar-actions"><button class="btn btn-primary" onclick="inviteTeacher()">+ Invite teacher</button></div></div>
+async function loadATeachers(m) {
+  let teachers = [], classes = [], depts = [];
+  try { [teachers, classes, depts] = await Promise.all([GET('/teachers'), GET('/classes'), GET('/departments')]); } catch(e) {}
+  const t = teachers || [];
+  window._adminDepts = depts || []; // cache for modal
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Teachers</div><div class="topbar-sub">${t.length} teacher${t.length!==1?'s':''}</div></div>
+  <div class="topbar-actions">
+    <input class="form-input" style="width:190px" placeholder="Search…" oninput="filterTable(this.value,'a-t-tbl')">
+    <button class="btn btn-secondary" onclick="openCsvImportModal('teacher',()=>{const m=document.getElementById('a-main');if(m)loadATeachers(m);})">⬆ Import CSV</button>
+    <button class="btn btn-primary" onclick="aOpenTeacherModal(null)">+ Add teacher</button>
+  </div>
+</div>
 <div class="page">
-  <div class="info-box blue">Teachers are invited via email. Each manages their own classes, creates tests and marks essays independently.</div>
-  <div style="margin-top:16px;display:flex;flex-direction:column;gap:12px">
-    ${[{n:'Ama Kyereh',i:'AK',col:'#C47D0E',cls:'SHS2A, SHS2B',tests:28,essays:12,a:61},{n:'Kweku Boateng',i:'KB',col:'#1A4F8A',cls:'SHS1A',tests:19,essays:8,a:71}].map(t=>`
-    <div class="teacher-card">
-      <div class="user-avatar" style="background:${t.col};width:48px;height:48px;font-size:16px">${t.i}</div>
-      <div style="flex:1">
-        <div style="font-size:16px;font-weight:700">${t.n}</div>
-        <div style="font-size:13px;color:var(--text-3)">${t.cls} · ICT Teacher</div>
-        <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">
-          <span class="badge badge-gray">${t.tests} tests created</span>
-          <span class="badge badge-gray">${t.essays} essays marked</span>
-          <span class="badge badge-${t.a>=65?'green':'amber'}">Class avg ${t.a}%</span>
-        </div>
+  <div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+    <div class="stat-card"><div class="label">Total teachers</div><div class="value">${t.length}</div></div>
+    <div class="stat-card"><div class="label">Classes managed</div><div class="value">${classes.length}</div></div>
+    <div class="stat-card"><div class="label">Tests created</div><div class="value">${t.reduce((s,x)=>s+(parseInt(x.test_count)||0),0)}</div></div>
+  </div>
+  <div class="card">
+    ${t.length ? `<table class="data-table" id="a-t-tbl">
+      <thead><tr><th>Teacher</th><th>Email</th><th>Classes</th><th>Tests</th><th>Last active</th><th></th></tr></thead>
+      <tbody>
+        ${t.map(x => {
+          const tData = JSON.stringify({id:x.id,first_name:x.first_name,last_name:x.last_name,email:x.email||'',department_id:x.department_id||null}).replace(/"/g,'&quot;');
+          const lastActive = x.last_login ? fmtDate(x.last_login) : 'Never';
+          return `<tr>
+            <td><div style="display:flex;align-items:center;gap:8px">
+              <div class="student-avatar" style="background:${x.avatar_color||'#C47D0E'};width:32px;height:32px;font-size:11px">${((x.first_name||'?')[0]+(x.last_name||'?')[0]).toUpperCase()}</div>
+              <div><b>${x.first_name} ${x.last_name}</b>
+                <div style="font-size:11px;color:var(--text-3)">${x.department_name||'No department'}</div>
+              </div>
+            </div></td>
+            <td style="color:var(--text-3);font-size:12px">${x.email||'—'}</td>
+            <td style="font-size:12px">${x.class_names||'<span style="color:var(--text-3)">None assigned</span>'}</td>
+            <td><span class="badge badge-gray">${x.test_count||0} test${(x.test_count||0)!==1?'s':''}</span></td>
+            <td style="color:var(--text-3);font-size:12px">${lastActive}</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-secondary btn-sm" onclick='aManageTeacherClasses(${tData})'>Classes</button>
+              <button class="btn btn-ghost btn-sm" onclick='aOpenTeacherModal(${tData})'>Edit</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteTeacher(${x.id},'${(x.first_name+' '+x.last_name).replace(/'/g,"\\'")}')">Remove</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` :
+    `<div style="text-align:center;padding:40px;color:var(--text-3)">
+      <div style="font-size:36px;margin-bottom:12px">✏️</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px">No teachers yet</div>
+      <div style="font-size:13px;margin-bottom:16px">Add teachers manually or import from a CSV file.</div>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button class="btn btn-secondary" onclick="openCsvImportModal('teacher',()=>{const m=document.getElementById('a-main');if(m)loadATeachers(m);})">⬆ Import CSV</button>
+        <button class="btn btn-primary" onclick="aOpenTeacherModal(null)">+ Add teacher</button>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost btn-sm" onclick="viewTeacherProfile(t)">View</button>
-        <button class="btn btn-ghost btn-sm" onclick="editTeacherModal(t)">Edit</button>
-      </div>
-    </div>`).join('')}
+    </div>`}
   </div>
 </div>`;
 }
 
-async function loadAStudents(m){
-  let students=null;
-  try{students=await GET('/students');}catch(e){}
-  const s=students||MOCK_STUDENTS;
+function aOpenTeacherModal(teacher) {
+  const isEdit = !!teacher;
+  const depts  = window._adminDepts || [];
+  adminModal(
+    isEdit ? `Edit teacher — ${teacher.first_name} ${teacher.last_name}` : 'Add new teacher',
+    `<div class="grid-2">
+       <div class="form-group"><label class="form-label">First name</label>
+         <input class="form-input" id="at-fn" value="${isEdit ? teacher.first_name : ''}"></div>
+       <div class="form-group"><label class="form-label">Last name</label>
+         <input class="form-input" id="at-ln" value="${isEdit ? teacher.last_name : ''}"></div>
+     </div>
+     <div class="form-group"><label class="form-label">Email address</label>
+       <input class="form-input" id="at-email" type="email" value="${isEdit ? (teacher.email||'') : ''}" ${isEdit?'readonly style="background:var(--bg)"':''}></div>
+     <div class="form-group"><label class="form-label">Department</label>
+       <select class="form-select" id="at-dept">
+         <option value="">— No department —</option>
+         ${depts.map(d=>`<option value="${d.id}" ${teacher?.department_id==d.id?'selected':''}>${d.name}</option>`).join('')}
+       </select>
+     </div>
+     <div class="form-group"><label class="form-label">${isEdit ? 'New password (leave blank to keep current)' : 'Password'}</label>
+       <input class="form-input" id="at-pw" type="password" placeholder="${isEdit ? 'Leave blank to keep current' : 'Min 6 characters'}"></div>
+     ${!isEdit ? `<div class="info-box blue" style="margin-top:4px">Default password is <b>changeme123</b> if left blank. Teacher should change it on first login.</div>` : ''}`,
+    async () => {
+      const fn     = document.getElementById('at-fn')?.value?.trim();
+      const ln     = document.getElementById('at-ln')?.value?.trim();
+      const em     = document.getElementById('at-email')?.value?.trim();
+      const pw     = document.getElementById('at-pw')?.value;
+      const deptId = document.getElementById('at-dept')?.value || null;
+      if (!fn || !ln) { notify('Enter first and last name', 'error'); return; }
+      if (!isEdit && !em) { notify('Enter an email address', 'error'); return; }
+      const btn = document.getElementById('adm-modal-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const payload = { first_name:fn, last_name:ln, department_id: deptId };
+        if (pw) payload.password = pw;
+        if (!isEdit) { payload.email = em; payload.password = pw || 'changeme123'; }
+        if (isEdit) {
+          await PATCH('/teachers/' + teacher.id, payload);
+        } else {
+          await POST('/teachers', payload);
+        }
+        document.getElementById('adm-modal')?.remove();
+        notify(isEdit ? 'Teacher updated' : 'Teacher added', 'success');
+        const mainEl = document.getElementById('a-main');
+        if (mainEl) loadATeachers(mainEl);
+      } catch(e) {
+        notify(e.message, 'error');
+        btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Add teacher';
+      }
+    },
+    isEdit ? 'Save changes' : 'Add teacher'
+  );
+  setTimeout(() => document.getElementById('at-fn')?.focus(), 80);
+}
 
-  m.innerHTML=`
-<div class="topbar"><div class="topbar-title">All students</div>
+async function aDeleteTeacher(id, name) {
+  if (!confirm(`Remove teacher "${name}"?\n\nTheir account will be deactivated. Classes they teach will remain but will need a new teacher assigned.`)) return;
+  try {
+    await fetch(API_BASE + '/teachers/' + id, { method:'DELETE', headers:{'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'} });
+    notify(`"${name}" removed`, 'success');
+    const m = document.getElementById('a-main');
+    if (m) loadATeachers(m);
+  } catch(e) { notify('Remove failed: ' + e.message, 'error'); }
+}
+
+// ── Manage which classes a teacher is assigned to ─────────────
+async function aManageTeacherClasses(teacher) {
+  // Admin calls GET /classes without teacher scoping — we need the full list
+  // so we bypass the normal GET and call with an admin-level fetch
+  let allClasses = [];
+  try {
+    const res = await fetch(API_BASE + '/classes', { headers:{'Authorization':'Bearer '+AUTH_TOKEN} });
+    const json = await res.json();
+    allClasses = json?.data || json || [];
+  } catch(e) {}
+
+  const renderRows = (classes) => classes.map(c => {
+    const assigned = c.teacher_id == teacher.id;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:${assigned?'var(--green-lt)':'var(--surface)'}">
+      <div>
+        <span style="font-size:14px;font-weight:700">${c.name}</span>
+        <span class="badge badge-gray" style="margin-left:8px">Year ${c.year_group}</span>
+        <span style="font-size:12px;color:var(--text-3);margin-left:8px">${c.student_count||0} students</span>
+        ${c.teacher_name && !assigned ? `<span style="font-size:11px;color:var(--amber);margin-left:8px">(assigned to ${c.teacher_name})</span>` : ''}
+      </div>
+      <button class="btn btn-${assigned?'danger':'secondary'} btn-sm"
+        onclick="aToggleClassTeacher(${c.id},'${c.name.replace(/'/g,"\\'")}',${teacher.id},${assigned},'${(teacher.first_name+' '+teacher.last_name).replace(/'/g,"\\'")}')">
+        ${assigned ? 'Unassign' : 'Assign'}
+      </button>
+    </div>`;
+  }).join('');
+
+  adminModal(
+    `Manage classes — ${teacher.first_name} ${teacher.last_name}`,
+    `<div style="font-size:13px;color:var(--text-2);margin-bottom:14px">
+       Green rows are currently assigned to this teacher. Click <b>Assign</b> to add a class or <b>Unassign</b> to remove it.
+     </div>
+     <div id="acm-list">
+       ${allClasses.length
+         ? renderRows(allClasses)
+         : '<div class="info-box amber">No classes created yet. Create classes first from the Classes section.</div>'}
+     </div>`,
+    () => {
+      document.getElementById('adm-modal')?.remove();
+      const m = document.getElementById('a-main');
+      if (m) loadATeachers(m);
+    },
+    'Done'
+  );
+}
+
+async function aToggleClassTeacher(classId, className, teacherId, isAssigned, teacherName) {
+  const newTeacherId = isAssigned ? null : teacherId;
+  try {
+    await PATCH('/classes/' + classId, { teacher_id: newTeacherId });
+    notify(isAssigned
+      ? `"${className}" unassigned from ${teacherName}`
+      : `"${className}" assigned to ${teacherName}`, 'success');
+    // Refresh the modal content without closing it
+    const teacherData = { id: teacherId, first_name: teacherName.split(' ')[0], last_name: teacherName.split(' ').slice(1).join(' ') };
+    document.getElementById('adm-modal')?.remove();
+    await aManageTeacherClasses(teacherData);
+  } catch(e) {
+    notify('Could not update class assignment: ' + e.message, 'error');
+  }
+}
+
+async function loadAStudents(m) {
+  let students = [], classes = [];
+  try { [students, classes] = await Promise.all([GET('/students'), GET('/classes')]); } catch(e) {}
+  const s = students || [];
+  const cls = classes || [];
+  const atRisk  = s.filter(x => (x.avg_pct||0) < 50).length;
+  const active  = s.filter(x => (x.current_streak||0) > 0).length;
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">All students</div><div class="topbar-sub">${s.length} student${s.length!==1?'s':''}</div></div>
   <div class="topbar-actions">
-    <input class="form-input" style="width:220px" placeholder="Search..." oninput="filterTable(this.value,'a-st')">
-    <button class="btn btn-primary" onclick="bulkImportStudents()">Import from CSV</button>
+    <input class="form-input" style="width:200px" placeholder="Search…" oninput="filterTable(this.value,'a-st-tbl')">
+    <select class="form-select" style="width:auto" id="a-cls-filter" onchange="aFilterStudentClass(this.value)">
+      <option value="">All classes</option>
+      ${cls.map(c=>`<option value="${c.name}">${c.name}</option>`).join('')}
+    </select>
+    <button class="btn btn-secondary" onclick="openCsvImportModal('student',()=>{const m=document.getElementById('a-main');if(m)loadAStudents(m);})">⬆ Import CSV</button>
+    <button class="btn btn-primary" onclick="aOpenStudentModal(null,${JSON.stringify(cls).replace(/"/g,'&quot;')})">+ Add student</button>
   </div>
 </div>
 <div class="page">
   <div class="stats-row">
     <div class="stat-card"><div class="label">Total students</div><div class="value">${s.length}</div></div>
-    <div class="stat-card"><div class="label">Active this week</div><div class="value" style="color:var(--green)">${s.filter(x=>x.current_streak>0).length}</div></div>
-    <div class="stat-card"><div class="label">At-risk</div><div class="value" style="color:var(--coral)">${s.filter(x=>x.avg_pct<50||x.risk).length}</div></div>
-    <div class="stat-card"><div class="label">Avg streak</div><div class="value">${s.length?Math.round(s.reduce((a,x)=>a+(x.current_streak||0),0)/s.length):0}</div><div class="trend">days</div></div>
+    <div class="stat-card"><div class="label">Active this week</div><div class="value" style="color:var(--green)">${active}</div></div>
+    <div class="stat-card"><div class="label">At-risk (&lt;50%)</div><div class="value" style="color:var(--coral)">${atRisk}</div></div>
+    <div class="stat-card"><div class="label">School avg</div><div class="value">${s.length ? Math.round(s.reduce((a,x)=>a+(parseFloat(x.avg_pct)||0),0)/s.length) : 0}%</div></div>
   </div>
   <div class="card">
-    <table class="data-table" id="a-st"><thead><tr><th>Student</th><th>Class</th><th>Average</th><th>Tests</th><th>Status</th><th></th></tr></thead><tbody>
-      ${s.map(x=>{const ov=Math.round(x.avg_pct||0);return`<tr>
-        <td><div style="display:flex;align-items:center;gap:8px">
-          <div class="student-avatar" style="background:${x.avatar_color||'var(--teal)'};width:28px;height:28px;font-size:10px">${initials(x)}</div>
-          <b>${fullName(x)}</b></div></td>
-        <td><span class="badge badge-gray">${x.class_name||'—'}</span></td>
-        <td><b style="color:${col(ov)}">${ov}%</b></td>
-        <td>${x.tests_done||0}</td>
-        <td><span class="badge badge-${x.risk||ov<50?'coral':ov>=65?'green':'amber'}">${x.risk||ov<50?'At risk':ov>=65?'On track':'Monitor'}</span></td>
-        <td><button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${x.id})">View</button></td>
-      </tr>`;}).join('')}
-    </tbody></table>
+    ${s.length ? `<table class="data-table" id="a-st-tbl">
+      <thead><tr><th>Student</th><th>Class</th><th>Email</th><th>Avg</th><th>Tests</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${s.map(x => {
+          const ov = Math.round(x.avg_pct||0);
+          const clsData = JSON.stringify(cls).replace(/"/g,'&quot;');
+          const xData   = JSON.stringify({id:x.id,first_name:x.first_name,last_name:x.last_name,email:x.email||'',class_name:x.class_name||''}).replace(/"/g,'&quot;');
+          return `<tr>
+            <td><div style="display:flex;align-items:center;gap:8px">
+              <div class="student-avatar" style="background:${x.avatar_color||'var(--teal)'};width:28px;height:28px;font-size:10px">${initials(x)}</div>
+              <b>${fullName(x)}</b></div></td>
+            <td><span class="badge badge-gray">${x.class_name||'—'}</span></td>
+            <td style="color:var(--text-3);font-size:12px">${x.email||'—'}</td>
+            <td><b style="color:${col(ov)}">${ov ? ov+'%' : '—'}</b></td>
+            <td>${x.tests_done||0}</td>
+            <td><span class="badge badge-${ov<50&&ov>0?'coral':ov>=65?'green':'amber'}">${ov<50&&ov>0?'At risk':ov>=65?'On track':'New'}</span></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${x.id})">View</button>
+              <button class="btn btn-ghost btn-sm" onclick='aOpenStudentModal(${xData},${clsData})'>Edit</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteStudent(${x.id},'${(x.first_name+' '+x.last_name).replace(/'/g,"\\'")}')">Remove</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` :
+    `<div style="text-align:center;padding:40px;color:var(--text-3)">
+      <div style="font-size:36px;margin-bottom:12px">🎓</div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px">No students yet</div>
+      <button class="btn btn-primary" style="margin-top:8px" onclick="aOpenStudentModal(null,${JSON.stringify(cls).replace(/"/g,'&quot;')})">+ Add first student</button>
+    </div>`}
   </div>
 </div>`;
+}
+
+function aFilterStudentClass(className) {
+  const rows = document.querySelectorAll('#a-st-tbl tbody tr');
+  rows.forEach(r => {
+    r.style.display = (!className || r.textContent.includes(className)) ? '' : 'none';
+  });
+}
+
+function aOpenStudentModal(student, classes) {
+  const isEdit = !!student;
+  const cls = Array.isArray(classes) ? classes : [];
+  adminModal(
+    isEdit ? `Edit student — ${student.first_name} ${student.last_name}` : 'Add new student',
+    `<div class="grid-2">
+       <div class="form-group"><label class="form-label">First name</label>
+         <input class="form-input" id="as-fn" value="${isEdit ? student.first_name : ''}"></div>
+       <div class="form-group"><label class="form-label">Last name</label>
+         <input class="form-input" id="as-ln" value="${isEdit ? student.last_name : ''}"></div>
+     </div>
+     <div class="form-group"><label class="form-label">Email address</label>
+       <input class="form-input" id="as-email" type="email" value="${isEdit ? (student.email||'') : ''}" ${isEdit?'readonly style="background:var(--bg)"':''}></div>
+     <div class="form-group">
+       <label class="form-label">${isEdit ? 'New password (leave blank to keep current)' : 'Password'}</label>
+       <input class="form-input" id="as-pw" type="password" placeholder="${isEdit ? 'Leave blank to keep current' : 'Min 6 characters'}">
+     </div>
+     <div class="form-group"><label class="form-label">Class</label>
+       <select class="form-select" id="as-class">
+         <option value="">— No class assigned —</option>
+         ${cls.map(c=>`<option value="${c.name}" ${(isEdit&&student.class_name===c.name)?'selected':''}>${c.name} (Year ${c.year_group})</option>`).join('')}
+       </select>
+     </div>`,
+    async () => {
+      const fn  = document.getElementById('as-fn')?.value?.trim();
+      const ln  = document.getElementById('as-ln')?.value?.trim();
+      const em  = document.getElementById('as-email')?.value?.trim();
+      const pw  = document.getElementById('as-pw')?.value;
+      const className = document.getElementById('as-class')?.value || null;
+      if (!fn || !ln) { notify('Enter first and last name', 'error'); return; }
+      if (!isEdit && !em) { notify('Enter an email address', 'error'); return; }
+      const btn = document.getElementById('adm-modal-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        if (isEdit) {
+          const payload = { first_name:fn, last_name:ln, class_name:className||null };
+          if (pw) payload.password = pw; // only send if filled
+          await PATCH('/students/' + student.id, payload);
+        } else {
+          await POST('/students', { first_name:fn, last_name:ln, email:em, password:pw||'changeme123', class_name:className||null });
+        }
+        document.getElementById('adm-modal')?.remove();
+        notify(isEdit ? 'Student updated' : 'Student added', 'success');
+        const mainEl = document.getElementById('a-main');
+        if (mainEl) loadAStudents(mainEl);
+      } catch(e) {
+        notify(e.message, 'error');
+        btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Add student';
+      }
+    },
+    isEdit ? 'Save changes' : 'Add student'
+  );
+  setTimeout(() => document.getElementById('as-fn')?.focus(), 80);
+}
+
+async function aDeleteStudent(id, name) {
+  if (!confirm(`Remove student "${name}" from the school?\n\nTheir account will be deactivated and they will no longer be able to log in.`)) return;
+  try {
+    await fetch(API_BASE + '/students/' + id, { method:'DELETE', headers:{'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'} });
+    notify(`"${name}" removed`, 'success');
+    const m = document.getElementById('a-main');
+    if (m) loadAStudents(m);
+  } catch(e) { notify('Remove failed: ' + e.message, 'error'); }
+}
+
+// ── Reusable CSV import modal (students or teachers) ──────────
+function openCsvImportModal(role, onSuccess) {
+  const isStudent = role === 'student';
+  const label     = isStudent ? 'Students' : 'Teachers';
+  const cols      = isStudent
+    ? 'first_name, last_name, email, password, class_name'
+    : 'first_name, last_name, email, password';
+  const example   = isStudent
+    ? 'Kofi,Mensah,kofi@school.edu.gh,changeme123,SHS2A'
+    : 'Ama,Kyereh,ama@school.edu.gh,changeme123';
+
+  document.getElementById('csv-imp-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'csv-imp-modal';
+  overlay.className = 'modal-bg open';
+  overlay.innerHTML = `
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <div><div class="modal-title">Import ${label} from CSV</div>
+          <div style="font-size:12px;color:var(--text-3);margin-top:2px">Upload a file or paste data — up to 500 rows at once</div>
+        </div>
+        <button class="modal-close" onclick="document.getElementById('csv-imp-modal').remove()">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchTab(this,'ci-upload')">Upload CSV</button>
+          <button class="tab-btn" onclick="switchTab(this,'ci-paste')">Paste data</button>
+          <button class="tab-btn" onclick="switchTab(this,'ci-template')">Download template</button>
+        </div>
+
+        <!-- Upload tab -->
+        <div id="ci-upload" class="tab-pane active">
+          <div class="info-box blue" style="margin-bottom:14px">
+            Required columns: <b>${cols}</b><br>
+            <b>class_name</b> must match an existing class exactly (e.g. SHS2A). Leave blank if not assigning yet.
+          </div>
+          <div id="ci-dropzone" style="border:2px dashed var(--border-2);border-radius:var(--radius);padding:40px;text-align:center;cursor:pointer;background:var(--bg)"
+            onclick="document.getElementById('ci-file').click()"
+            ondragover="event.preventDefault();this.style.borderColor='var(--green)'"
+            ondragleave="this.style.borderColor='var(--border-2)'"
+            ondrop="handleCsvDrop(event,'${role}')">
+            <div style="font-size:36px;margin-bottom:10px">📄</div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:6px">Click to choose CSV or drag and drop</div>
+            <div style="font-size:13px;color:var(--text-3)">Accepts .csv files</div>
+            <input type="file" id="ci-file" accept=".csv" style="display:none" onchange="handleCsvFile(this.files[0],'${role}')">
+          </div>
+        </div>
+
+        <!-- Paste tab -->
+        <div id="ci-paste" class="tab-pane" style="display:none">
+          <div class="info-box blue" style="margin-bottom:12px">Copy from Excel/Sheets and paste below. First row must be the header row.</div>
+          <textarea class="form-textarea" id="ci-paste-area" rows="8"
+            placeholder="first_name&#9;last_name&#9;email&#9;password&#9;class_name&#10;Kofi&#9;Mensah&#9;kofi@school.edu.gh&#9;changeme123&#9;SHS2A"></textarea>
+          <button class="btn btn-secondary" style="margin-top:8px" onclick="parsePastedCsv('${role}')">Parse data</button>
+        </div>
+
+        <!-- Template tab -->
+        <div id="ci-template" class="tab-pane" style="display:none">
+          <p style="font-size:13px;color:var(--text-2);line-height:1.8;margin-bottom:16px">
+            Fill the template with your data then upload in the CSV tab.<br>
+            <b>password</b>: leave as <code>changeme123</code> — users should change on first login.<br>
+            ${isStudent ? '<b>class_name</b>: must match an existing class name exactly (e.g. SHS1A, SHS2B).' : ''}
+          </p>
+          <div class="info-box amber" style="margin-bottom:14px">Example row: <code>${example}</code></div>
+          <button class="btn btn-primary" onclick="downloadCsvTemplate('${role}','${cols}')">Download template CSV</button>
+        </div>
+
+        <!-- Preview -->
+        <div id="ci-preview" style="display:none;margin-top:16px">
+          <div class="divider"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="font-size:15px;font-weight:700">Preview <span id="ci-count" style="color:var(--green)"></span></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ci-preview').style.display='none'">Clear</button>
+              <button class="btn btn-primary" id="ci-import-btn" onclick="runCsvImport('${role}')">Import →</button>
+            </div>
+          </div>
+          <div id="ci-preview-table" style="max-height:300px;overflow-y:auto"></div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Store callback for after import
+  window._csvImportCallback = onSuccess;
+  window._csvParsedRows = [];
+}
+
+function handleCsvDrop(event, role) {
+  event.preventDefault();
+  document.getElementById('ci-dropzone').style.borderColor = 'var(--border-2)';
+  const file = event.dataTransfer.files[0];
+  if (file) handleCsvFile(file, role);
+}
+
+function handleCsvFile(file, role) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => parseCsvText(e.target.result, role);
+  reader.readAsText(file);
+}
+
+function parsePastedCsv(role) {
+  const text = document.getElementById('ci-paste-area')?.value?.trim();
+  if (!text) { notify('Paste some data first', 'error'); return; }
+  // Convert tab-separated to comma-separated
+  const csv = text.split('\n').map(r => r.split('\t').join(',')).join('\n');
+  parseCsvText(csv, role);
+}
+
+function parseCsvText(text, role) {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  if (lines.length < 2) { notify('File must have a header row and at least one data row', 'error'); return; }
+
+  // Parse header
+  const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g,'').replace(/\s+/g,'_'));
+  const rows   = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',').map(v => v.trim().replace(/^["']|["']$/g,''));
+    if (vals.every(v => !v)) continue; // skip blank rows
+    const row = {};
+    header.forEach((h, j) => { row[h] = vals[j] || ''; });
+    // Normalize common variations
+    row.first_name = row.first_name || row.firstname || '';
+    row.last_name  = row.last_name  || row.lastname  || row.surname || '';
+    rows.push(row);
+  }
+
+  window._csvParsedRows = rows;
+  showCsvPreview(rows, role);
+}
+
+function showCsvPreview(rows, role) {
+  const prev = document.getElementById('ci-preview');
+  const tbl  = document.getElementById('ci-preview-table');
+  const cnt  = document.getElementById('ci-count');
+  if (!prev || !tbl || !cnt) return;
+
+  cnt.textContent = `(${rows.length} row${rows.length!==1?'s':''})`;
+  const isStudent = role === 'student';
+
+  tbl.innerHTML = `<table class="data-table">
+    <thead><tr><th>#</th><th>First name</th><th>Last name</th><th>Email</th>${isStudent?'<th>Class</th>':''}<th>Status</th></tr></thead>
+    <tbody>
+      ${rows.map((r, i) => {
+        const ok = r.first_name && r.last_name && r.email && r.email.includes('@');
+        return `<tr>
+          <td style="color:var(--text-3)">${i+1}</td>
+          <td>${r.first_name||'<span style="color:var(--coral)">missing</span>'}</td>
+          <td>${r.last_name||'<span style="color:var(--coral)">missing</span>'}</td>
+          <td style="font-size:12px">${r.email||'<span style="color:var(--coral)">missing</span>'}</td>
+          ${isStudent?`<td><span class="badge badge-gray">${r.class_name||'—'}</span></td>`:''}
+          <td><span class="badge badge-${ok?'green':'coral'}">${ok?'Ready':'Invalid'}</span></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+  prev.style.display = '';
+}
+
+async function runCsvImport(role) {
+  const rows = window._csvParsedRows || [];
+  if (!rows.length) { notify('No data to import', 'error'); return; }
+  const btn = document.getElementById('ci-import-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+  try {
+    const res = await POST('/users-bulk', { role, users: rows });
+    document.getElementById('csv-imp-modal')?.remove();
+    notify(`${res.imported} ${role}${res.imported!==1?'s':''} imported${res.skipped?' · '+res.skipped+' skipped':''}`, 'success');
+    if (typeof window._csvImportCallback === 'function') window._csvImportCallback();
+  } catch(e) {
+    notify('Import failed: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Import →'; }
+  }
+}
+
+function downloadCsvTemplate(role, cols) {
+  const isStudent = role === 'student';
+  const header    = cols;
+  const example   = isStudent
+    ? 'Kofi,Mensah,kofi@school.edu.gh,changeme123,SHS2A\nAma,Boateng,ama@school.edu.gh,changeme123,SHS2B'
+    : 'Ama,Kyereh,ama@school.edu.gh,changeme123\nKweku,Boateng,kweku@school.edu.gh,changeme123';
+  const csv  = header + '\n' + example;
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `${role}_import_template.csv`;
+  a.click();
+  notify('Template downloaded', 'success');
 }
 
 function loadASettings(m){
@@ -3396,6 +4558,13 @@ window.addEventListener('resize',()=>{drawProgress();drawItemChart();drawRadar()
 
 // ── INIT ──────────────────────────────────────────────────────
 setupLandingClicks();
+// If a stored session exists, skip the landing page immediately and show a
+// loader while the token is verified in the background.
+if (AUTH_TOKEN && CURRENT_USER) {
+  // Remove 'active' from all screens (landing included) so nothing flashes
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  showLoader('Loading your dashboard…');
+}
 tryRestoreSession();
 
 // ════════════════════════════════════════════════════════════
@@ -3807,6 +4976,45 @@ async function exportGradebook() {
   notify('Gradebook downloaded — open in Excel or Google Sheets','success');
 }
 
+// ── Class multi-select helpers ────────────────────────────────
+function toggleAllClasses(checked) {
+  document.querySelectorAll('.cls-chk').forEach(cb => cb.checked = checked);
+  document.querySelectorAll('.cls-yr').forEach(cb => { cb.checked = checked; cb.indeterminate = false; });
+  updateClsState();
+}
+function toggleYearClasses(year, checked) {
+  document.querySelectorAll(`.cls-chk[data-year="${year}"]`).forEach(cb => cb.checked = checked);
+  updateClsState();
+}
+function updateClsState() {
+  const all     = document.querySelectorAll('.cls-chk');
+  const checked = document.querySelectorAll('.cls-chk:checked');
+  const allCb   = document.getElementById('cls-all');
+  if (allCb) {
+    allCb.checked       = all.length > 0 && checked.length === all.length;
+    allCb.indeterminate = checked.length > 0 && checked.length < all.length;
+  }
+  // Year group header checkboxes
+  [...new Set([...document.querySelectorAll('.cls-yr')].map(cb => cb.dataset.year))].forEach(yr => {
+    const yrAll = document.querySelectorAll(`.cls-chk[data-year="${yr}"]`);
+    const yrChk = document.querySelectorAll(`.cls-chk[data-year="${yr}"]:checked`);
+    const yrCb  = document.querySelector(`.cls-yr[data-year="${yr}"]`);
+    if (yrCb) {
+      yrCb.checked       = yrAll.length > 0 && yrChk.length === yrAll.length;
+      yrCb.indeterminate = yrChk.length > 0 && yrChk.length < yrAll.length;
+    }
+  });
+  // Summary text
+  const sumEl = document.getElementById('cls-summary');
+  if (!sumEl) return;
+  if (!checked.length)       sumEl.textContent = 'No classes selected — test will not be visible to students';
+  else if (checked.length === all.length) sumEl.textContent = `All ${all.length} class${all.length!==1?'es':''} selected`;
+  else {
+    const names = [...checked].map(cb => cb.nextElementSibling?.textContent?.trim()).filter(Boolean);
+    sumEl.textContent = names.join(' · ');
+  }
+}
+
 // ── Shared helper: read form values ──────────────────────────
 function readTestForm() {
   return {
@@ -3817,7 +5025,7 @@ function readTestForm() {
     due_at:         document.getElementById('new-test-due')?.value || null,
     randomise_qs:   document.getElementById('new-test-rand')?.checked ? 1 : 0,
     show_feedback:  document.getElementById('new-test-feedback')?.checked ? 1 : 0,
-    class_ids:      [parseInt(document.getElementById('new-test-class')?.value || '0')].filter(Boolean),
+    class_ids:      [...document.querySelectorAll('.cls-chk:checked')].map(cb => parseInt(cb.value)),
     question_ids:   [...testQIds],
   };
 }
@@ -4661,12 +5869,36 @@ const SL = {
   roomCode: null, sessionId: null, testTitle: '',
   currentQ: -1, totalQ: 0, status: 'waiting',
   answered: false, myScore: 0, participants: 0,
-  pollTimer: null, lastCorrect: null,
+  pollTimer: null, timerInterval: null,
+  lastCorrect: null, startedAt: null, timeLimitMin: 0,
+  elapsedBase: 0, elapsedBaseAt: 0,
 };
 
 function slClear() {
   clearInterval(SL.pollTimer);
-  Object.assign(SL, {roomCode:null,sessionId:null,testTitle:'',currentQ:-1,totalQ:0,status:'waiting',answered:false,myScore:0,participants:0,pollTimer:null,lastCorrect:null});
+  clearInterval(SL.timerInterval);
+  Object.assign(SL, {roomCode:null,sessionId:null,testTitle:'',currentQ:-1,totalQ:0,status:'waiting',answered:false,myScore:0,participants:0,pollTimer:null,timerInterval:null,lastCorrect:null,startedAt:null,timeLimitMin:0,elapsedBase:0,elapsedBaseAt:0,questions:[],myAnswers:{},liveQIdx:0});
+  // Note: localStorage NOT wiped here — only wiped when student leaves or quiz ends
+}
+// Normalize is_correct from server: PHP PDO can return "0"/"1" strings which are
+// both truthy in JS. Convert to real booleans so wrong answers stay red.
+function normalizeMyAnswers(raw) {
+  const out = {};
+  Object.entries(raw || {}).forEach(([idx, a]) => {
+    out[idx] = {
+      selected_opt:  a.selected_opt,
+      marks_awarded: parseFloat(a.marks_awarded) || 0,
+      is_correct:    a.is_correct === null || a.is_correct === undefined
+                       ? null
+                       : a.is_correct == 1,   // == handles "1", 1, true all as true
+    };
+  });
+  return out;
+}
+
+function slEnd() {
+  localStorage.removeItem('aceict_live_s');
+  slClear();
 }
 
 function openJoinLiveModal() {
@@ -4693,6 +5925,29 @@ async function joinLiveQuiz() {
     SL.sessionId = res.session_id;
     SL.testTitle = res.test_title;
     SL.status    = res.status;
+
+    // If quiz is already active, fetch all questions NOW — don't wait for the first poll
+    if (res.status === 'active') {
+      try {
+        const data = await GET('/live/' + code);
+        if (data?.questions?.length) {
+          SL.questions = data.questions;
+          SL.myAnswers = normalizeMyAnswers(data.my_answers);
+          SL.totalQ    = data.total_questions || 0;
+        }
+        if (data?.session) {
+          SL.startedAt    = data.session.started_at || null;
+          SL.timeLimitMin = parseInt(data.session.time_limit_min) || 0;
+          SL.elapsedBase  = parseInt(data.elapsed_seconds) || 0;
+          SL.elapsedBaseAt= Date.now();
+        }
+      } catch(e) { /* questions will arrive via first poll */ }
+    }
+
+    // Persist so a page refresh can restore the student session
+    localStorage.setItem('aceict_live_s', JSON.stringify({
+      roomCode: code, sessionId: res.session_id, testTitle: res.test_title,
+    }));
     closeModal('join-live-modal');
     sRender('live');
     SL.pollTimer = setInterval(slPoll, 2000);
@@ -4724,6 +5979,44 @@ sRender = function(v) {
 
 function slRenderScreen(m) {
   if (!SL.roomCode) {
+    // Try to restore from localStorage before showing the "no session" message
+    const saved = localStorage.getItem('aceict_live_s');
+    if (saved) {
+      try {
+        const sv = JSON.parse(saved);
+        if (sv.roomCode) {
+          m.innerHTML = panelLoader();
+          // Re-join silently — server keeps participants on reconnect
+          POST('/live/' + sv.roomCode + '/join', {}).then(res => {
+            if (!res) throw new Error('join failed');
+            SL.roomCode  = sv.roomCode;
+            SL.sessionId = sv.sessionId;
+            SL.testTitle = sv.testTitle || res.test_title || '';
+            SL.status    = res.status || 'waiting';
+            // Load current state
+            GET('/live/' + sv.roomCode).then(data => {
+              if (data?.session?.status === 'ended') { slEnd(); slRenderScreen(m); return; }
+              if (data?.questions?.length) {
+                SL.questions = data.questions;
+                SL.myAnswers = normalizeMyAnswers(data.my_answers);
+                SL.totalQ    = data.total_questions || 0;
+              }
+              if (data?.session) {
+                SL.startedAt    = data.session.started_at || null;
+                SL.timeLimitMin = parseInt(data.session.time_limit_min) || 0;
+                SL.elapsedBase  = parseInt(data.elapsed_seconds) || 0;
+                SL.elapsedBaseAt= Date.now();
+              }
+              SL.status = data?.session?.status || SL.status;
+              slRenderScreen(m);
+              if (!SL.pollTimer) SL.pollTimer = setInterval(slPoll, 2000);
+              notify('Session restored: ' + SL.testTitle, 'success');
+            }).catch(() => { slEnd(); slRenderScreen(m); });
+          }).catch(() => { localStorage.removeItem('aceict_live_s'); slRenderScreen(m); });
+          return;
+        }
+      } catch(e) { localStorage.removeItem('aceict_live_s'); }
+    }
     m.innerHTML = `
 <div class="topbar"><div class="topbar-title">Live quiz</div></div>
 <div class="page"><div class="info-box coral">No active session. <button class="btn btn-primary btn-sm" style="margin-left:8px" onclick="openJoinLiveModal()">Join a quiz</button></div></div>`;
@@ -4745,7 +6038,8 @@ function slRenderScreen(m) {
     return;
   }
   if (SL.status === 'active') {
-    slRenderQuestion(m);
+    if (SL.questions.length) slShowAllQuestions(m);
+    else m.innerHTML = panelLoader(); // waiting for first poll to load questions
     return;
   }
   if (SL.status === 'ended') {
@@ -4754,8 +6048,14 @@ function slRenderScreen(m) {
   }
 }
 
+// Student live state extras
+SL.questions   = [];   // all questions from server
+SL.myAnswers   = {};   // keyed by q_index: {selected_opt, is_correct, marks_awarded}
+SL.liveQIdx    = 0;    // which question the student is currently viewing
+
 function slRenderQuestion(m) {
-  // Will be populated by slPoll when question data arrives
+  // Called from slRenderScreen when status becomes active
+  slShowAllQuestions(m);
 }
 
 async function slPoll() {
@@ -4781,106 +6081,209 @@ async function slPoll() {
     }
 
     if (sess.status === 'active') {
-      const newQ = parseInt(sess.current_q);
       SL.status = 'active';
-      if (SL.currentQ !== newQ) {
-        // New question released
-        SL.currentQ   = newQ;
-        SL.answered   = !!data.my_answer;
-        SL.lastCorrect = data.my_answer ? !!data.my_answer.is_correct : null;
+      // Refresh elapsed baseline on every active poll (keeps timer accurate)
+      SL.timeLimitMin  = parseInt(sess.time_limit_min) || SL.timeLimitMin;
+      if (data.elapsed_seconds !== undefined) {
+        SL.elapsedBase  = parseInt(data.elapsed_seconds);
+        SL.elapsedBaseAt= Date.now();
+      }
+      if (!SL.questions.length && data.questions?.length) {
+        // First time going active — full render
+        SL.questions = data.questions;
+        SL.myAnswers = normalizeMyAnswers(data.my_answers);
+        SL.totalQ    = data.total_questions || 0;
         const m = document.getElementById('s-main');
-        if (m) slShowQuestion(m, data);
-      } else if (!SL.answered && data.my_answer) {
-        // Answer was recorded — refresh to show feedback
-        SL.answered   = true;
-        SL.lastCorrect = !!data.my_answer.is_correct;
-        const m = document.getElementById('s-main');
-        if (m) slShowQuestion(m, data);
+        if (m) slShowAllQuestions(m);
+      } else {
+        // Merge any newly recorded answers (from backend confirmation)
+        const incoming = normalizeMyAnswers(data.my_answers);
+        let changed = false;
+        Object.entries(incoming).forEach(([idx, ans]) => {
+          if (!SL.myAnswers[idx] || SL.myAnswers[idx].is_correct === null) {
+            SL.myAnswers[idx] = ans; changed = true;
+          }
+        });
+        // Update nav dots + progress bar (lightweight)
+        slUpdateNavAndProgress();
       }
     }
   } catch(e) { /* keep polling */ }
 }
 
-function slShowQuestion(m, data) {
-  const q    = data.question;
-  if (!q) { m.innerHTML = panelLoader(); return; }
-  const opts = typeof q.options === 'string' ? JSON.parse(q.options) : (q.options || []);
-  const qNum = SL.currentQ + 1;
-  const pct  = data.participant_count ? Math.round(data.answered_count / data.participant_count * 100) : 0;
+function slShowAllQuestions(m) {
+  const qs  = SL.questions;
+  const ans = SL.myAnswers;
+  const doneCount = Object.keys(ans).length;
+  const pct = qs.length ? Math.round(doneCount / qs.length * 100) : 0;
 
   m.innerHTML = `
 <div class="topbar">
   <div><div class="topbar-title">${SL.testTitle}</div>
-  <div class="topbar-sub">Question ${qNum} of ${SL.totalQ} · <span class="live-dot"></span> Live</div></div>
-  <div class="topbar-actions"><button class="btn btn-ghost btn-sm" onclick="slLeave()">Leave</button></div>
+  <div class="topbar-sub"><span class="live-dot"></span> Live · ${qs.length} questions</div></div>
+  <div class="topbar-actions">
+    ${(() => {
+      const _slLimit = SL.timeLimitMin * 60;
+      const _slRemaining = _slLimit > 0 ? Math.max(0, _slLimit - (SL.elapsedBase || 0)) : -1;
+      return _slRemaining >= 0
+        ? `<div class="quiz-timer${_slRemaining <= 300 ? ' warning' : ''}" id="sl-timer" style="font-size:18px;letter-spacing:2px">${fmtTime(_slRemaining)}</div>`
+        : '';
+    })()}
+    <span style="font-size:13px;font-weight:600;color:var(--text-2)" id="sl-done-count">${doneCount}/${qs.length} answered</span>
+    <button class="btn btn-ghost btn-sm" onclick="slLeave()">Leave</button>
+  </div>
 </div>
-<div style="background:var(--bg)"><div class="quiz-shell" style="max-width:640px">
-  <div class="quiz-header" style="margin-bottom:16px">
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      <span class="badge badge-${sub2badge(q.sub_strand)}">${q.sub_strand}</span>
-      <span class="badge badge-gray">${q.marks} mark${q.marks!==1?'s':''}</span>
+<div style="background:var(--bg)"><div class="quiz-shell" style="max-width:760px">
+  <div class="quiz-header">
+    <div class="progress-bar" style="margin-bottom:12px">
+      <div class="progress-fill" id="sl-prog" style="width:${pct}%"></div>
     </div>
-    <div class="progress-bar"><div class="progress-fill" style="width:${Math.round(qNum/SL.totalQ*100)}%"></div></div>
-    <div style="font-size:12px;color:var(--text-3);margin-top:6px;text-align:right">${pct}% of class answered</div>
+    <div class="q-nav" id="sl-qnav"></div>
   </div>
-  <div class="question-card">
-    <div class="q-text">${q.question_text}</div>
-    ${SL.answered ? slAnsweredHTML(opts, data.my_answer) : `
-    <div class="q-options" id="sl-opts">
-      ${opts.map(o => `
-      <button class="q-option" onclick="slAnswer('${o.label}')">
-        <div class="opt-letter">${o.label}</div>
-        <div class="opt-text">${o.text}</div>
-      </button>`).join('')}
-    </div>`}
+  <div id="sl-qcard" class="question-card"></div>
+  <div class="q-actions">
+    <div style="font-size:13px;color:var(--text-3)" id="sl-qstatus"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" id="sl-prev" onclick="slNavQ(-1)">← Prev</button>
+      <button class="btn btn-primary"   id="sl-next" onclick="slNavQ(1)">Next →</button>
+    </div>
   </div>
-  ${SL.answered ? `
-  <div class="card card-sm" style="text-align:center;margin-top:12px">
-    <div style="font-size:14px;color:var(--text-3)">Waiting for teacher to advance…<div class="live-dot" style="display:inline-block;margin-left:6px"></div></div>
-    <div style="font-size:13px;color:var(--text-2);margin-top:4px">Your score: <b style="color:var(--green)">${SL.myScore}</b> pts</div>
-  </div>` : ''}
 </div></div>`;
+
+  slBuildNav();
+  slRenderLiveQ();
+  slStartTimer(); // kick off the 1-second clock
 }
 
-function slAnsweredHTML(opts, myAnswer) {
-  const myOpt  = myAnswer?.selected_opt;
-  const correct = myAnswer?.is_correct;
-  return `<div class="q-options">
+function slStartTimer() {
+  clearInterval(SL.timerInterval);
+  if (!SL.timeLimitMin) return; // no limit — no countdown
+  const limitSecs = SL.timeLimitMin * 60;
+  SL._timeUpFired = false;
+  SL.timerInterval = setInterval(() => {
+    const el = document.getElementById('sl-timer');
+    if (!el) { clearInterval(SL.timerInterval); return; }
+    const elapsed   = SL.elapsedBase + Math.floor((Date.now() - SL.elapsedBaseAt) / 1000);
+    const remaining = Math.max(0, limitSecs - elapsed);
+    el.textContent = fmtTime(remaining);
+    el.className   = 'quiz-timer' + (remaining <= 300 ? ' warning' : '');
+    if (remaining === 0 && !SL._timeUpFired) {
+      SL._timeUpFired = true;
+      clearInterval(SL.timerInterval);
+      notify('Time is up! No more answers can be submitted.', 'warn');
+      document.querySelectorAll('#sl-qcard .q-option').forEach(b => {
+        b.disabled = true; b.style.cursor = 'default';
+      });
+    }
+  }, 1000);
+}
+
+function slBuildNav() {
+  const nav = document.getElementById('sl-qnav');
+  if (!nav) return;
+  nav.innerHTML = '';
+  SL.questions.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'q-dot' + (i === SL.liveQIdx ? ' current' : '') + (SL.myAnswers[i] ? ' answered' : '');
+    d.textContent = i + 1;
+    d.onclick = () => { SL.liveQIdx = i; slRenderLiveQ(); slBuildNav(); };
+    nav.appendChild(d);
+  });
+}
+
+function slNavQ(dir) {
+  const next = SL.liveQIdx + dir;
+  if (next < 0 || next >= SL.questions.length) return;
+  SL.liveQIdx = next;
+  slRenderLiveQ();
+  slBuildNav();
+}
+
+function slRenderLiveQ() {
+  const card = document.getElementById('sl-qcard');
+  const prev = document.getElementById('sl-prev');
+  const next = document.getElementById('sl-next');
+  const stat = document.getElementById('sl-qstatus');
+  if (!card) return;
+
+  const q    = SL.questions[SL.liveQIdx];
+  if (!q) return;
+  const opts    = typeof q.options === 'string' ? JSON.parse(q.options) : (q.options || []);
+  const myAns   = SL.myAnswers[SL.liveQIdx];
+  const isLast  = SL.liveQIdx === SL.questions.length - 1;
+  const isFirst = SL.liveQIdx === 0;
+
+  if (prev) prev.disabled = isFirst;
+  if (next) next.textContent = isLast ? 'Done ✓' : 'Next →';
+  // is_correct: null = pending (optimistic), true = correct, false = wrong
+  const confirmed = myAns && myAns.is_correct !== null;
+  if (stat) stat.textContent = confirmed ? (myAns.is_correct ? '✓ Correct' : '✗ Incorrect') : '';
+
+  card.innerHTML = `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div class="q-number">Question ${SL.liveQIdx + 1}
+      <span class="badge badge-${(q.difficulty||'Medium')==='Easy'?'green':q.difficulty==='Hard'?'coral':'amber'}" style="margin-left:6px">${q.difficulty||'Medium'}</span>
+    </div>
+    <span class="q-marks">${q.marks||1} mark${(q.marks||1)>1?'s':''}</span>
+  </div>
+  <div class="q-text">${q.question_text}</div>
+  <div class="q-options" id="sl-opts-${SL.liveQIdx}">
     ${opts.map(o => {
-      const isMe = o.label === myOpt;
-      const cls  = isMe ? (correct ? 'correct' : 'wrong') : '';
-      return `<div class="q-option ${cls}" style="cursor:default">
+      const isMe = myAns?.selected_opt === o.label;
+      // Only colour the option once the server has confirmed — pending shows as plain 'selected'
+      const cls = confirmed
+        ? (isMe ? (myAns.is_correct ? 'correct' : 'wrong') : '')
+        : (isMe ? 'selected' : '');
+      const locked = myAns ? 'disabled style="cursor:default"' : `onclick="slAnswerQ(${SL.liveQIdx},'${o.label}')"`;
+      return `<button class="q-option ${cls}" ${locked}>
         <div class="opt-letter">${o.label}</div>
         <div class="opt-text">${o.text}</div>
-        ${isMe ? `<div style="margin-left:auto;font-size:14px">${correct?'✓':'✗'}</div>` : ''}
-      </div>`;
+        ${confirmed && isMe ? `<span style="margin-left:auto">${myAns.is_correct ? '✓' : '✗'}</span>` : ''}
+      </button>`;
     }).join('')}
   </div>
-  <div class="info-box ${correct?'green':'coral'}" style="margin-top:14px;text-align:center;font-size:15px;font-weight:700">
-    ${correct ? '✓ Correct! +' + (myAnswer?.marks||1) + ' point' + ((myAnswer?.marks||1)!==1?'s':'') : '✗ Incorrect'}
-  </div>`;
+  ${confirmed ? `<div class="info-box ${myAns.is_correct ? 'green' : 'coral'}" style="margin-top:12px;font-weight:700">
+    ${myAns.is_correct
+      ? '✓ Correct! +' + (myAns.marks_awarded||1) + ' pt' + ((myAns.marks_awarded||1)!==1?'s':'')
+      : '✗ Incorrect — move on to the next question'}
+  </div>` : ''}`;
 }
 
-async function slAnswer(label) {
-  if (SL.answered) return;
-  // Optimistically disable buttons
-  document.querySelectorAll('#sl-opts .q-option').forEach(b => b.disabled = true);
+function slUpdateNavAndProgress() {
+  const doneCount = Object.keys(SL.myAnswers).length;
+  const pct = SL.questions.length ? Math.round(doneCount / SL.questions.length * 100) : 0;
+  const pg = document.getElementById('sl-prog');
+  const dc = document.getElementById('sl-done-count');
+  if (pg) pg.style.width = pct + '%';
+  if (dc) dc.textContent = doneCount + '/' + SL.questions.length + ' answered';
+  slBuildNav();
+  // Refresh current question card to reflect any confirmed answers
+  slRenderLiveQ();
+}
+
+async function slAnswerQ(qIdx, label) {
+  if (SL.myAnswers[qIdx]) return; // already answered
+  // Optimistic local update so UI feels instant
+  SL.myAnswers[qIdx] = { selected_opt: label, is_correct: null, marks_awarded: 0 };
+  slRenderLiveQ();
+  slBuildNav();
+  slUpdateNavAndProgress();
   try {
-    const res = await POST('/live/' + SL.roomCode + '/answer', { selected: label, q_index: SL.currentQ });
-    SL.answered    = true;
-    SL.lastCorrect = res.is_correct;
+    const res = await POST('/live/' + SL.roomCode + '/answer', { q_index: qIdx, selected: label });
+    SL.myAnswers[qIdx] = { selected_opt: label, is_correct: !!res.is_correct, marks_awarded: res.marks || 0 };
     if (res.is_correct) SL.myScore += (res.marks || 1);
-    // Re-render with feedback — next poll will refresh properly
-    const data = await GET('/live/' + SL.roomCode);
-    const m = document.getElementById('s-main');
-    if (m) slShowQuestion(m, data);
+    slRenderLiveQ();
+    slBuildNav();
   } catch(e) {
-    notify('Could not submit answer: ' + e.message, 'error');
-    document.querySelectorAll('#sl-opts .q-option').forEach(b => b.disabled = false);
+    delete SL.myAnswers[qIdx];
+    slRenderLiveQ();
+    slBuildNav();
+    notify('Could not save answer — try again', 'error');
   }
 }
 
 function slRenderEnded(m, participants) {
+  localStorage.removeItem('aceict_live_s'); // quiz over — clear persistence
   clearInterval(SL.pollTimer);
   const lb = participants || SL.participants || [];
   m.innerHTML = `
@@ -4909,7 +6312,7 @@ function slRenderEnded(m, participants) {
 }
 
 function slLeave() {
-  slClear();
+  slEnd(); // clears localStorage + in-memory state
   sNav('dashboard', null);
 }
 </script>
