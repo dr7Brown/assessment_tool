@@ -343,6 +343,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="sidebar-section-label">School</div>
         <div class="nav-item active" onclick="aNav('overview',this)"><div class="ni-icon">🏫</div>School overview</div>
         <div class="nav-item" onclick="aNav('departments',this)"><div class="ni-icon">🏢</div>Departments</div>
+        <div class="nav-item" onclick="aNav('subjects',this)"><div class="ni-icon">📖</div>Subjects</div>
         <div class="nav-item" onclick="aNav('classes',this)"><div class="ni-icon">🗂️</div>Classes</div>
         <div class="nav-item" onclick="aNav('reports',this)"><div class="ni-icon">📊</div>Reports</div>
       </div>
@@ -422,7 +423,15 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
           </select>
         </div>
       </div>
-      <div class="form-group"><label class="form-label">Marks</label><input class="form-input" id="qb-marks" type="number" value="1" min="1" max="25" style="width:80px"></div>
+      <div class="grid-2" style="margin-top:4px">
+        <div class="form-group"><label class="form-label">Marks</label><input class="form-input" id="qb-marks" type="number" value="1" min="1" max="25" style="width:80px"></div>
+        <div class="form-group">
+          <label class="form-label">Subject <span style="font-size:11px;color:var(--text-3)">(optional)</span></label>
+          <select class="form-select" id="qb-subject">
+            <option value="">— General / unspecified —</option>
+          </select>
+        </div>
+      </div>
       <div class="form-group"><label class="form-label">Explanation (shown after submission)</label><textarea class="form-textarea" rows="2" placeholder="Explain why the correct answer is correct and why the distractors are wrong..."></textarea></div>
     </div>
     <div class="modal-footer">
@@ -617,7 +626,7 @@ const GET    = (ep, p)  => api('GET',    ep, p);
 const POST   = (ep, b)  => api('POST',   ep, b);
 const PATCH  = (ep, b)  => api('PATCH',  ep, b);
 const PUT    = (ep, b)  => api('PUT',    ep, b);
-const DELETE = (ep)     => api('DELETE', ep);
+const DELETE = (ep, b)  => api('DELETE', ep, b);
 
 // ── LOADING ───────────────────────────────────────────────────
 function showLoader(msg = 'Loading...') {
@@ -885,6 +894,33 @@ function updateSidebarUser(role) {
 // Populated by loadQBCache() on startup and refreshed when needed
 let QB = [];
 let QB_LOADED = false;
+
+// Cached subject list for dropdowns
+let _subjectCache = null;
+async function getSubjectList() {
+  if (_subjectCache) return _subjectCache;
+  try {
+    const data = await GET('/subjects');
+    const all = [
+      ...((data?.platform || []).filter(s => s.is_enabled == 1)),
+      ...(data?.custom || [])
+    ];
+    _subjectCache = all;
+    return all;
+  } catch(e) { return []; }
+}
+
+async function populateSubjectDropdowns(selectedId = null) {
+  const subjects = await getSubjectList();
+  const opts = `<option value="">— General / unspecified —</option>` +
+    subjects.map(s => `<option value="${s.id}" ${selectedId==s.id?'selected':''}>[${s.category}] ${s.name}</option>`).join('');
+  document.querySelectorAll('#qb-subject, #nt-subject').forEach(el => {
+    const cur = el.value;
+    el.innerHTML = opts;
+    if (!selectedId && cur) el.value = cur; // preserve existing selection
+    if (selectedId) el.value = selectedId;
+  });
+}
 
 async function loadQBCache(force = false) {
   if (QB_LOADED && !force) return QB;
@@ -2183,7 +2219,7 @@ async function loadTBank(m){
 <div class="topbar">
   <div><div class="topbar-title">Question bank</div><div class="topbar-sub"><span id="bank-total">Loading...</span></div></div>
   <div class="topbar-actions">
-    <button class="btn btn-secondary" onclick="openModal('qbuilder-modal')">+ New question</button>
+    <button class="btn btn-secondary" onclick="openNewQBuilder()">+ New question</button>
     <button class="btn btn-secondary" onclick="openBulkUpload()">⬆ Bulk upload</button>
     <button class="btn btn-primary" onclick="tNav('create',null)">Build a test →</button>
   </div>
@@ -2491,6 +2527,11 @@ async function loadTCreate(m, prefill) {
             <div style="font-size:11px;color:var(--text-3);margin-top:5px" id="cls-summary"></div>`;
           })()}
         </div>
+        <div class="form-group"><label class="form-label">Subject</label>
+          <select class="form-select" id="nt-subject">
+            <option value="">— General / unspecified —</option>
+          </select>
+        </div>
         <div class="form-group"><label class="form-label">Type</label>
           <select class="form-select" id="new-test-type">
             <option value="quiz" ${t.type==='quiz'||!t.type?'selected':''}>Quiz</option>
@@ -2532,7 +2573,7 @@ async function loadTCreate(m, prefill) {
             </div>
           </div>
           <div style="display:flex;gap:5px">
-            <button class="btn btn-ghost btn-sm" onclick="openModal('qbuilder-modal')">+ New</button>
+            <button class="btn btn-ghost btn-sm" onclick="openNewQBuilder()">+ New</button>
             <button class="btn btn-ghost btn-sm" onclick="loadWASSCETemplate()">WASSCE</button>
           </div>
         </div>
@@ -2546,6 +2587,7 @@ async function loadTCreate(m, prefill) {
   setTimeout(() => {
     refreshStrandSelect('ai-year','ai-strand','ai-sub');
     updateClsState(); // initialise the "All classes" checkbox state + summary line
+    populateSubjectDropdowns(t.subject_id || null); // fill subject selects
   }, 50);
 }
 
@@ -2979,6 +3021,7 @@ function aRender(v){
   m.innerHTML=panelLoader();
   if(v==='overview')         loadAOverview(m);
   else if(v==='departments') loadADepts(m);
+  else if(v==='subjects')    loadASubjects(m);
   else if(v==='classes')     loadAClasses(m);
   else if(v==='reports')     loadAReports(m);
   else if(v==='teachers')    loadATeachers(m);
@@ -3160,8 +3203,9 @@ async function loadAClasses(m) {
         <td style="font-size:12px">${subTs.length ? subTs.map(t=>`<span class="badge badge-blue" style="margin:1px">${t.name}</span>`).join('') : '<span style="color:var(--text-3)">—</span>'}</td>
         <td>${c.student_count||0}</td>
         <td><b style="color:${col(avg2)}">${avg2 ? avg2+'%' : '—'}</b></td>
-        <td style="display:flex;gap:4px">
+        <td style="display:flex;gap:4px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" onclick='aOpenClassModal(${cData})'>Edit</button>
+          <button class="btn btn-ghost btn-sm" onclick="aManageClassSubjects(${c.id},'${c.name.replace(/'/g,"\\'")}')">Subjects</button>
           <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteClass(${c.id},'${c.name.replace(/'/g,"\\'")}')">Delete</button>
         </td>
       </tr>`;
@@ -3408,18 +3452,45 @@ async function aDeleteDept(id, name) {
 
 function aAddTeacherToDept(deptId, teachers) {
   const t = Array.isArray(teachers) ? teachers : [];
+
+  const rows = t.map(tx => `
+    <div class="adt-row" data-id="${tx.id}"
+      data-name="${(tx.first_name+' '+tx.last_name).toLowerCase()}"
+      onclick="adtSelect(this,${tx.id})"
+      style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .12s">
+      <div class="student-avatar" style="background:${tx.avatar_color||'#C47D0E'};width:34px;height:34px;font-size:12px;flex-shrink:0">
+        ${((tx.first_name||'?')[0]+(tx.last_name||'?')[0]).toUpperCase()}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">${tx.first_name} ${tx.last_name}</div>
+        <div style="font-size:11px;margin-top:1px;color:${tx.department_name?'var(--amber)':'var(--text-3)'}">
+          ${tx.department_name ? '⚠ Currently: '+tx.department_name : 'No department'}
+        </div>
+      </div>
+      <span id="adt-tick-${tx.id}" style="display:none;color:var(--green);font-size:20px;font-weight:700">✓</span>
+    </div>`).join('');
+
   adminModal(
     'Add teacher to department',
-    `<div class="form-group"><label class="form-label">Select teacher</label>
-       <select class="form-select" id="adt-teacher">
-         <option value="">— Choose a teacher —</option>
-         ${t.map(tx=>`<option value="${tx.id}">${tx.first_name} ${tx.last_name}${tx.department_name?' ('+tx.department_name+')':''}</option>`).join('')}
-       </select>
+    `<div style="position:relative;margin-bottom:8px">
+       <input class="form-input" id="adt-search" placeholder="Search by name…" autocomplete="off"
+         style="padding-left:36px"
+         oninput="adtFilter(this.value)">
+       <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--text-3);pointer-events:none">🔍</span>
      </div>
-     <div class="info-box blue" style="margin-top:8px">A teacher can only belong to one department. If they are already assigned, they will be moved here.</div>`,
+     <div id="adt-list" style="max-height:300px;overflow-y:auto;border:1px solid var(--border-2);border-radius:var(--radius-sm)">
+       ${rows || '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">No teachers available</div>'}
+     </div>
+     <input type="hidden" id="adt-selected" value="">
+     <div style="font-size:12px;color:var(--text-3);margin-top:8px">
+       ${t.length} teacher${t.length!==1?'s':''} · click a name to select
+     </div>
+     <div class="info-box blue" style="margin-top:10px;font-size:12px">
+       A teacher can only belong to one department. If already assigned, they will be moved here.
+     </div>`,
     async () => {
-      const tid = document.getElementById('adt-teacher')?.value;
-      if (!tid) { notify('Select a teacher', 'error'); return; }
+      const tid = document.getElementById('adt-selected')?.value;
+      if (!tid) { notify('Select a teacher first', 'error'); return; }
       const btn = document.getElementById('adm-modal-save');
       btn.disabled = true; btn.textContent = 'Adding…';
       try {
@@ -3435,6 +3506,29 @@ function aAddTeacherToDept(deptId, teachers) {
     },
     'Add teacher →'
   );
+  setTimeout(() => document.getElementById('adt-search')?.focus(), 80);
+}
+
+// ── Teacher search helpers for the dept modal ─────────────────
+function adtFilter(query) {
+  const q = query.trim().toLowerCase();
+  document.querySelectorAll('.adt-row').forEach(row => {
+    row.style.display = (q === '' || row.dataset.name.includes(q)) ? '' : 'none';
+  });
+}
+
+function adtSelect(el, id) {
+  // Clear all previous selections
+  document.querySelectorAll('.adt-row').forEach(r => {
+    r.style.background = '';
+    r.style.borderRadius = '';
+  });
+  document.querySelectorAll('[id^="adt-tick-"]').forEach(t => t.style.display = 'none');
+  // Highlight selected row
+  el.style.background = 'var(--green-lt)';
+  const tick = document.getElementById('adt-tick-' + id);
+  if (tick) tick.style.display = '';
+  document.getElementById('adt-selected').value = id;
 }
 
 async function aRemoveTeacherFromDept(deptId, teacherId, teacherName) {
@@ -3444,6 +3538,429 @@ async function aRemoveTeacherFromDept(deptId, teacherId, teacherName) {
     notify(`"${teacherName}" removed from department`, 'success');
     const m = document.getElementById('a-main');
     if (m) loadADepts(m);
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+// ── Subjects admin page ───────────────────────────────────────
+const CATEGORY_ICONS = {
+  'Sciences': '🔬',
+  'Agricultural Science': '🌾',
+  'ICT & Computing': '💻',
+  'Languages': '🌍',
+  'Humanities & Social Studies': '📜',
+  'Business Studies': '💼',
+  'Visual Arts': '🎨',
+  'Home Economics': '🍳',
+  'Technical & Vocational': '🔧',
+  'Physical Education': '⚽',
+  'General': '📚',
+};
+
+async function loadASubjects(m) {
+  m.innerHTML = panelLoader();
+  let data = { platform: [], custom: [] };
+  try { data = await GET('/subjects'); } catch(e) {}
+
+  const platform   = data.platform || [];
+  const custom     = data.custom   || [];
+  const enabledCnt = platform.filter(s => s.is_enabled == 1).length;
+
+  // Group platform subjects by category
+  const byCategory = {};
+  platform.forEach(s => {
+    if (!byCategory[s.category]) byCategory[s.category] = [];
+    byCategory[s.category].push(s);
+  });
+
+  const categoryHTML = Object.entries(byCategory).map(([cat, subjects]) => {
+    const catEnabled = subjects.filter(s => s.is_enabled == 1).length;
+    const icon = CATEGORY_ICONS[cat] || '📚';
+    const rows = subjects.map(s => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <span style="font-size:13px;font-weight:600">${s.name}</span>
+          ${s.short_name ? `<span style="font-size:11px;color:var(--text-3);margin-left:6px">(${s.short_name})</span>` : ''}
+        </div>
+        <label class="switch" title="${s.is_enabled==1?'Enabled — click to disable':'Disabled — click to enable'}">
+          <input type="checkbox" ${s.is_enabled==1?'checked':''}
+            onchange="toggleSubject(${s.id},this)">
+          <span class="switch-slider"></span>
+        </label>
+      </div>`).join('');
+    return `
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:20px">${icon}</span>
+          <div>
+            <div style="font-size:15px;font-weight:700">${cat}</div>
+            <div style="font-size:12px;color:var(--text-3)">${catEnabled}/${subjects.length} enabled</div>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="enableAllInCategory('${cat.replace(/'/g,"\\'")}',${subjects.some(s=>s.is_enabled!=1)})">
+          ${subjects.every(s=>s.is_enabled==1) ? 'Disable all' : 'Enable all'}
+        </button>
+      </div>
+      <div>${rows}</div>
+    </div>`;
+  }).join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Subjects</div>
+  <div class="topbar-sub">${enabledCnt} of ${platform.length} national curriculum subjects enabled · ${custom.length} custom</div></div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="aOpenSubjectModal(null)">+ Add custom subject</button>
+  </div>
+</div>
+<div class="page">
+  <div class="info-box blue" style="margin-bottom:20px">
+    Toggle the switches to enable or disable subjects for your school. Only enabled subjects appear in question bank filters and class assignments.
+    You can also add school-specific subjects that are not on the national curriculum.
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab(this,'subj-national')">National curriculum (${platform.length})</button>
+    <button class="tab-btn" onclick="switchTab(this,'subj-custom')">Your custom subjects (${custom.length})</button>
+  </div>
+
+  <div id="subj-national" class="tab-pane active">
+    ${categoryHTML}
+  </div>
+
+  <div id="subj-custom" class="tab-pane" style="display:none">
+    ${custom.length ? `
+    <div class="card">
+      <table class="data-table">
+        <thead><tr><th>Subject name</th><th>Short name</th><th>Category</th><th></th></tr></thead>
+        <tbody>
+          ${custom.map(s => `<tr>
+            <td><b>${s.name}</b></td>
+            <td style="color:var(--text-3)">${s.short_name||'—'}</td>
+            <td><span class="badge badge-gray">${s.category}</span></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick='aOpenSubjectModal(${JSON.stringify(s).replace(/"/g,"&quot;")})'>Edit</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteSubject(${s.id},'${s.name.replace(/'/g,"\\'")}')">Delete</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : `
+    <div style="text-align:center;padding:40px;color:var(--text-3)">
+      <div style="font-size:36px;margin-bottom:12px">📖</div>
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">No custom subjects yet</div>
+      <div style="font-size:13px;margin-bottom:16px">Add subjects specific to your school that aren't on the national curriculum.</div>
+      <button class="btn btn-primary" onclick="aOpenSubjectModal(null)">+ Add custom subject</button>
+    </div>`}
+  </div>
+</div>`;
+}
+
+async function toggleSubject(subjectId, checkbox) {
+  const wasChecked = checkbox.checked;
+  try {
+    const res = await POST('/subjects/' + subjectId + '/toggle', {});
+    // Sync checkbox to server response
+    checkbox.checked = res.enabled;
+    notify(res.enabled ? 'Subject enabled' : 'Subject disabled', res.enabled ? 'success' : '');
+    // Refresh subtitle counts without full reload
+    const m = document.getElementById('a-main');
+    if (m) loadASubjects(m);
+  } catch(e) {
+    checkbox.checked = !wasChecked; // revert on error
+    notify('Could not update: ' + e.message, 'error');
+  }
+}
+
+async function enableAllInCategory(category, enable) {
+  // Get all subjects in this category on the current page
+  const m = document.getElementById('a-main');
+  if (!m) return;
+  // Find all switches in cards that belong to this category
+  // We reload after to simplify
+  try {
+    const data = await GET('/subjects');
+    const targets = (data.platform || []).filter(s => s.category === category);
+    for (const s of targets) {
+      const isEnabled = s.is_enabled == 1;
+      if (enable && !isEnabled) await POST('/subjects/' + s.id + '/toggle', {});
+      if (!enable && isEnabled) await POST('/subjects/' + s.id + '/toggle', {});
+    }
+    notify((enable ? 'All ' : 'All ') + category + (enable ? ' subjects enabled' : ' subjects disabled'), 'success');
+    loadASubjects(m);
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+function aOpenSubjectModal(subject) {
+  const isEdit = !!subject;
+  const categories = Object.keys(CATEGORY_ICONS);
+  adminModal(
+    isEdit ? `Edit — ${subject.name}` : 'Add custom subject',
+    `<div class="form-group"><label class="form-label">Subject name</label>
+       <input class="form-input" id="asj-name" value="${isEdit?(subject.name||''):''}">
+     </div>
+     <div class="form-group"><label class="form-label">Short name / abbreviation</label>
+       <input class="form-input" id="asj-short" placeholder="e.g. ICT, Biol." value="${isEdit?(subject.short_name||''):''}">
+     </div>
+     <div class="form-group"><label class="form-label">Category</label>
+       <select class="form-select" id="asj-cat">
+         ${categories.map(c=>`<option value="${c}" ${subject?.category===c?'selected':''}>${c}</option>`).join('')}
+         <option value="General" ${(!subject||subject.category==='General')?'selected':''}>General</option>
+       </select>
+     </div>`,
+    async () => {
+      const name  = document.getElementById('asj-name')?.value?.trim();
+      const short = document.getElementById('asj-short')?.value?.trim();
+      const cat   = document.getElementById('asj-cat')?.value;
+      if (!name) { notify('Enter a subject name', 'error'); return; }
+      const btn = document.getElementById('adm-modal-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        if (isEdit) await PATCH('/subjects/' + subject.id, { name, short_name: short, category: cat });
+        else        await POST('/subjects', { name, short_name: short, category: cat });
+        document.getElementById('adm-modal')?.remove();
+        notify(isEdit ? 'Subject updated' : 'Subject added', 'success');
+        const m = document.getElementById('a-main');
+        if (m) loadASubjects(m);
+      } catch(e) {
+        notify(e.message, 'error');
+        btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Add subject';
+      }
+    },
+    isEdit ? 'Save changes' : 'Add subject'
+  );
+  setTimeout(() => document.getElementById('asj-name')?.focus(), 80);
+}
+
+async function aDeleteSubject(id, name) {
+  if (!confirm(`Delete custom subject "${name}"?`)) return;
+  try {
+    await fetch(API_BASE + '/subjects/' + id, {method:'DELETE',headers:{'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'}});
+    notify(`"${name}" deleted`, 'success');
+    const m = document.getElementById('a-main');
+    if (m) loadASubjects(m);
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+// ── Class subjects management ──────────────────────────────────
+
+let _csClassId   = null;
+let _csClassName = '';
+let _csAssigned  = [];   // [{subject_id, name, category, group_tag}, ...]
+let _csAvailable = [];   // all enabled school subjects
+
+async function aManageClassSubjects(classId, className) {
+  _csClassId   = classId;
+  _csClassName = className;
+
+  // Build the modal shell
+  document.getElementById('cs-modal-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'cs-modal-overlay';
+  overlay.className = 'modal-bg open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:680px;max-height:82vh;display:flex;flex-direction:column">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Class subjects — ${className}</div>
+          <div id="cs-subtitle" style="font-size:12px;color:var(--text-3);margin-top:2px">Loading…</div>
+        </div>
+        <button class="modal-close" onclick="document.getElementById('cs-modal-overlay').remove()">&#x2715;</button>
+      </div>
+      <div style="border-bottom:1px solid var(--border);padding:0 24px">
+        <div class="tab-bar" style="border:none;margin:0">
+          <button class="tab-btn active" id="cs-tab-subj" onclick="csShowSubjectsTab()">Assign subjects</button>
+          <button class="tab-btn" id="cs-tab-grp" onclick="csShowGroupsTab()">Student groups</button>
+        </div>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;padding-top:16px">
+        <div id="cs-subjects-pane">${panelLoader()}</div>
+        <div id="cs-groups-pane" style="display:none"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  try {
+    const [subjData, assigned] = await Promise.all([
+      GET('/subjects'),
+      GET('/classes/' + classId + '/subjects')
+    ]);
+    // Flatten to all subjects visible to this school (enabled platform + custom)
+    _csAvailable = [
+      ...((subjData?.platform || []).filter(s => s.is_enabled == 1)),
+      ...(subjData?.custom || [])
+    ];
+    _csAssigned = assigned || [];
+    csRenderSubjects();
+  } catch(e) {
+    document.getElementById('cs-subjects-pane').innerHTML =
+      `<div class="info-box red">${e.message}</div>`;
+  }
+}
+
+function csRenderSubjects(filter = '') {
+  const assignedMap = {};
+  for (const a of _csAssigned) assignedMap[a.subject_id] = a;
+
+  // Group by category
+  const byCat = {};
+  const fl = filter.trim().toLowerCase();
+  for (const s of _csAvailable) {
+    if (fl && !s.name.toLowerCase().includes(fl) && !(s.short_name||'').toLowerCase().includes(fl)) continue;
+    if (!byCat[s.category]) byCat[s.category] = [];
+    byCat[s.category].push(s);
+  }
+
+  const catHTML = Object.entries(byCat).map(([cat, subs]) => {
+    const catOn = subs.filter(s => assignedMap[s.id]).length;
+    const rows = subs.map(s => {
+      const asgn = assignedMap[s.id];
+      const isOn = !!asgn;
+      const gt   = asgn?.group_tag || '';
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+          <label class="switch" style="flex-shrink:0" title="${isOn ? 'Click to remove from class' : 'Click to add to class'}">
+            <input type="checkbox" ${isOn ? 'checked' : ''}
+                   onchange="csToggleSubject(${s.id}, this.checked)">
+            <span class="switch-slider"></span>
+          </label>
+          <span style="flex:1;font-size:13px">${s.name}</span>
+          ${isOn ? `
+            <span style="font-size:11px;color:var(--text-3);white-space:nowrap">Group:</span>
+            <input class="form-input" style="width:140px;font-size:12px;padding:4px 8px"
+                   placeholder="All students" value="${gt}"
+                   data-sid="${s.id}"
+                   onblur="csSaveGroupTag(${s.id}, this.value)"
+                   onkeydown="if(event.key==='Enter')this.blur()">
+          ` : `<span style="font-size:11px;color:var(--text-3)">Not assigned</span>`}
+        </div>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:18px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+                    color:var(--text-3);margin-bottom:4px;display:flex;justify-content:space-between">
+          <span>${CATEGORY_ICONS[cat]||'📚'} ${cat}</span>
+          <span>${catOn}/${subs.length} assigned</span>
+        </div>
+        ${rows}
+      </div>`;
+  }).join('');
+
+  const total    = _csAssigned.length;
+  const grouped  = _csAssigned.filter(a => a.group_tag).length;
+  const subtitle = `${total} subject${total!==1?'s':''} assigned${grouped ? ' · '+grouped+' with group split' : ''}`;
+  const sub = document.getElementById('cs-subtitle');
+  if (sub) sub.textContent = subtitle;
+
+  // Show/hide groups tab based on whether any group splits are defined
+  const grpTab = document.getElementById('cs-tab-grp');
+  if (grpTab) grpTab.style.opacity = grouped ? '1' : '0.45';
+
+  document.getElementById('cs-subjects-pane').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-size:13px;color:var(--text-2)">${subtitle}</div>
+      <input class="form-input" style="width:190px;font-size:13px" placeholder="Filter subjects…"
+             oninput="csRenderSubjects(this.value)">
+    </div>
+    <div>${catHTML || '<div style="color:var(--text-3);font-size:13px;padding:20px 0;text-align:center">No subjects match your filter.</div>'}</div>
+    <div class="info-box blue" style="margin-top:12px;font-size:12px">
+      Leave <b>Group</b> blank to assign the subject to <b>all students</b> in this class.
+      Type a group name (e.g. <i>Elective A</i>) to create a subject split — then use the
+      <b>Student groups</b> tab to assign each student to their group.
+    </div>`;
+}
+
+async function csToggleSubject(subjectId, isOn) {
+  const subj = _csAvailable.find(s => s.id == subjectId);
+  try {
+    if (isOn) {
+      await POST('/classes/' + _csClassId + '/subjects', { subject_id: subjectId, group_tag: null });
+      _csAssigned.push({ subject_id: subjectId, name: subj?.name, category: subj?.category, group_tag: null });
+    } else {
+      await DELETE('/classes/' + _csClassId + '/subjects', { subject_id: subjectId });
+      _csAssigned = _csAssigned.filter(a => a.subject_id != subjectId);
+    }
+    csRenderSubjects(document.querySelector('#cs-subjects-pane input[placeholder="Filter subjects…"]')?.value || '');
+    notify(isOn ? (subj?.name + ' added') : (subj?.name + ' removed'), 'success');
+  } catch(e) {
+    notify(e.message, 'error');
+    // Resync state from server
+    _csAssigned = await GET('/classes/' + _csClassId + '/subjects').catch(() => []);
+    csRenderSubjects();
+  }
+}
+
+async function csSaveGroupTag(subjectId, rawValue) {
+  const newTag = rawValue.trim() || null;
+  const current = _csAssigned.find(a => a.subject_id == subjectId);
+  if (!current) return;
+  const oldTag = current.group_tag || null;
+  if (oldTag === newTag) return;
+  try {
+    await PATCH('/classes/' + _csClassId + '/subjects', { subject_id: subjectId, group_tag: newTag });
+    current.group_tag = newTag;
+    csRenderSubjects(document.querySelector('#cs-subjects-pane input[placeholder="Filter subjects…"]')?.value || '');
+    notify('Group tag saved', 'success');
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+function csShowSubjectsTab() {
+  document.getElementById('cs-subjects-pane').style.display = '';
+  document.getElementById('cs-groups-pane').style.display   = 'none';
+  document.getElementById('cs-tab-subj').classList.add('active');
+  document.getElementById('cs-tab-grp').classList.remove('active');
+}
+
+async function csShowGroupsTab() {
+  const groupTags = [...new Set(_csAssigned.filter(a => a.group_tag).map(a => a.group_tag))].sort();
+  if (!groupTags.length) {
+    notify('No group splits defined yet — assign a group tag to at least one subject first.', 'info');
+    return;
+  }
+
+  document.getElementById('cs-subjects-pane').style.display = 'none';
+  const pane = document.getElementById('cs-groups-pane');
+  pane.style.display = '';
+  pane.innerHTML = panelLoader();
+  document.getElementById('cs-tab-subj').classList.remove('active');
+  document.getElementById('cs-tab-grp').classList.add('active');
+
+  let students = [];
+  try { students = await GET('/classes/' + _csClassId + '/students'); } catch(e) {}
+
+  const tagBadges = groupTags.map(g => `<span class="badge badge-blue">${g}</span>`).join(' ');
+  const rows = (students || []).map(s => {
+    const name = s.first_name + ' ' + s.last_name;
+    const opts = [
+      `<option value="" ${!s.group_tag ? 'selected' : ''}>(no group)</option>`,
+      ...groupTags.map(g => `<option value="${g}" ${s.group_tag===g ? 'selected' : ''}>${g}</option>`)
+    ].join('');
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1;font-size:13px">${name}</span>
+        <select class="form-select" style="width:170px;font-size:12px;padding:4px 8px"
+                onchange="csSetStudentGroup(${s.id}, this.value)">${opts}</select>
+      </div>`;
+  }).join('');
+
+  pane.innerHTML = `
+    <div style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px">Group splits in this class</div>
+      <div style="margin-bottom:8px">${tagBadges}</div>
+      <div style="font-size:12px;color:var(--text-3)">
+        Assign each student to their subject group. Students left on "(no group)" will see all subjects
+        assigned to the whole class, but not the split-group subjects.
+      </div>
+    </div>
+    ${rows || '<div style="color:var(--text-3);padding:20px 0;text-align:center">No students enrolled in this class yet.</div>'}
+    <button class="btn btn-ghost btn-sm" style="margin-top:16px" onclick="csShowSubjectsTab()">← Back to subjects</button>`;
+}
+
+async function csSetStudentGroup(studentId, groupTag) {
+  try {
+    await POST('/classes/' + _csClassId + '/groups', { student_id: studentId, group_tag: groupTag });
+    notify('Student group updated', 'success');
   } catch(e) { notify(e.message, 'error'); }
 }
 
@@ -3494,13 +4011,15 @@ async function loadATeachers(m) {
               <div class="student-avatar" style="background:${x.avatar_color||'#C47D0E'};width:32px;height:32px;font-size:11px">${((x.first_name||'?')[0]+(x.last_name||'?')[0]).toUpperCase()}</div>
               <div><b>${x.first_name} ${x.last_name}</b>
                 <div style="font-size:11px;color:var(--text-3)">${x.department_name||'No department'}</div>
+                ${(x.subjects||[]).length ? `<div style="margin-top:3px;display:flex;gap:3px;flex-wrap:wrap">${(x.subjects||[]).slice(0,4).map(s=>`<span class="badge badge-blue" style="font-size:10px;padding:1px 5px">${s.short_name||s.name}</span>`).join('')}${(x.subjects||[]).length>4?`<span class="badge badge-gray" style="font-size:10px">+${(x.subjects||[]).length-4}</span>`:''}</div>` : ''}
               </div>
             </div></td>
             <td style="color:var(--text-3);font-size:12px">${x.email||'—'}</td>
             <td style="font-size:12px">${x.class_names||'<span style="color:var(--text-3)">None assigned</span>'}</td>
             <td><span class="badge badge-gray">${x.test_count||0} test${(x.test_count||0)!==1?'s':''}</span></td>
             <td style="color:var(--text-3);font-size:12px">${lastActive}</td>
-            <td style="display:flex;gap:4px">
+            <td style="display:flex;gap:4px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="aManageTeacherSubjects(${x.id},'${(x.first_name+' '+x.last_name).replace(/'/g,"\\'")}')">Subjects</button>
               <button class="btn btn-secondary btn-sm" onclick='aManageTeacherClasses(${tData})'>Classes</button>
               <button class="btn btn-ghost btn-sm" onclick='aOpenTeacherModal(${tData})'>Edit</button>
               <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteTeacher(${x.id},'${(x.first_name+' '+x.last_name).replace(/'/g,"\\'")}')">Remove</button>
@@ -3585,6 +4104,125 @@ async function aDeleteTeacher(id, name) {
     const m = document.getElementById('a-main');
     if (m) loadATeachers(m);
   } catch(e) { notify('Remove failed: ' + e.message, 'error'); }
+}
+
+// ── Manage which subjects a teacher is assigned to ────────────
+let _tsTeacherId   = null;
+let _tsTeacherName = '';
+let _tsAssigned    = [];
+let _tsAvailable   = [];
+
+async function aManageTeacherSubjects(teacherId, teacherName) {
+  _tsTeacherId   = teacherId;
+  _tsTeacherName = teacherName;
+
+  document.getElementById('ts-modal-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'ts-modal-overlay';
+  overlay.className = 'modal-bg open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:640px;max-height:80vh;display:flex;flex-direction:column">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">Subjects — ${teacherName}</div>
+          <div id="ts-subtitle" style="font-size:12px;color:var(--text-3);margin-top:2px">Loading…</div>
+        </div>
+        <button class="modal-close" onclick="document.getElementById('ts-modal-overlay').remove()">&#x2715;</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1" id="ts-body">${panelLoader()}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  try {
+    const [subjData, assigned] = await Promise.all([
+      GET('/subjects'),
+      GET('/teachers/' + teacherId + '/subjects')
+    ]);
+    _tsAvailable = [
+      ...((subjData?.platform || []).filter(s => s.is_enabled == 1)),
+      ...(subjData?.custom || [])
+    ];
+    _tsAssigned = assigned || [];
+    tsRender();
+  } catch(e) {
+    document.getElementById('ts-body').innerHTML = `<div class="info-box red">${e.message}</div>`;
+  }
+}
+
+function tsRender(filter = '') {
+  const assignedIds = new Set(_tsAssigned.map(a => a.subject_id));
+  const fl = filter.trim().toLowerCase();
+
+  const byCat = {};
+  for (const s of _tsAvailable) {
+    if (fl && !s.name.toLowerCase().includes(fl)) continue;
+    if (!byCat[s.category]) byCat[s.category] = [];
+    byCat[s.category].push(s);
+  }
+
+  const catHTML = Object.entries(byCat).map(([cat, subs]) => {
+    const catOn = subs.filter(s => assignedIds.has(s.id)).length;
+    const rows = subs.map(s => {
+      const isOn = assignedIds.has(s.id);
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+          <label class="switch" style="flex-shrink:0">
+            <input type="checkbox" ${isOn ? 'checked' : ''} onchange="tsToggle(${s.id},'${s.name.replace(/'/g,"\\'")}',this.checked)">
+            <span class="switch-slider"></span>
+          </label>
+          <span style="flex:1;font-size:13px">${s.name}</span>
+          ${isOn
+            ? `<span class="badge badge-green" style="font-size:11px">Assigned</span>`
+            : `<span style="font-size:11px;color:var(--text-3)">Not assigned</span>`}
+        </div>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:18px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+                    color:var(--text-3);margin-bottom:4px;display:flex;justify-content:space-between">
+          <span>${CATEGORY_ICONS[cat]||'📚'} ${cat}</span>
+          <span>${catOn}/${subs.length} assigned</span>
+        </div>
+        ${rows}
+      </div>`;
+  }).join('');
+
+  const cnt = _tsAssigned.length;
+  const sub = document.getElementById('ts-subtitle');
+  if (sub) sub.textContent = `${cnt} subject${cnt!==1?'s':''} assigned`;
+
+  document.getElementById('ts-body').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div style="font-size:13px;color:var(--text-2)">${cnt} subject${cnt!==1?'s':''} assigned</div>
+      <input class="form-input" style="width:190px;font-size:13px" placeholder="Filter subjects…"
+             oninput="tsRender(this.value)">
+    </div>
+    <div class="info-box blue" style="margin-bottom:14px;font-size:12px">
+      Assigned subjects determine which questions and tests this teacher can access and collaborate on.
+    </div>
+    <div>${catHTML || '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:20px 0">No subjects match your filter.</div>'}</div>`;
+}
+
+async function tsToggle(subjectId, subjectName, isOn) {
+  try {
+    if (isOn) {
+      await POST('/teachers/' + _tsTeacherId + '/subjects', { subject_id: subjectId });
+      _tsAssigned.push({ subject_id: subjectId, name: subjectName });
+    } else {
+      await DELETE('/teachers/' + _tsTeacherId + '/subjects', { subject_id: subjectId });
+      _tsAssigned = _tsAssigned.filter(a => a.subject_id != subjectId);
+    }
+    tsRender(document.querySelector('#ts-body input[placeholder="Filter subjects…"]')?.value || '');
+    notify(isOn ? `${subjectName} assigned` : `${subjectName} removed`, 'success');
+    // Refresh teacher list so badges update
+    const m = document.getElementById('a-main');
+    if (m && document.querySelector('.nav-item.active')?.textContent?.trim() === 'Teachers') loadATeachers(m);
+  } catch(e) {
+    notify(e.message, 'error');
+    _tsAssigned = await GET('/teachers/' + _tsTeacherId + '/subjects').catch(() => []);
+    tsRender();
+  }
 }
 
 // ── Manage which classes a teacher is assigned to ─────────────
@@ -4182,6 +4820,7 @@ async function editQuestion(qid) {
     const title = document.querySelector('#qbuilder-modal .modal-title');
     if (title) title.textContent = 'Edit question #' + qid;
     openModal('qbuilder-modal');
+    populateSubjectDropdowns(q.subject_id || null);
   } catch(e) {
     notify('Could not load question: ' + e.message, 'error');
   } finally {
@@ -4204,6 +4843,14 @@ async function deleteQuestion(qid, questionText) {
   }
 }
 
+function openNewQBuilder() {
+  window._editingQuestionId = null;
+  const title = document.querySelector('#qbuilder-modal .modal-title');
+  if (title) title.textContent = 'New question';
+  openModal('qbuilder-modal');
+  populateSubjectDropdowns(null);
+}
+
 async function saveQuestion(){
   const text=document.getElementById('qb-text')?.value?.trim();
   if(!text){notify('Please enter question text','error');return;}
@@ -4222,11 +4869,13 @@ async function saveQuestion(){
   const marks=Math.max(1,parseInt(document.getElementById('qb-marks')?.value||'1'));
   const exp=document.getElementById('qb-explanation')?.value?.trim()||null;
   const bloomMap={Easy:'Remember',Medium:'Apply',Hard:'Analyse'};
+  const subjectId = parseInt(document.getElementById('qb-subject')?.value||'0') || null;
   const payload={
     type:currentQType, sub_strand:sub, topic:sub, year_group:year,
     bloom_level:bloomMap[diff]||'Remember',
     difficulty:diff, marks, question_text:text,
-    explanation:exp, options:opts
+    explanation:exp, options:opts,
+    subject_id: subjectId
   };
   try{
     const editId = window._editingQuestionId;
@@ -5017,6 +5666,7 @@ function updateClsState() {
 
 // ── Shared helper: read form values ──────────────────────────
 function readTestForm() {
+  const rawSubject = parseInt(document.getElementById('nt-subject')?.value || '0');
   return {
     title:          document.getElementById('new-test-title')?.value?.trim() || '',
     type:           document.getElementById('new-test-type')?.value || 'quiz',
@@ -5027,6 +5677,7 @@ function readTestForm() {
     show_feedback:  document.getElementById('new-test-feedback')?.checked ? 1 : 0,
     class_ids:      [...document.querySelectorAll('.cls-chk:checked')].map(cb => parseInt(cb.value)),
     question_ids:   [...testQIds],
+    subject_id:     rawSubject || null,
   };
 }
 

@@ -93,9 +93,10 @@ try {
         case 'ai-generate':  handleAIGenerate($method, $body); break;
         case 'questions-bulk': handleBulkQuestions($method, $body); break;
         case 'live':        handleLive($method, $parts, $body); break;
-        case 'teachers':    handleTeachers($method, $id, $body); break;
+        case 'teachers':    handleTeachers($method, $id, $sub, $body); break;
         case 'users-bulk':  handleUsersBulk($method, $body); break;
         case 'departments': handleDepartments($method, $id, $parts, $body); break;
+        case 'subjects':    handleSubjects($method, $id, $parts[2] ?? null, $body); break;
         default:
             err("Endpoint not found: '$resource' (path: $path)", 404);
     }
@@ -203,31 +204,48 @@ function handleAuth(string $method, array $parts, array $body): void {
 // ══════════════════════════════════════════════════════════════
 function handleQuestions(string $method, ?int $id, ?string $sub, array $body): void {
     $auth = require_auth();
+    ensureTeacherSubjectSchema(); // teacher_subjects + subject_id/updated_by columns
 
     if ($method === 'GET' && !$id) {
         $where  = ['(q.school_id IS NULL OR q.school_id = ?)'];
         $params = [$auth['school_id']];
-        if (!empty($_GET['year_group']))  { $where[] = 'q.year_group = ?';  $params[] = (int)$_GET['year_group']; }
-        if (!empty($_GET['sub_strand']))  { $where[] = 'q.sub_strand = ?';  $params[] = $_GET['sub_strand']; }
-        if (!empty($_GET['difficulty']))  { $where[] = 'q.difficulty = ?';  $params[] = $_GET['difficulty']; }
-        if (!empty($_GET['type']))        { $where[] = 'q.type = ?';        $params[] = $_GET['type']; }
-        if (!empty($_GET['search']))      { $where[] = 'q.question_text LIKE ?'; $params[] = '%'.$_GET['search'].'%'; }
+
+        // Subject-based scoping for teachers
+        if ($auth['role'] === 'teacher') {
+            $teacherSubjectIds = array_column(DB::fetchAll(
+                'SELECT subject_id FROM teacher_subjects WHERE teacher_id=?',
+                [$auth['user_id']]
+            ), 'subject_id');
+            if (!empty($teacherSubjectIds)) {
+                $ph = implode(',', array_fill(0, count($teacherSubjectIds), '?'));
+                $where[] = "(q.subject_id IN ($ph) OR q.author_id = ?)";
+                foreach ($teacherSubjectIds as $sid) $params[] = $sid;
+                $params[] = $auth['user_id'];
+            }
+            // If teacher has no subjects, they see only their own questions (safe default)
+            // (no additional WHERE clause needed as existing school filter still applies)
+        }
+
+        if (!empty($_GET['subject_id'])) { $where[] = 'q.subject_id = ?';      $params[] = (int)$_GET['subject_id']; }
+        if (!empty($_GET['year_group'])) { $where[] = 'q.year_group = ?';      $params[] = (int)$_GET['year_group']; }
+        if (!empty($_GET['sub_strand'])) { $where[] = 'q.sub_strand = ?';      $params[] = $_GET['sub_strand']; }
+        if (!empty($_GET['difficulty'])) { $where[] = 'q.difficulty = ?';      $params[] = $_GET['difficulty']; }
+        if (!empty($_GET['type']))       { $where[] = 'q.type = ?';            $params[] = $_GET['type']; }
+        if (!empty($_GET['search']))     { $where[] = 'q.question_text LIKE ?'; $params[] = '%'.$_GET['search'].'%'; }
         $limit  = min(100, max(1, (int)($_GET['limit'] ?? 50)));
         $offset = ((int)($_GET['page'] ?? 1) - 1) * $limit;
         $where  = implode(' AND ', $where);
         $total  = DB::fetchOne("SELECT COUNT(*) AS n FROM questions q WHERE $where AND q.is_active=1", $params)['n'] ?? 0;
-        // $items  = DB::fetchAll("SELECT q.*,
-        //     (SELECT JSON_ARRAYAGG(JSON_OBJECT('label',option_label,'text',option_text,'correct',is_correct))
-        //      FROM question_options WHERE question_id=q.id ORDER BY sort_order) AS options
-        //     FROM questions q WHERE $where AND q.is_active=1
-        //     ORDER BY q.id LIMIT $limit OFFSET $offset", $params);
-        $items = DB::fetchAll("SELECT q.id, q.school_id, q.type, q.sub_strand, q.topic,
+        $items  = DB::fetchAll("SELECT q.id, q.school_id, q.type, q.sub_strand, q.topic,
             q.bloom_level, q.difficulty, q.year_group, q.marks, q.question_text,
-            q.explanation, q.rubric, q.author_id, q.created_at,
+            q.explanation, q.rubric, q.author_id, q.subject_id, q.created_at,
+            CONCAT(u.first_name,' ',u.last_name) AS author_name,
             (SELECT GROUP_CONCAT(option_label,'|',option_text,'|',is_correct ORDER BY sort_order SEPARATOR ';;')
             FROM question_options WHERE question_id=q.id) AS options_raw
-            FROM questions q WHERE $where AND q.is_active=1
-            ORDER BY q.id LIMIT $limit OFFSET $offset", $params);
+            FROM questions q
+            LEFT JOIN users u ON u.id=q.author_id
+            WHERE $where AND q.is_active=1
+            ORDER BY q.subject_id, q.id LIMIT $limit OFFSET $offset", $params);
         respond(['items' => $items, 'total' => (int)$total, 'limit' => $limit]);
     }
 
@@ -243,15 +261,16 @@ function handleQuestions(string $method, ?int $id, ?string $sub, array $body): v
     if ($method === 'POST') {
         require_role($auth, 'teacher', 'admin');
         $d = need($body, 'type', 'sub_strand', 'topic', 'question_text');
+        $subjectId = isset($body['subject_id']) ? (int)$body['subject_id'] : null;
         DB::beginTransaction();
         try {
             $qid = DB::insert(
-                'INSERT INTO questions (school_id,author_id,type,sub_strand,topic,bloom_level,difficulty,year_group,marks,question_text,explanation,rubric)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                'INSERT INTO questions (school_id,author_id,type,sub_strand,topic,bloom_level,difficulty,year_group,marks,question_text,explanation,rubric,subject_id)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 [$auth['school_id'],$auth['user_id'],$d['type'],$d['sub_strand'],
                  $d['topic'],$body['bloom_level']??'Remember',$body['difficulty']??'Medium',
                  (int)($body['year_group']??1),(int)($body['marks']??1),
-                 $d['question_text'],$body['explanation']??null,$body['rubric']??null]
+                 $d['question_text'],$body['explanation']??null,$body['rubric']??null,$subjectId]
             );
             if (!empty($body['options'])) {
                 $letters = ['A','B','C','D','E','F'];
@@ -271,20 +290,31 @@ function handleQuestions(string $method, ?int $id, ?string $sub, array $body): v
         require_role($auth, 'teacher', 'admin');
         $d = need($body, 'question_text', 'sub_strand', 'topic');
 
-        // Verify ownership (school or platform question the teacher authored)
-        $existing = DB::fetchOne('SELECT id, author_id FROM questions WHERE id=?', [$id]);
+        $existing = DB::fetchOne('SELECT id, author_id, subject_id FROM questions WHERE id=?', [$id]);
         if (!$existing) err('Question not found', 404);
 
+        // Access: author, admin, or any teacher assigned to the question's subject
+        if ($auth['role'] !== 'admin' && (int)$existing['author_id'] !== $auth['user_id']) {
+            $sid = (int)($existing['subject_id'] ?? 0);
+            if (!$sid || !DB::fetchOne(
+                'SELECT 1 FROM teacher_subjects WHERE teacher_id=? AND subject_id=?',
+                [$auth['user_id'], $sid]
+            )) err('You do not have permission to edit this question', 403);
+        }
+
+        $newSubjectId = isset($body['subject_id']) ? (int)$body['subject_id'] : ($existing['subject_id'] ? (int)$existing['subject_id'] : null);
         DB::execute(
             'UPDATE questions SET question_text=?, sub_strand=?, topic=?, bloom_level=?,
-             difficulty=?, year_group=?, marks=?, explanation=?, rubric=?, type=?, updated_at=NOW()
+             difficulty=?, year_group=?, marks=?, explanation=?, rubric=?, type=?,
+             subject_id=?, updated_by=?, updated_at=NOW()
              WHERE id=?',
             [
                 $d['question_text'], $d['sub_strand'], $d['topic'],
                 $body['bloom_level'] ?? 'Remember', $body['difficulty'] ?? 'Medium',
                 (int)($body['year_group'] ?? 1), (int)($body['marks'] ?? 1),
                 $body['explanation'] ?? null, $body['rubric'] ?? null,
-                $body['type'] ?? 'mcq', $id,
+                $body['type'] ?? 'mcq',
+                $newSubjectId, $auth['user_id'], $id,
             ]
         );
 
@@ -320,6 +350,7 @@ function handleQuestions(string $method, ?int $id, ?string $sub, array $body): v
 // ══════════════════════════════════════════════════════════════
 function handleTests(string $method, ?int $id, ?string $sub, array $body): void {
     $auth = require_auth();
+    ensureTeacherSubjectSchema(); // teacher_subjects + subject_id/updated_by columns
 
     if ($method === 'GET' && !$id) {
         if ($auth['role'] === 'student') {
@@ -342,11 +373,54 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
             );
             respond($tests);
         } else {
-            respond(DB::fetchAll(
-                'SELECT t.*, (SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count
-                 FROM tests t WHERE t.school_id=? ORDER BY t.created_at DESC',
-                [$auth['school_id']]
-            ));
+            // Teacher: scope by their assigned subjects + own tests
+            $uid = $auth['user_id'];
+            $teacherSubjectIds = array_column(DB::fetchAll(
+                'SELECT subject_id FROM teacher_subjects WHERE teacher_id=?', [$uid]
+            ), 'subject_id');
+            if (!empty($teacherSubjectIds)) {
+                $ph = implode(',', array_fill(0, count($teacherSubjectIds), '?'));
+                $rows = DB::fetchAll(
+                    "SELECT t.*,
+                            (SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count,
+                            CONCAT(u.first_name,' ',u.last_name) AS creator_name,
+                            s.name AS subject_name
+                     FROM tests t
+                     LEFT JOIN users u ON u.id=t.creator_id
+                     LEFT JOIN subjects s ON s.id=t.subject_id
+                     WHERE t.school_id=? AND (t.subject_id IN ($ph) OR t.creator_id=?)
+                     ORDER BY t.created_at DESC",
+                    array_merge([$auth['school_id']], $teacherSubjectIds, [$uid])
+                );
+            } else {
+                // No subjects assigned: fall back to own tests only
+                $rows = DB::fetchAll(
+                    "SELECT t.*,
+                            (SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count,
+                            CONCAT(u.first_name,' ',u.last_name) AS creator_name
+                     FROM tests t
+                     LEFT JOIN users u ON u.id=t.creator_id
+                     WHERE t.school_id=? AND t.creator_id=?
+                     ORDER BY t.created_at DESC",
+                    [$auth['school_id'], $uid]
+                );
+            }
+            // Admin: show all school tests with creator + subject info
+            if ($auth['role'] === 'admin') {
+                $rows = DB::fetchAll(
+                    "SELECT t.*,
+                            (SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count,
+                            CONCAT(u.first_name,' ',u.last_name) AS creator_name,
+                            s.name AS subject_name
+                     FROM tests t
+                     LEFT JOIN users u ON u.id=t.creator_id
+                     LEFT JOIN subjects s ON s.id=t.subject_id
+                     WHERE t.school_id=?
+                     ORDER BY t.created_at DESC",
+                    [$auth['school_id']]
+                );
+            }
+            respond($rows);
         }
     }
 
@@ -398,13 +472,14 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
     if ($method === 'POST') {
         require_role($auth, 'teacher', 'admin');
         $d = need($body, 'title');
+        $subjectId = isset($body['subject_id']) ? (int)$body['subject_id'] : null;
         $tid = DB::insert(
-            'INSERT INTO tests (school_id,creator_id,title,type,time_limit_min,max_attempts,randomise_qs,randomise_opts,show_feedback,available_from,due_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+            'INSERT INTO tests (school_id,creator_id,title,type,time_limit_min,max_attempts,randomise_qs,randomise_opts,show_feedback,available_from,due_at,subject_id)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
             [$auth['school_id'],$auth['user_id'],trim($d['title']),$body['type']??'quiz',
              (int)($body['time_limit_min']??0),(int)($body['max_attempts']??1),
              (int)($body['randomise_qs']??1),(int)($body['randomise_opts']??1),
-             (int)($body['show_feedback']??1),$body['available_from']??null,$body['due_at']??null]
+             (int)($body['show_feedback']??1),$body['available_from']??null,$body['due_at']??null,$subjectId]
         );
         if (!empty($body['question_ids'])) {
             foreach ($body['question_ids'] as $order => $qid)
@@ -420,11 +495,14 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
 
     if ($method === 'PATCH' && $id) {
         require_role($auth, 'teacher', 'admin');
-        $allowed = ['title','status','time_limit_min','max_attempts','randomise_qs','randomise_opts','show_feedback','due_at','available_from','description','type'];
+        $allowed = ['title','status','time_limit_min','max_attempts','randomise_qs','randomise_opts','show_feedback','due_at','available_from','description','type','subject_id'];
         $sets=[]; $params=[];
         foreach ($allowed as $f) {
             if (array_key_exists($f,$body)) { $sets[]="$f=?"; $params[]=$body[$f]; }
         }
+        // Always record who last updated
+        $sets[]   = 'updated_by=?';
+        $params[] = $auth['user_id'];
         if ($sets) {
             $params[]=$id; $params[]=$auth['school_id'];
             DB::execute('UPDATE tests SET '.implode(',',$sets).',updated_at=NOW() WHERE id=? AND school_id=?', $params);
@@ -715,7 +793,8 @@ function handleStudents(string $method, ?int $id, ?string $sub, array $body): vo
 function handleClasses(string $method, ?int $id, ?string $sub, array $body): void {
     $auth = require_auth();
     require_role($auth,'teacher','admin');
-    ensureDeptSchema(); // ensures class_teachers table exists
+    ensureDeptSchema();          // ensures class_teachers table exists
+    ensureClassSubjectSchema();  // ensures class_subjects + student_class_groups
 
     if ($method === 'GET' && !$id) {
         $where  = 'c.school_id = ?';
@@ -769,6 +848,106 @@ function handleClasses(string $method, ?int $id, ?string $sub, array $body): voi
         DB::execute('DELETE FROM class_teachers WHERE class_id=? AND teacher_id=?', [$id,$tid]);
         respond(['message' => 'Teacher removed from class']);
     }
+
+    // ── Class subjects sub-routes ─────────────────────────────────
+
+    // GET /classes/{id}/subjects — list subjects assigned to this class
+    if ($method === 'GET' && $id && $sub === 'subjects') {
+        require_role($auth,'teacher','admin');
+        respond(DB::fetchAll(
+            "SELECT cs.id AS assignment_id, cs.subject_id, s.name, s.short_name, s.category, cs.group_tag
+             FROM class_subjects cs
+             JOIN subjects s ON s.id = cs.subject_id
+             WHERE cs.class_id = ?
+             ORDER BY s.category, s.name",
+            [$id]
+        ));
+    }
+
+    // GET /classes/{id}/students — students in this class with their group tag
+    if ($method === 'GET' && $id && $sub === 'students') {
+        require_role($auth,'teacher','admin');
+        respond(DB::fetchAll(
+            "SELECT u.id, u.first_name, u.last_name,
+                    scg.group_tag
+             FROM class_students cst
+             JOIN users u ON u.id = cst.student_id
+             LEFT JOIN student_class_groups scg ON scg.student_id = u.id AND scg.class_id = cst.class_id
+             WHERE cst.class_id = ? AND u.is_active = 1
+             ORDER BY u.last_name, u.first_name",
+            [$id]
+        ));
+    }
+
+    // GET /classes/{id}/groups — students + their group assignments
+    if ($method === 'GET' && $id && $sub === 'groups') {
+        require_role($auth,'teacher','admin');
+        respond(DB::fetchAll(
+            "SELECT u.id AS student_id, CONCAT(u.first_name,' ',u.last_name) AS name,
+                    scg.group_tag
+             FROM class_students cst
+             JOIN users u ON u.id = cst.student_id
+             LEFT JOIN student_class_groups scg ON scg.student_id = u.id AND scg.class_id = cst.class_id
+             WHERE cst.class_id = ? AND u.is_active = 1
+             ORDER BY scg.group_tag IS NULL, scg.group_tag, u.last_name",
+            [$id]
+        ));
+    }
+
+    // POST /classes/{id}/subjects — assign a subject (body: subject_id, group_tag?)
+    if ($method === 'POST' && $id && $sub === 'subjects') {
+        require_role($auth,'admin');
+        $subjectId = (int)($body['subject_id'] ?? 0);
+        $groupTag  = isset($body['group_tag']) ? (trim($body['group_tag']) ?: null) : null;
+        if (!$subjectId) err('subject_id required');
+        DB::execute(
+            'INSERT IGNORE INTO class_subjects (class_id, subject_id, group_tag) VALUES (?,?,?)',
+            [$id, $subjectId, $groupTag]
+        );
+        respond(['message' => 'Subject assigned to class'], 201);
+    }
+
+    // PATCH /classes/{id}/subjects — update group tag (body: subject_id, group_tag)
+    if ($method === 'PATCH' && $id && $sub === 'subjects') {
+        require_role($auth,'admin');
+        $subjectId = (int)($body['subject_id'] ?? 0);
+        $groupTag  = isset($body['group_tag']) ? (trim($body['group_tag']) ?: null) : null;
+        if (!$subjectId) err('subject_id required');
+        DB::execute(
+            'UPDATE class_subjects SET group_tag=? WHERE class_id=? AND subject_id=?',
+            [$groupTag, $id, $subjectId]
+        );
+        respond(['message' => 'Group tag updated']);
+    }
+
+    // DELETE /classes/{id}/subjects — remove subject (body: subject_id)
+    if ($method === 'DELETE' && $id && $sub === 'subjects') {
+        require_role($auth,'admin');
+        $subjectId = (int)($body['subject_id'] ?? 0);
+        if (!$subjectId) err('subject_id required');
+        DB::execute('DELETE FROM class_subjects WHERE class_id=? AND subject_id=?', [$id, $subjectId]);
+        respond(['message' => 'Subject removed from class']);
+    }
+
+    // POST /classes/{id}/groups — set or clear a student's group (body: student_id, group_tag)
+    if ($method === 'POST' && $id && $sub === 'groups') {
+        require_role($auth,'admin');
+        $studentId = (int)($body['student_id'] ?? 0);
+        $groupTag  = trim($body['group_tag'] ?? '');
+        if (!$studentId) err('student_id required');
+        if ($groupTag !== '') {
+            DB::execute(
+                'INSERT INTO student_class_groups (student_id, class_id, group_tag) VALUES (?,?,?)
+                 ON DUPLICATE KEY UPDATE group_tag = VALUES(group_tag)',
+                [$studentId, $id, $groupTag]
+            );
+        } else {
+            DB::execute('DELETE FROM student_class_groups WHERE student_id=? AND class_id=?', [$studentId, $id]);
+        }
+        respond(['message' => 'Student group updated']);
+    }
+
+    // ─────────────────────────────────────────────────────────────
 
     if ($method === 'POST' && !$id) {
         require_role($auth,'admin','teacher');
@@ -1417,12 +1596,48 @@ function ensureLiveTables(): void {
 // PATCH  /teachers/{id}    — update teacher
 // DELETE /teachers/{id}    — deactivate teacher
 // ══════════════════════════════════════════════════════════════
-function handleTeachers(string $method, ?int $id, array $body): void {
+function handleTeachers(string $method, ?int $id, ?string $sub, array $body): void {
     $auth = require_auth();
     require_role($auth, 'admin');
+    ensureTeacherSubjectSchema();
+
+    // ── Subject sub-routes ────────────────────────────────────
+
+    // GET /teachers/{id}/subjects
+    if ($method === 'GET' && $id && $sub === 'subjects') {
+        respond(DB::fetchAll(
+            "SELECT ts.subject_id, s.name, s.short_name, s.category
+             FROM teacher_subjects ts
+             JOIN subjects s ON s.id = ts.subject_id
+             WHERE ts.teacher_id = ?
+             ORDER BY s.category, s.name",
+            [$id]
+        ));
+    }
+
+    // POST /teachers/{id}/subjects  (body: subject_id)
+    if ($method === 'POST' && $id && $sub === 'subjects') {
+        $subjectId = (int)($body['subject_id'] ?? 0);
+        if (!$subjectId) err('subject_id required');
+        DB::execute(
+            'INSERT IGNORE INTO teacher_subjects (teacher_id, subject_id, assigned_by) VALUES (?,?,?)',
+            [$id, $subjectId, $auth['user_id']]
+        );
+        respond(['message' => 'Subject assigned to teacher'], 201);
+    }
+
+    // DELETE /teachers/{id}/subjects  (body: subject_id)
+    if ($method === 'DELETE' && $id && $sub === 'subjects') {
+        $subjectId = (int)($body['subject_id'] ?? 0);
+        if (!$subjectId) err('subject_id required');
+        DB::execute('DELETE FROM teacher_subjects WHERE teacher_id=? AND subject_id=?', [$id, $subjectId]);
+        respond(['message' => 'Subject removed from teacher']);
+    }
+
+    // ─────────────────────────────────────────────────────────
 
     if ($method === 'GET' && !$id) {
-        respond(DB::fetchAll(
+        $teachers = DB::fetchAll(
             "SELECT u.id, u.first_name, u.last_name, u.email, u.avatar_color, u.last_login,
                     u.department_id,
                     d.name AS department_name,
@@ -1435,7 +1650,17 @@ function handleTeachers(string $method, ?int $id, array $body): void {
              WHERE u.school_id=? AND u.role='teacher' AND u.is_active=1
              ORDER BY u.last_name, u.first_name",
             [$auth['school_id']]
-        ));
+        );
+        // Attach assigned subjects to each teacher
+        foreach ($teachers as &$t) {
+            $t['subjects'] = DB::fetchAll(
+                "SELECT ts.subject_id, s.name, s.short_name, s.category
+                 FROM teacher_subjects ts JOIN subjects s ON s.id=ts.subject_id
+                 WHERE ts.teacher_id=? ORDER BY s.category, s.name",
+                [$t['id']]
+            );
+        }
+        respond($teachers);
     }
 
     if ($method === 'POST') {
@@ -1643,4 +1868,153 @@ function ensureDeptSchema(): void {
         ) ENGINE=InnoDB");
         DB::execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id INT UNSIGNED NULL");
     } catch (Throwable $e) { /* columns/tables may already exist */ }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SUBJECTS
+// GET    /subjects                — platform list + school-enabled flags
+// POST   /subjects                — admin adds custom subject
+// PATCH  /subjects/{id}           — admin edits custom subject
+// DELETE /subjects/{id}           — admin deletes custom subject
+// POST   /subjects/{id}/toggle    — enable/disable platform subject for school
+// ══════════════════════════════════════════════════════════════
+function handleSubjects(string $method, ?int $id, ?string $sub, array $body): void {
+    $auth = require_auth();
+    ensureSubjectSchema();
+    $sid = $auth['school_id'];
+
+    // GET /subjects — platform subjects with enabled flag + school's custom subjects
+    if ($method === 'GET' && !$id) {
+        $platform = DB::fetchAll(
+            "SELECT s.*,
+                    IF(ss.school_id IS NOT NULL, 1, 0) AS is_enabled
+             FROM subjects s
+             LEFT JOIN school_subjects ss ON ss.subject_id=s.id AND ss.school_id=?
+             WHERE s.school_id IS NULL
+             ORDER BY s.category, s.sort_order, s.name",
+            [$sid]
+        );
+        $custom = DB::fetchAll(
+            "SELECT s.*, 1 AS is_enabled FROM subjects s
+             WHERE s.school_id=?
+             ORDER BY s.category, s.name",
+            [$sid]
+        );
+        respond(['platform' => $platform, 'custom' => $custom]);
+    }
+
+    // POST /subjects — admin adds a custom subject
+    if ($method === 'POST' && !$id) {
+        require_role($auth, 'admin');
+        $d = need($body, 'name');
+        $newId = DB::insert(
+            'INSERT INTO subjects (school_id, name, short_name, category) VALUES (?,?,?,?)',
+            [$sid, trim($d['name']),
+             trim($body['short_name'] ?? ''),
+             trim($body['category']  ?? 'General')]
+        );
+        respond(['subject_id' => $newId, 'message' => 'Subject added'], 201);
+    }
+
+    // PATCH /subjects/{id} — admin edits own custom subject
+    if ($method === 'PATCH' && $id && $sub !== 'toggle') {
+        require_role($auth, 'admin');
+        $existing = DB::fetchOne('SELECT school_id FROM subjects WHERE id=?', [$id]);
+        if (!$existing || (int)$existing['school_id'] !== (int)$sid)
+            err('You can only edit subjects you added', 403);
+        $allowed = ['name', 'short_name', 'category'];
+        $sets=[]; $params=[];
+        foreach ($allowed as $f) {
+            if (array_key_exists($f, $body)) { $sets[]="$f=?"; $params[]=$body[$f]; }
+        }
+        if ($sets) { $params[]=$id; DB::execute('UPDATE subjects SET '.implode(',',$sets).' WHERE id=?', $params); }
+        respond(['message' => 'Subject updated']);
+    }
+
+    // DELETE /subjects/{id} — admin deletes own custom subject
+    if ($method === 'DELETE' && $id && $sub !== 'toggle') {
+        require_role($auth, 'admin');
+        $existing = DB::fetchOne('SELECT school_id FROM subjects WHERE id=?', [$id]);
+        if (!$existing || (int)$existing['school_id'] !== (int)$sid)
+            err('You can only delete subjects you added', 403);
+        DB::execute('DELETE FROM subjects WHERE id=? AND school_id=?', [$id, $sid]);
+        respond(['message' => 'Subject deleted']);
+    }
+
+    // POST /subjects/{id}/toggle — enable or disable a platform subject for this school
+    if ($method === 'POST' && $id && $sub === 'toggle') {
+        require_role($auth, 'admin');
+        $already = DB::fetchOne(
+            'SELECT school_id FROM school_subjects WHERE school_id=? AND subject_id=?',
+            [$sid, $id]
+        );
+        if ($already) {
+            DB::execute('DELETE FROM school_subjects WHERE school_id=? AND subject_id=?', [$sid, $id]);
+            respond(['enabled' => false, 'message' => 'Subject disabled']);
+        } else {
+            DB::execute('INSERT IGNORE INTO school_subjects (school_id, subject_id) VALUES (?,?)', [$sid, $id]);
+            respond(['enabled' => true, 'message' => 'Subject enabled']);
+        }
+    }
+
+    err('Subjects endpoint error', 404);
+}
+
+function ensureTeacherSubjectSchema(): void {
+    try {
+        DB::execute("CREATE TABLE IF NOT EXISTS teacher_subjects (
+            teacher_id  INT UNSIGNED NOT NULL,
+            subject_id  INT UNSIGNED NOT NULL,
+            assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            assigned_by INT UNSIGNED NULL,
+            PRIMARY KEY (teacher_id, subject_id),
+            INDEX idx_ts_teacher (teacher_id),
+            INDEX idx_ts_subject (subject_id)
+        ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        DB::execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS subject_id INT UNSIGNED NULL");
+        DB::execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS updated_by  INT UNSIGNED NULL");
+        DB::execute("ALTER TABLE tests     ADD COLUMN IF NOT EXISTS subject_id INT UNSIGNED NULL");
+        DB::execute("ALTER TABLE tests     ADD COLUMN IF NOT EXISTS updated_by  INT UNSIGNED NULL");
+    } catch (Throwable $e) {}
+}
+
+function ensureClassSubjectSchema(): void {
+    try {
+        DB::execute("CREATE TABLE IF NOT EXISTS class_subjects (
+            id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            class_id    INT UNSIGNED NOT NULL,
+            subject_id  INT UNSIGNED NOT NULL,
+            group_tag   VARCHAR(100) NULL COMMENT 'NULL = whole class; non-null = sub-group label',
+            sort_order  SMALLINT DEFAULT 0,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_cls_subj (class_id, subject_id, group_tag)
+        ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        DB::execute("CREATE TABLE IF NOT EXISTS student_class_groups (
+            student_id  INT UNSIGNED NOT NULL,
+            class_id    INT UNSIGNED NOT NULL,
+            group_tag   VARCHAR(100) NOT NULL,
+            PRIMARY KEY (student_id, class_id)
+        ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    } catch (Throwable $e) {}
+}
+
+function ensureSubjectSchema(): void {
+    try {
+        DB::execute("CREATE TABLE IF NOT EXISTS subjects (
+            id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            school_id   INT UNSIGNED NULL,
+            name        VARCHAR(200) NOT NULL,
+            short_name  VARCHAR(80)  NULL,
+            category    VARCHAR(100) NOT NULL DEFAULT 'General',
+            sort_order  SMALLINT UNSIGNED DEFAULT 0,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_subj (school_id, name)
+        ) ENGINE=InnoDB");
+        DB::execute("CREATE TABLE IF NOT EXISTS school_subjects (
+            school_id   INT UNSIGNED NOT NULL,
+            subject_id  INT UNSIGNED NOT NULL,
+            enabled_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (school_id, subject_id)
+        ) ENGINE=InnoDB");
+    } catch (Throwable $e) {}
 }

@@ -1,0 +1,240 @@
+intitle:"index of" chicago fire +last modified +size -inurl:(html|php|asp)
+
+intitle:"index of" [chicago fire season 14] -inurl:(jsp|pl|php|html|aspx|htm|cf|shtml)
+
+intitle:"index of" [chicago fire season 14] (mp4|mkv|avi)
+indexof:movies chicago fire season 14
+
+timer for live quiz should show for both instructor and student dashboard
+learner page stacked on loading quiz, students dont see the live quiz question 
+
+i want admin to be able to create and edit a class
+
+admin should assign classes to teachers. Teachers should only have access to classes they are assigned to.
+
+Admin should create, edit and delete departments, then he add teachers to departments they belong. a teacher can only belong to one departments.
+one class could be assigned to multiple teachers because of subject teaching. 
+the dialog box for adding teacher to department should have a search bar, that searches teachers by name
+
+
+create sql to create/Seed the following classes in the database, all for year 1
+5 Science classes (ie. 1 Science1, 1 Science2, etc. )
+10 Gen. Arts classes (ie. 1 GA1, 1 GA2, ...., 1 GA10)
+5 Business classes (ie. 1 Business1, 1 Business2, etc)
+3 Visual Arts classes (ie. 1 VA1, 1 VA2, ...., 1 VA3)
+5 Home Economics classes (ie. 1 HOME ECONS1, 1 HOME ECONS2, ...., 1 HOME ECONS5)
+2 Agricultural classes (ie. 1 AGRIC1, 1 AGRIC2, ...., 1 AGRIC5)
+
+ all for year 2
+5 Science classes (ie. 1 Science1, 1 Science2, etc. )
+10 Gen. Arts classes (ie. 2 GA1, 2 GA2, ...., 2 GA10)
+5 Business classes (ie. 2 Business1, 2 Business2, etc)
+3 Visual Arts classes (ie. 2 VA1, 2 VA2, ...., 2 VA3)
+5 Home Economics classes (ie. 2 HOME ECONS1, 2 HOME ECONS2, ...., 1 HOME ECONS5)
+2 Agricultural classes (ie. 2 AGRIC1, 2 AGRIC2)
+
+ all for year 3
+5 Science classes (ie. 3 Science1, 3 Science2, etc. )
+10 Gen. Arts classes (ie. 3 GA1, 3 GA2, ...., 3 GA10)
+5 Business classes (ie. 3 Business1, 3 Business2, etc)
+3 Visual Arts classes (ie. 3 VA1, 3 VA2, ...., 1 VA3)
+5 Home Economics classes (ie. 3 HOME ECONS1, 3 HOME ECONS2, ...., 1 HOME ECONS5)
+2 Agricultural classes (ie. 3 AGRIC1, 3 AGRIC2)
+
+GEN SQL TO CREATE A SUBJECT TABLE
+SEED WITH THESE GENERAL SUBJECTS. ADMIN TO SELECT THOSE DONE IN HIS SCHOOL.
+ADMIN CAN ALSO ADD NEW SUBJECT, HE CAN ADD, EDIT, DELETE AS WELL. "* Physics
+* Chemistry
+* Biology
+* Elective Mathematics
+* General Agriculture
+* Animal Husbandry
+* Crop Husbandry
+* Horticulture
+* Core Mathematics
+* Further Mathematics
+* Information and Communication Technology (ICT)
+* Computing
+* Robotics
+* Data Processing
+* Programming
+* English Language
+* Literature in English
+* French
+* Twi
+* Ga
+* Ewe
+* Fante
+* Dagbani
+* Nzema
+* Dagaare
+* Gonja
+* Kasem
+* Arabic
+* Social Studies
+* Government
+* History
+* Geography
+* Economics
+* Christian Religious Studies (CRS)
+* Islamic Religious Studies (IRS)
+* Sociology
+* Psychology
+* Financial Accounting
+* Cost Accounting
+* Business Management
+* Principles of Cost Accounting
+* Clerical Office Duties
+* General Knowledge in Art
+* Graphic Design
+* Picture Making
+* Sculpture
+* Ceramics
+* Textiles
+* Leatherwork
+* Basketry
+* Jewellery
+* Graphic Communication
+* Food and Nutrition
+* Management in Living
+* Clothing and Textiles
+* Technical Drawing
+* Building Construction
+* Woodwork
+* Metalwork
+* Auto Mechanics
+* Applied Electricity
+* Electronics
+* Welding and Fabrication
+* Engineering Science
+* Crop Science
+* Fisheries
+* Forestry
+* Physical Education
+* Sports and Recreation
+* Health Education
+"
+
+admin assign subjects to classes. 
+a class will do multiple subjects, like 7 to 12 subjects
+there are some classes where not all students 
+do the same subjects. some classes, part of 
+the students do one subject then the rest do a 
+different subject. 
+
+we are going to do great change in the system. 
+a teacher can teach two or more subjects. 
+tests and question bank should be unique to each subject
+teachers teaching the same subjects should have access to questions and tests 
+for their subject. example: teachers teaching ict should have access to all questions 
+set by any ict teacher.
+
+We are implementing a major improvement to the assessment system’s academic and permission structure.
+
+New Subject-Based Teaching and Access Model
+1. Multi-Subject Teacher Support
+
+A teacher can now teach one or multiple subjects across different classes and year groups.
+
+Examples:
+
+A teacher may teach:
+ICT and Core Mathematics
+Physics and Elective Mathematics
+English Language in multiple classes
+
+The system must support:
+
+many-to-many relationship between teachers and subjects
+many-to-many relationship between teachers and classes
+2. Subject-Based Question Bank
+
+The question bank must now be organized by subject.
+
+Every question must belong to a specific subject.
+
+Examples:
+
+ICT questions → visible to ICT teachers
+Mathematics questions → visible to Mathematics teachers
+Physics questions → visible to Physics teachers
+
+Questions should no longer be isolated to only the teacher who created them.
+
+3. Shared Subject Collaboration
+
+Teachers teaching the same subject should collaborate through a shared question bank and shared tests.
+
+Example:
+
+All ICT teachers can:
+view ICT questions
+use ICT questions
+edit permitted ICT questions
+create ICT tests
+reuse ICT assessments
+
+Another example:
+
+A Mathematics teacher should NOT access ICT questions unless assigned to ICT.
+4. Subject-Level Access Control
+
+Access permissions should be determined primarily by subject assignment.
+
+A teacher should only access:
+
+subjects assigned to them
+questions for those subjects
+tests created under those subjects
+
+Example:
+
+Teacher A teaches:
+- ICT
+- Computing
+
+Teacher A can access:
+- all ICT questions
+- all Computing questions
+- ICT tests
+- Computing tests
+5. Shared Test Visibility
+
+Tests and examinations should also become subject-based.
+
+Example:
+
+All ICT teachers can see:
+ICT quizzes
+ICT tests
+ICT exams
+
+This allows:
+
+collaboration
+standardization
+moderation
+easier assessment preparation
+6. Ownership and Audit Tracking
+
+Even though resources are shared, the system must still track:
+
+who created the question
+who edited it
+when it was modified
+
+Add fields such as:
+
+created_by
+updated_by
+created_at
+updated_at
+7. Recommended Permission Logic
+Teachers CAN:
+access all questions for subjects they teach
+reuse questions from other teachers within the same subject
+collaborate on assessments
+Teachers CANNOT:
+access questions for subjects they are not assigned to
+modify restricted or locked assessments
+access administrative controls unless permitted
