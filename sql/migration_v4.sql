@@ -79,7 +79,24 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 
 -- ============================================================
--- 6. MOVE CORE SUBJECTS TO 'General' CATEGORY
+-- 6. BACK-FILL class_students FROM users.class_name
+--
+--    Students were previously stored with only a class_name
+--    VARCHAR field. The class_students junction table (needed
+--    for subject scoping and group assignment) was never written.
+--    This one-time INSERT syncs all existing students into it.
+-- ============================================================
+INSERT IGNORE INTO class_students (class_id, student_id)
+SELECT c.id, u.id
+FROM users u
+JOIN classes c ON c.school_id = u.school_id AND c.name = u.class_name
+WHERE u.role = 'student'
+  AND u.is_active = 1
+  AND u.class_name IS NOT NULL;
+
+
+-- ============================================================
+-- 7. MOVE CORE SUBJECTS TO 'General' CATEGORY
 --
 --    English Language, Core Mathematics, Integrated Science, and
 --    Social Studies are compulsory for ALL programmes — they belong
@@ -104,7 +121,7 @@ VALUES (NULL, 'Integrated Science', 'Int. Sci.', 'General', 30);
 
 
 -- ============================================================
--- 7. BACK-FILL — assign all existing questions to ICT
+-- 8. BACK-FILL — assign all existing questions to ICT
 --
 --    Every question currently in the bank was created for the
 --    ICT curriculum, so we tag them all with the ICT subject.

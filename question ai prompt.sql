@@ -34,3 +34,45 @@ example: (555,1,1,'mcq','S1/SS3','Internet and WWW',1,'easy',1,1,'What does DNS 
 answer format below: INSERT INTO question_options (question_id,option_label,option_text,is_correct,sort_order) VALUES
 example: (555,'A','Domain Name System',0,0),(555,'B','Digital Network Service',0,1),(555,'C','Data Naming Structure',0,2),(555,'D','Direct Network Search',1,3),
 
+Server error: resolveStudentClass(): Argument #2 ($schoolId) must be of type int, string given, called in /home/royayfxh/expresslabgh.com/apps/aceict/api/index.php on line 888
+
+add another  menu item on the sidebar with the name "Subjects" 
+when clicked, should display all registered subjects in the schoo. 
+should have dropdown to help filter them into categories like year, 
+classes, and or department. i wanted you to do it under admin page, not the teacher page
+The focus is that, when a subject is clicked, it should show all 
+students registered for that subject, and the admin can click on 
+each student to see their performance in that subject, including 
+their scores on tests and quizzes, and which topics they are 
+struggling with.
+Also, the subject should have a way of showing all the questions, tests and quizzes 
+under that subject,
+
+
+
+all the questions under that subject, and the teacher 
+can select which question to assign to a test or quiz.
+
+Lets go to the teacher dashboard, Teacher should only work 
+about the subjects and classes assigned to them, not the whole school.
+teacher should not get access to questions or students outside of their subjects and classes.
+so before he sets questions, he should be able 
+to select the subject and class he wants to set questions for, and then only see the students in that class when he wants to assign the test.
+except the quiz where students can join with a code, then the teacher can see all students who joined that quiz regardless of class.
+
+Work on the marking queue on the teacher dashboard, 
+so that when a teacher clicks on the marking queue, 
+they can only see the tests and quizzes that are assigned to 
+their subjects and classes, and not the whole school.
+
+also complete the marking queue so that when a teacher 
+clicks on a test or quiz in the queue, they can see all 
+the students who took that test or quiz, and their scores, 
+and then click on each student to see their answers and 
+assign marks for any open-ended questions.
+
+
+
+
+
+

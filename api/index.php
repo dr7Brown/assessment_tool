@@ -351,25 +351,54 @@ function handleQuestions(string $method, ?int $id, ?string $sub, array $body): v
 function handleTests(string $method, ?int $id, ?string $sub, array $body): void {
     $auth = require_auth();
     ensureTeacherSubjectSchema(); // teacher_subjects + subject_id/updated_by columns
+    ensureClassSubjectSchema();   // class_subjects + student_class_groups
 
     if ($method === 'GET' && !$id) {
         if ($auth['role'] === 'student') {
             $uid = $auth['user_id'];
-            // Get all published tests — both directly assigned and via class
-            // Also include ALL published tests if no assignments exist (fallback for demo)
+
+            // Which subjects can this student access?
+            // Rule: subject is accessible if their class studies it AND
+            //       either it has no group split OR the student is in that group.
+            $studentSubjectIds = array_column(DB::fetchAll(
+                "SELECT DISTINCT csubj.subject_id
+                 FROM class_students cst
+                 JOIN class_subjects csubj ON csubj.class_id = cst.class_id
+                 LEFT JOIN student_class_groups scg
+                        ON scg.student_id = cst.student_id AND scg.class_id = cst.class_id
+                 WHERE cst.student_id = ?
+                   AND (csubj.group_tag IS NULL OR csubj.group_tag = scg.group_tag)",
+                [$uid]
+            ), 'subject_id');
+
+            // If the class has no subjects configured yet, fall back to showing
+            // all published tests (backward-compatible until admin sets up subjects).
+            $subjFilter = '';
+            $subjParams  = [];
+            if (!empty($studentSubjectIds)) {
+                $ph = implode(',', array_fill(0, count($studentSubjectIds), '?'));
+                // Also allow legacy tests with no subject assigned (subject_id IS NULL)
+                $subjFilter = "AND (t.subject_id IS NULL OR t.subject_id IN ($ph))";
+                $subjParams  = $studentSubjectIds;
+            }
+
             $tests = DB::fetchAll(
                 "SELECT DISTINCT t.id, t.title, t.type, t.status, t.time_limit_min, t.max_attempts,
-                        t.show_feedback, t.available_from, t.due_at,
-                        (SELECT COUNT(*) FROM attempts WHERE test_id=t.id AND student_id=?) AS my_attempts,
+                        t.show_feedback, t.available_from, t.due_at, t.subject_id,
+                        s.name       AS subject_name,
+                        s.short_name AS subject_short,
+                        (SELECT COUNT(*) FROM attempts       WHERE test_id=t.id AND student_id=?) AS my_attempts,
                         (SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count
                  FROM tests t
-                 LEFT JOIN test_assignments ta ON ta.test_id=t.id
-                 LEFT JOIN class_students cs ON cs.class_id=ta.class_id AND cs.student_id=?
+                 LEFT JOIN test_assignments ta  ON ta.test_id=t.id
+                 LEFT JOIN class_students   cst2 ON cst2.class_id=ta.class_id AND cst2.student_id=?
+                 LEFT JOIN subjects s ON s.id=t.subject_id
                  WHERE t.status='published'
-                   AND (ta.id IS NULL OR ta.student_id=? OR cs.student_id=?)
+                   AND (ta.id IS NULL OR ta.student_id=? OR cst2.student_id=?)
                    AND (t.available_from IS NULL OR t.available_from<=NOW())
+                   $subjFilter
                  ORDER BY t.due_at IS NULL, t.due_at ASC",
-                [$uid,$uid,$uid,$uid]
+                array_merge([$uid, $uid, $uid, $uid], $subjParams)
             );
             respond($tests);
         } else {
@@ -449,6 +478,29 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
             'class_id'
         ));
         respond($test);
+    }
+
+    // GET /tests/{id}/marking — students+attempts with essay marking status
+    if ($method === 'GET' && $id && $sub === 'marking') {
+        require_role($auth, 'teacher', 'admin');
+        $attempts = DB::fetchAll(
+            "SELECT a.id AS attempt_id, a.student_id,
+                    u.first_name, u.last_name, u.class_name, u.avatar_color,
+                    a.score_auto + COALESCE(a.score_manual,0) AS total_score,
+                    a.max_score, a.status, a.submitted_at,
+                    SUM(CASE WHEN q.type='essay' AND an.is_correct IS NULL THEN 1 ELSE 0 END) AS essays_pending,
+                    SUM(CASE WHEN q.type='essay' THEN 1 ELSE 0 END) AS essays_total
+             FROM attempts a
+             JOIN users u ON u.id=a.student_id
+             LEFT JOIN answers an ON an.attempt_id=a.id
+             LEFT JOIN questions q ON q.id=an.question_id
+             WHERE a.test_id=? AND a.status IN ('submitted','marked')
+             GROUP BY a.id, a.student_id, u.first_name, u.last_name,
+                      u.class_name, u.avatar_color, a.score_auto, a.score_manual, a.max_score, a.status, a.submitted_at
+             ORDER BY essays_pending DESC, u.last_name",
+            [$id]
+        );
+        respond($attempts);
     }
 
     if ($method === 'GET' && $id && $sub === 'results') {
@@ -657,6 +709,7 @@ function handleAnswers(string $method, ?int $id, ?string $sub, array $body): voi
 // ══════════════════════════════════════════════════════════════
 function handleStudents(string $method, ?int $id, ?string $sub, array $body): void {
     $auth = require_auth();
+    ensureClassSubjectSchema(); // class_subjects + student_class_groups
 
     if ($method === 'GET' && !$id && $sub === 'dashboard') {
         $uid = $auth['user_id'];
@@ -669,22 +722,73 @@ function handleStudents(string $method, ?int $id, ?string $sub, array $body): vo
         );
         $streak  = DB::fetchOne('SELECT current_streak,longest_streak,total_xp FROM streaks WHERE student_id=?', [$uid]);
         $subAvg  = DB::fetchAll('SELECT q.sub_strand,AVG(an.is_correct*q.marks/q.marks*100) AS avg_pct FROM answers an JOIN questions q ON q.id=an.question_id JOIN attempts a ON a.id=an.attempt_id WHERE a.student_id=? AND an.marks_awarded IS NOT NULL GROUP BY q.sub_strand', [$uid]);
-        $due     = DB::fetchAll("SELECT DISTINCT t.id,t.title,t.due_at,t.time_limit_min,(SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count,(SELECT COUNT(*) FROM attempts WHERE test_id=t.id AND student_id=?) AS my_attempts FROM tests t JOIN test_assignments ta ON ta.test_id=t.id LEFT JOIN class_students cs ON cs.class_id=ta.class_id AND cs.student_id=? WHERE t.status='published' AND (ta.student_id=? OR cs.student_id IS NOT NULL) AND (t.due_at IS NULL OR t.due_at>NOW()) GROUP BY t.id HAVING my_attempts=0 ORDER BY t.due_at IS NULL,t.due_at ASC LIMIT 5", [$uid,$uid,$uid]);
+        $subjectAvg = DB::fetchAll(
+            "SELECT s.id AS subject_id, s.name AS subject_name, s.short_name AS subject_short,
+                    AVG(ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2)) AS avg_pct,
+                    COUNT(DISTINCT a.id) AS attempt_count
+             FROM attempts a
+             JOIN tests t ON t.id=a.test_id
+             JOIN subjects s ON s.id=t.subject_id
+             WHERE a.student_id=? AND a.status IN ('submitted','marked')
+             GROUP BY s.id, s.name, s.short_name
+             ORDER BY s.name",
+            [$uid]
+        );
+
+        // Which subjects can this student access via their class?
+        $dashSubjIds = array_column(DB::fetchAll(
+            "SELECT DISTINCT csubj.subject_id
+             FROM class_students cst
+             JOIN class_subjects csubj ON csubj.class_id = cst.class_id
+             LEFT JOIN student_class_groups scg
+                    ON scg.student_id = cst.student_id AND scg.class_id = cst.class_id
+             WHERE cst.student_id = ?
+               AND (csubj.group_tag IS NULL OR csubj.group_tag = scg.group_tag)",
+            [$uid]
+        ), 'subject_id');
+        $dashSubjFilter = '';
+        $dashSubjParams = [];
+        if (!empty($dashSubjIds)) {
+            $ph = implode(',', array_fill(0, count($dashSubjIds), '?'));
+            $dashSubjFilter = "AND (t.subject_id IS NULL OR t.subject_id IN ($ph))";
+            $dashSubjParams = $dashSubjIds;
+        }
+
+        $due = DB::fetchAll(
+            "SELECT DISTINCT t.id, t.title, t.due_at, t.time_limit_min,
+                    s.name AS subject_name, s.short_name AS subject_short,
+                    (SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count,
+                    (SELECT COUNT(*) FROM attempts WHERE test_id=t.id AND student_id=?) AS my_attempts
+             FROM tests t
+             JOIN test_assignments ta ON ta.test_id=t.id
+             LEFT JOIN class_students cs ON cs.class_id=ta.class_id AND cs.student_id=?
+             LEFT JOIN subjects s ON s.id=t.subject_id
+             WHERE t.status='published'
+               AND (ta.student_id=? OR cs.student_id IS NOT NULL)
+               AND (t.due_at IS NULL OR t.due_at>NOW())
+               $dashSubjFilter
+             GROUP BY t.id HAVING my_attempts=0
+             ORDER BY t.due_at IS NULL, t.due_at ASC LIMIT 5",
+            array_merge([$uid, $uid, $uid], $dashSubjParams)
+        );
         $recent = DB::fetchAll(
-            'SELECT a.id, t.title,
+            "SELECT a.id, t.title,
+                    s.name AS subject_name, s.short_name AS subject_short,
                     ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2) AS pct_score,
                     a.submitted_at
-             FROM attempts a JOIN tests t ON t.id=a.test_id
-             WHERE a.student_id=? AND a.status IN ("submitted","marked")
-             ORDER BY a.submitted_at DESC LIMIT 5',
+             FROM attempts a
+             JOIN tests t ON t.id=a.test_id
+             LEFT JOIN subjects s ON s.id=t.subject_id
+             WHERE a.student_id=? AND a.status IN ('submitted','marked')
+             ORDER BY a.submitted_at DESC LIMIT 5",
             [$uid]
         );
         $srDue   = DB::fetchOne('SELECT COUNT(*) AS n FROM spaced_repetition WHERE student_id=? AND next_review<=CURDATE()', [$uid])['n'] ?? 0;
-        // Rename keys to match frontend expectations
         respond([
             'stats'          => $stats,
             'streak'         => $streak,
             'substrand_avg'  => $subAvg,
+            'subject_avg'    => $subjectAvg,
             'due'            => $due,
             'recent'         => $recent,
             'sr_due'         => (int)$srDue,
@@ -693,16 +797,72 @@ function handleStudents(string $method, ?int $id, ?string $sub, array $body): vo
 
     if ($method === 'GET' && $id) {
         require_role($auth,'teacher','admin');
-        $s = DB::fetchOne('SELECT id,first_name,last_name,email,class_name,avatar_color,last_login FROM users WHERE id=? AND school_id=? AND role="student"', [$id,$auth['school_id']]);
-        if (!$s) err('Student not found',404);
-        $s['substrand_avg']   = DB::fetchAll('SELECT q.sub_strand,AVG(a.pct_score) AS avg_pct FROM attempts a JOIN test_questions tq ON tq.test_id=a.test_id JOIN questions q ON q.id=tq.question_id WHERE a.student_id=? AND a.status IN ("submitted","marked") GROUP BY q.sub_strand', [$id]);
-        $s['streak']          = DB::fetchOne('SELECT * FROM streaks WHERE student_id=?', [$id]);
+        $s = DB::fetchOne(
+            'SELECT u.id, u.first_name, u.last_name, u.email, u.class_name, u.avatar_color, u.last_login,
+                    c.id AS class_id, c.year_group,
+                    (SELECT COUNT(*) FROM attempts WHERE student_id=u.id AND status IN ("submitted","marked")) AS tests_done,
+                    (SELECT AVG(ROUND(IF(max_score>0,(score_auto+score_manual)/max_score*100,0),2))
+                     FROM attempts WHERE student_id=u.id AND status IN ("submitted","marked")) AS avg_pct
+             FROM users u
+             LEFT JOIN class_students cst ON cst.student_id = u.id
+             LEFT JOIN classes c ON c.id = cst.class_id
+             WHERE u.id=? AND u.school_id=? AND u.role="student"
+             LIMIT 1',
+            [$id, $auth['school_id']]
+        );
+        if (!$s) err('Student not found', 404);
+
+        // Subjects the student studies (respects group splits)
+        $s['subjects'] = DB::fetchAll(
+            "SELECT DISTINCT sub.id AS subject_id, sub.name AS subject_name,
+                    sub.short_name, sub.category, csubj.group_tag
+             FROM class_students cst
+             JOIN class_subjects csubj ON csubj.class_id = cst.class_id
+             LEFT JOIN student_class_groups scg
+                    ON scg.student_id = cst.student_id AND scg.class_id = cst.class_id
+             JOIN subjects sub ON sub.id = csubj.subject_id
+             WHERE cst.student_id = ?
+               AND (csubj.group_tag IS NULL OR csubj.group_tag = scg.group_tag)
+             ORDER BY sub.category, sub.name",
+            [$id]
+        );
+
+        // Per-subject performance (attempts that have a subject)
+        $s['subject_performance'] = DB::fetchAll(
+            "SELECT sub.id AS subject_id, sub.name AS subject_name, sub.short_name,
+                    COUNT(DISTINCT a.id) AS tests_done,
+                    ROUND(AVG(ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2)),1) AS avg_pct,
+                    ROUND(MAX(ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2)),1) AS best_pct
+             FROM attempts a
+             JOIN tests t ON t.id = a.test_id
+             JOIN subjects sub ON sub.id = t.subject_id
+             WHERE a.student_id = ? AND a.status IN ('submitted','marked')
+             GROUP BY sub.id, sub.name, sub.short_name
+             ORDER BY sub.name",
+            [$id]
+        );
+
+        // Full attempt history (last 30)
         $s['recent_attempts'] = DB::fetchAll(
-            'SELECT a.id, t.title,
+            "SELECT a.id, t.title, t.type,
+                    sub.name AS subject_name, sub.short_name AS subject_short,
                     ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2) AS pct_score,
-                    a.submitted_at
-             FROM attempts a JOIN tests t ON t.id=a.test_id
-             WHERE a.student_id=? ORDER BY a.submitted_at DESC LIMIT 8',
+                    a.score_auto + a.score_manual AS raw_score, a.max_score,
+                    a.status, a.submitted_at
+             FROM attempts a
+             JOIN tests t ON t.id = a.test_id
+             LEFT JOIN subjects sub ON sub.id = t.subject_id
+             WHERE a.student_id = ? AND a.status IN ('submitted','marked')
+             ORDER BY a.submitted_at DESC LIMIT 30",
+            [$id]
+        );
+
+        $s['streak']       = DB::fetchOne('SELECT * FROM streaks WHERE student_id=?', [$id]);
+        $s['substrand_avg'] = DB::fetchAll(
+            'SELECT q.sub_strand, AVG(an.is_correct*100) AS avg_pct
+             FROM answers an JOIN questions q ON q.id=an.question_id JOIN attempts a ON a.id=an.attempt_id
+             WHERE a.student_id=? AND an.marks_awarded IS NOT NULL
+             GROUP BY q.sub_strand',
             [$id]
         );
         respond($s);
@@ -746,25 +906,47 @@ function handleStudents(string $method, ?int $id, ?string $sub, array $body): vo
         if (strlen($pw) < 6) err('Password must be at least 6 characters');
         if (DB::fetchOne('SELECT id FROM users WHERE email=?',[strtolower(trim($em))]))
             err('Email already registered',409);
+
+        // Resolve class: accept class_id (int) or class_name (string)
+        [$className, $classId] = resolveStudentClass($body, $auth['school_id']);
+
         $hash = password_hash($pw, PASSWORD_BCRYPT, ['cost'=>12]);
         $uid  = DB::insert(
             'INSERT INTO users (school_id,role,first_name,last_name,email,password_hash,class_name,avatar_color,must_change_password)
              VALUES (?,?,?,?,?,?,?,?,1)',
             [$auth['school_id'],'student',trim($fn),trim($ln),strtolower(trim($em)),$hash,
-             $body['class_name']??null, $body['avatar_color']??'#1A7A4A']
+             $className, $body['avatar_color']??'#1A7A4A']
         );
         DB::execute('INSERT INTO streaks (student_id) VALUES (?)', [$uid]);
+        // Write junction row so class_students queries work
+        if ($classId) {
+            DB::execute('INSERT IGNORE INTO class_students (class_id,student_id) VALUES (?,?)', [$classId, $uid]);
+        }
         respond(['user_id'=>$uid,'message'=>'Student created'],201);
     }
 
     // PATCH /students/{id} — admin/teacher updates a student
     if ($method === 'PATCH' && $id) {
         require_role($auth,'admin','teacher');
-        $allowed = ['first_name','last_name','email','class_name','avatar_color'];
+        $allowed = ['first_name','last_name','email','avatar_color'];
         $sets=[]; $params=[];
         foreach ($allowed as $f) {
             if (array_key_exists($f,$body)) { $sets[]="$f=?"; $params[]=$body[$f]; }
         }
+
+        // Handle class change (accepts class_id or class_name)
+        $classChanged = isset($body['class_id']) || array_key_exists('class_name', $body);
+        if ($classChanged) {
+            [$className, $classId] = resolveStudentClass($body, $auth['school_id']);
+            $sets[]   = 'class_name=?';
+            $params[] = $className;
+            // Re-sync junction table (single class per student)
+            DB::execute('DELETE FROM class_students WHERE student_id=?', [$id]);
+            if ($classId) {
+                DB::execute('INSERT IGNORE INTO class_students (class_id,student_id) VALUES (?,?)', [$classId, $id]);
+            }
+        }
+
         // Optional password reset
         if (!empty($body['password']) && strlen($body['password']) >= 6) {
             $sets[]   = 'password_hash=?';
@@ -868,8 +1050,11 @@ function handleClasses(string $method, ?int $id, ?string $sub, array $body): voi
     if ($method === 'GET' && $id && $sub === 'students') {
         require_role($auth,'teacher','admin');
         respond(DB::fetchAll(
-            "SELECT u.id, u.first_name, u.last_name,
-                    scg.group_tag
+            "SELECT u.id, u.first_name, u.last_name, u.avatar_color,
+                    scg.group_tag,
+                    (SELECT COUNT(*) FROM attempts WHERE student_id=u.id AND status IN ('submitted','marked')) AS tests_done,
+                    (SELECT ROUND(AVG(ROUND(IF(max_score>0,(score_auto+score_manual)/max_score*100,0),2)),1)
+                     FROM attempts WHERE student_id=u.id AND status IN ('submitted','marked')) AS avg_pct
              FROM class_students cst
              JOIN users u ON u.id = cst.student_id
              LEFT JOIN student_class_groups scg ON scg.student_id = u.id AND scg.class_id = cst.class_id
@@ -1066,21 +1251,43 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
     }
 
     if ($sub === 'marking-queue') {
-        // Teachers see only essays on tests they created
-        $mqWhere  = 'q.type="essay" AND an.is_correct IS NULL AND a.status="submitted" AND t.school_id=?';
-        $mqParams = [$sid];
-        if ($isTeacher) { $mqWhere .= ' AND t.creator_id=?'; $mqParams[] = $uid; }
+        ensureTeacherSubjectSchema();
+
+        // Build scope filter: teacher sees tests for their subjects + own tests
+        $scopeFilter = 'AND t.school_id=?';
+        $scopeParams = [$sid];
+        if ($isTeacher) {
+            $subjectIds = array_column(DB::fetchAll(
+                'SELECT subject_id FROM teacher_subjects WHERE teacher_id=?', [$uid]
+            ), 'subject_id');
+            if (!empty($subjectIds)) {
+                $ph = implode(',', array_fill(0, count($subjectIds), '?'));
+                $scopeFilter .= " AND (t.creator_id=? OR t.subject_id IN ($ph))";
+                $scopeParams  = array_merge([$sid, $uid], $subjectIds);
+            } else {
+                $scopeFilter .= ' AND t.creator_id=?';
+                $scopeParams[] = $uid;
+            }
+        }
+
+        // Return TEST-LEVEL summary (one row per test, not per answer)
         $queue = DB::fetchAll(
-            "SELECT an.id AS answer_id,an.attempt_id,an.question_id,an.text_response,
-                    u.first_name,u.last_name,u.class_name,t.title AS test_title,
-                    q.sub_strand,q.marks AS max_marks,q.rubric
-             FROM answers an
-             JOIN attempts a ON a.id=an.attempt_id
-             JOIN users u ON u.id=a.student_id
-             JOIN tests t ON t.id=a.test_id
-             JOIN questions q ON q.id=an.question_id
-             WHERE $mqWhere ORDER BY an.id",
-            $mqParams
+            "SELECT t.id AS test_id, t.title, t.type, t.subject_id,
+                    s.name AS subject_name, s.short_name AS subject_short,
+                    COUNT(DISTINCT a.student_id) AS students_attempted,
+                    SUM(CASE WHEN q.type='essay' AND an.is_correct IS NULL THEN 1 ELSE 0 END) AS essays_pending,
+                    SUM(CASE WHEN q.type='essay' THEN 1 ELSE 0 END) AS essays_total,
+                    MIN(a.submitted_at) AS first_submission
+             FROM tests t
+             JOIN attempts a ON a.test_id=t.id AND a.status='submitted'
+             JOIN answers an ON an.attempt_id=a.id
+             JOIN questions q ON q.id=an.question_id AND q.type='essay'
+             LEFT JOIN subjects s ON s.id=t.subject_id
+             WHERE 1=1 $scopeFilter
+             GROUP BY t.id, t.title, t.type, t.subject_id, s.name, s.short_name
+             HAVING essays_pending > 0
+             ORDER BY first_submission ASC",
+            $scopeParams
         );
         respond($queue);
     }
@@ -1713,23 +1920,35 @@ function handleUsersBulk(string $method, array $body): void {
     if ($method !== 'POST') err('Method not allowed', 405);
     $auth = require_auth();
     require_role($auth, 'admin');
+    ensureTeacherSubjectSchema();
+    ensureClassSubjectSchema();
 
     $role  = $body['role'] ?? 'student';
     $users = $body['users'] ?? [];
     if (!in_array($role, ['student','teacher'], true)) err('Invalid role');
     if (!is_array($users) || empty($users)) err('No users provided');
 
+    $sid      = (int)$auth['school_id'];
     $imported = 0;
     $skipped  = [];
+    $warnings = [];
+
+    // Top-level class assignment (from the dropdown — applies to all student rows)
+    $bulkClassId   = isset($body['class_id']) ? (int)$body['class_id'] : null;
+    $bulkClassName = null;
+    if ($bulkClassId) {
+        $bc = DB::fetchOne('SELECT name FROM classes WHERE id=? AND school_id=?', [$bulkClassId, $sid]);
+        $bulkClassName = $bc ? $bc['name'] : null;
+        if (!$bulkClassName) $bulkClassId = null; // invalid ID passed
+    }
 
     DB::beginTransaction();
     try {
         foreach ($users as $i => $u) {
-            $fn = trim($u['first_name'] ?? $u['firstname'] ?? '');
-            $ln = trim($u['last_name']  ?? $u['lastname']  ?? '');
-            $em = strtolower(trim($u['email'] ?? ''));
+            $fn = trim($u['first_name'] ?? $u['firstname'] ?? $u['first'] ?? '');
+            $ln = trim($u['last_name']  ?? $u['lastname']  ?? $u['surname'] ?? $u['last'] ?? '');
+            $em = strtolower(trim($u['email'] ?? $u['email_address'] ?? ''));
             $pw = trim($u['password'] ?? 'changeme123');
-            $cl = trim($u['class_name'] ?? $u['class'] ?? '');
 
             if (!$fn || !$ln || !$em) {
                 $skipped[] = "Row ".($i+1).": missing name or email"; continue;
@@ -1737,15 +1956,66 @@ function handleUsersBulk(string $method, array $body): void {
             if (!filter_var($em, FILTER_VALIDATE_EMAIL)) {
                 $skipped[] = "Row ".($i+1).": invalid email ($em)"; continue;
             }
-            if (DB::fetchOne('SELECT id FROM users WHERE email=?',[$em])) {
+            if (DB::fetchOne('SELECT id FROM users WHERE email=?', [$em])) {
                 $skipped[] = "Row ".($i+1).": $em already exists"; continue;
             }
-            $hash = password_hash(strlen($pw)>=6?$pw:'changeme123', PASSWORD_BCRYPT, ['cost'=>10]);
-            $uid  = DB::insert(
-                'INSERT INTO users (school_id,role,first_name,last_name,email,password_hash,class_name,must_change_password) VALUES (?,?,?,?,?,?,?,1)',
-                [$auth['school_id'],$role,$fn,$ln,$em,$hash,$cl?:null]
-            );
-            if ($role === 'student') DB::execute('INSERT INTO streaks (student_id) VALUES (?)',[$uid]);
+
+            $hash = password_hash(strlen($pw) >= 6 ? $pw : 'changeme123', PASSWORD_BCRYPT, ['cost'=>10]);
+
+            if ($role === 'student') {
+                // Use bulk class (from dropdown) — ignore per-row class_name column
+                $classId   = $bulkClassId;
+                $className = $bulkClassName;
+
+                $uid = DB::insert(
+                    'INSERT INTO users (school_id,role,first_name,last_name,email,password_hash,class_name,must_change_password)
+                     VALUES (?,?,?,?,?,?,?,1)',
+                    [$sid, 'student', $fn, $ln, $em, $hash, $className]
+                );
+                DB::execute('INSERT INTO streaks (student_id) VALUES (?)', [$uid]);
+                if ($classId) {
+                    DB::execute('INSERT IGNORE INTO class_students (class_id,student_id) VALUES (?,?)',
+                        [$classId, $uid]);
+                }
+
+            } else { // teacher
+                $deptName    = trim($u['department'] ?? $u['department_name'] ?? '');
+                $subjectsRaw = trim($u['subjects']   ?? $u['subject']        ?? '');
+
+                // Resolve department
+                $deptId = null;
+                if ($deptName) {
+                    $dept = DB::fetchOne('SELECT id FROM departments WHERE school_id=? AND name=?', [$sid, $deptName]);
+                    if ($dept) $deptId = (int)$dept['id'];
+                    else $warnings[] = "Row ".($i+1).": department \"$deptName\" not found — assigned without department";
+                }
+
+                $uid = DB::insert(
+                    'INSERT INTO users (school_id,role,first_name,last_name,email,password_hash,department_id,avatar_color,must_change_password)
+                     VALUES (?,?,?,?,?,?,?,?,1)',
+                    [$sid, 'teacher', $fn, $ln, $em, $hash, $deptId, '#C47D0E']
+                );
+
+                // Assign subjects (comma-separated names or short names)
+                if ($subjectsRaw) {
+                    $names = array_filter(array_map('trim', explode(',', $subjectsRaw)));
+                    foreach ($names as $sn) {
+                        $subj = DB::fetchOne(
+                            'SELECT id FROM subjects WHERE (school_id IS NULL OR school_id=?) AND (name=? OR short_name=?) LIMIT 1',
+                            [$sid, $sn, $sn]
+                        );
+                        if ($subj) {
+                            DB::execute(
+                                'INSERT IGNORE INTO teacher_subjects (teacher_id,subject_id,assigned_by) VALUES (?,?,?)',
+                                [$uid, (int)$subj['id'], (int)$auth['user_id']]
+                            );
+                        } else {
+                            $warnings[] = "Row ".($i+1).": subject \"$sn\" not found — skipped";
+                        }
+                    }
+                }
+            }
+
             $imported++;
         }
         DB::commit();
@@ -1757,8 +2027,11 @@ function handleUsersBulk(string $method, array $body): void {
     respond([
         'imported' => $imported,
         'skipped'  => count($skipped),
-        'errors'   => $skipped,
-        'message'  => "$imported user(s) imported successfully",
+        'warnings' => count($warnings),
+        'errors'   => array_merge($skipped, $warnings),
+        'message'  => "$imported user(s) imported" .
+                      (count($skipped)  ? ", ".count($skipped)." skipped"   : "") .
+                      (count($warnings) ? ", ".count($warnings)." warnings" : ""),
     ]);
 }
 
@@ -1900,7 +2173,90 @@ function handleSubjects(string $method, ?int $id, ?string $sub, array $body): vo
              ORDER BY s.category, s.name",
             [$sid]
         );
-        respond(['platform' => $platform, 'custom' => $custom]);
+        // For teachers, also include which subjects they personally teach
+        $mySubjectIds = [];
+        if ($auth['role'] === 'teacher') {
+            ensureTeacherSubjectSchema();
+            $mySubjectIds = array_column(DB::fetchAll(
+                'SELECT subject_id FROM teacher_subjects WHERE teacher_id=?',
+                [$auth['user_id']]
+            ), 'subject_id');
+        }
+        respond(['platform' => $platform, 'custom' => $custom, 'my_subject_ids' => $mySubjectIds]);
+    }
+
+    // GET /subjects/{id}/students — all students enrolled in this subject + their performance
+    if ($method === 'GET' && $id && $sub === 'students') {
+        ensureClassSubjectSchema();
+        $rows = DB::fetchAll(
+            "SELECT DISTINCT u.id, u.first_name, u.last_name, u.avatar_color, u.class_name,
+                    COUNT(DISTINCT a.id)  AS tests_done,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    MAX(ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),1))  AS best_pct
+             FROM class_students cst
+             JOIN class_subjects csubj ON csubj.class_id=cst.class_id AND csubj.subject_id=?
+             LEFT JOIN student_class_groups scg
+                    ON scg.student_id=cst.student_id AND scg.class_id=cst.class_id
+             JOIN users u ON u.id=cst.student_id AND u.is_active=1 AND u.school_id=?
+             LEFT JOIN attempts a ON a.student_id=u.id AND a.status IN ('submitted','marked')
+                    AND a.test_id IN (SELECT id FROM tests WHERE subject_id=?)
+             WHERE (csubj.group_tag IS NULL OR csubj.group_tag=scg.group_tag)
+             GROUP BY u.id, u.first_name, u.last_name, u.avatar_color, u.class_name
+             ORDER BY u.class_name, u.last_name",
+            [$id, $sid, $id]
+        );
+        respond($rows);
+    }
+
+    // GET /subjects/{id}/tests — tests and quizzes for this subject
+    if ($method === 'GET' && $id && $sub === 'tests') {
+        $rows = DB::fetchAll(
+            "SELECT t.id, t.title, t.type, t.status, t.created_at, t.time_limit_min,
+                    (SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count,
+                    COUNT(DISTINCT a.id) AS attempt_count,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    CONCAT(u.first_name,' ',u.last_name) AS creator_name
+             FROM tests t
+             LEFT JOIN attempts a ON a.test_id=t.id AND a.status IN ('submitted','marked')
+             LEFT JOIN users u ON u.id=t.creator_id
+             WHERE t.subject_id=? AND t.school_id=?
+             GROUP BY t.id, t.title, t.type, t.status, t.created_at, t.time_limit_min, u.first_name, u.last_name
+             ORDER BY t.created_at DESC",
+            [$id, $sid]
+        );
+        respond($rows);
+    }
+
+    // GET /subjects/{id}/student-perf?student_id=X — one student's performance in this subject
+    if ($method === 'GET' && $id && $sub === 'student-perf') {
+        $studentId = (int)($_GET['student_id'] ?? 0);
+        if (!$studentId) err('student_id required');
+        $scores = DB::fetchAll(
+            "SELECT t.id, t.title, t.type,
+                    ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),1) AS pct_score,
+                    a.score_auto + a.score_manual AS raw_score, a.max_score, a.submitted_at
+             FROM attempts a
+             JOIN tests t ON t.id=a.test_id
+             WHERE a.student_id=? AND t.subject_id=? AND a.status IN ('submitted','marked')
+             ORDER BY a.submitted_at DESC",
+            [$studentId, $id]
+        );
+        $topics = DB::fetchAll(
+            "SELECT q.sub_strand, q.topic,
+                    COUNT(*) AS total,
+                    SUM(an.is_correct) AS correct,
+                    ROUND(AVG(an.is_correct)*100, 1) AS accuracy
+             FROM answers an
+             JOIN questions q ON q.id=an.question_id
+             JOIN attempts a  ON a.id=an.attempt_id
+             JOIN tests t     ON t.id=a.test_id
+             WHERE a.student_id=? AND t.subject_id=? AND an.marks_awarded IS NOT NULL
+             GROUP BY q.sub_strand, q.topic
+             ORDER BY accuracy ASC
+             LIMIT 10",
+            [$studentId, $id]
+        );
+        respond(['scores' => $scores, 'topics' => $topics]);
     }
 
     // POST /subjects — admin adds a custom subject
@@ -1958,6 +2314,23 @@ function handleSubjects(string $method, ?int $id, ?string $sub, array $body): vo
     }
 
     err('Subjects endpoint error', 404);
+}
+
+// Returns [class_name_string, class_id_int|null] from request body.
+// Accepts either class_id (int) or class_name (string).
+function resolveStudentClass(array $body, $schoolId): array {
+    $schoolId = (int)$schoolId;
+    if (!empty($body['class_id'])) {
+        $cid = (int)$body['class_id'];
+        $cls = DB::fetchOne('SELECT name FROM classes WHERE id=? AND school_id=?', [$cid, $schoolId]);
+        return [$cls ? $cls['name'] : null, $cls ? $cid : null];
+    }
+    if (isset($body['class_name']) && $body['class_name'] !== '') {
+        $cn  = trim($body['class_name']);
+        $cls = DB::fetchOne('SELECT id FROM classes WHERE school_id=? AND name=?', [$schoolId, $cn]);
+        return [$cn, $cls ? (int)$cls['id'] : null];
+    }
+    return [null, null];
 }
 
 function ensureTeacherSubjectSchema(): void {

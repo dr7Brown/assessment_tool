@@ -301,6 +301,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
   <div class="sidebar-backdrop" id="t-bd" onclick="closeDrawer('t')"></div>
   <div class="app-shell">
     <aside class="sidebar" id="t-sidebar">
+
       <div class="sidebar-logo">
         <div class="logo-mark">A</div><div class="logo-name">Ace<span style="color:var(--green-mid)">ICT</span></div>
         <button class="sidebar-close" onclick="closeDrawer('t')" aria-label="Close menu">&#x2715;</button>
@@ -326,7 +327,24 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         </div>
       </div>
     </aside>
-    <div class="main-area" id="t-main"></div>
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden">
+      <!-- Persistent teacher context bar -->
+      <div id="t-ctx-bar" style="display:none;padding:8px 24px;background:var(--green-dk);
+           border-bottom:1px solid rgba(255,255,255,.15);display:none;align-items:center;gap:10px;flex-shrink:0">
+        <span style="font-size:11px;color:rgba(255,255,255,.65);white-space:nowrap;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Context:</span>
+        <select id="t-ctx-subj" style="background:rgba(255,255,255,.92);border:none;
+                color:var(--green-dk);font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;outline:none;min-width:160px;cursor:pointer">
+          <option value="">All my subjects</option>
+        </select>
+        <span style="color:rgba(255,255,255,.4)">›</span>
+        <select id="t-ctx-class" style="background:rgba(255,255,255,.92);border:none;
+                color:var(--green-dk);font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;outline:none;min-width:140px;cursor:pointer">
+          <option value="">All my classes</option>
+        </select>
+        <span id="t-ctx-label" style="font-size:11px;color:rgba(255,255,255,.5);margin-left:4px"></span>
+      </div>
+      <div class="main-area" id="t-main"></div>
+    </div>
   </div>
 </div>
 
@@ -343,8 +361,8 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="sidebar-section-label">School</div>
         <div class="nav-item active" onclick="aNav('overview',this)"><div class="ni-icon">🏫</div>School overview</div>
         <div class="nav-item" onclick="aNav('departments',this)"><div class="ni-icon">🏢</div>Departments</div>
-        <div class="nav-item" onclick="aNav('subjects',this)"><div class="ni-icon">📖</div>Subjects</div>
         <div class="nav-item" onclick="aNav('classes',this)"><div class="ni-icon">🗂️</div>Classes</div>
+        <div class="nav-item" onclick="aNav('subjects',this)"><div class="ni-icon">📖</div>Subjects</div>
         <div class="nav-item" onclick="aNav('reports',this)"><div class="ni-icon">📊</div>Reports</div>
       </div>
       <div class="sidebar-section">
@@ -467,7 +485,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 </div>
 
 <div class="modal-bg" id="student-detail-modal">
-  <div class="modal modal-lg">
+  <div class="modal modal-lg" style="max-width:860px">
     <div class="modal-header"><div class="modal-title" id="sd-title">Student profile</div><button class="modal-close" onclick="closeModal('student-detail-modal')">&#x2715;</button></div>
     <div class="modal-body" id="sd-body"></div>
   </div>
@@ -911,13 +929,19 @@ async function getSubjectList() {
 }
 
 async function populateSubjectDropdowns(selectedId = null) {
-  const subjects = await getSubjectList();
+  let subjects;
+  if (CURRENT_USER?.role === 'teacher') {
+    // Show only assigned subjects — same list as the context bar
+    subjects = TCTX.subjects?.length ? TCTX.subjects : await getSubjectList();
+  } else {
+    subjects = await getSubjectList();
+  }
   const opts = `<option value="">— General / unspecified —</option>` +
-    subjects.map(s => `<option value="${s.id}" ${selectedId==s.id?'selected':''}>[${s.category}] ${s.name}</option>`).join('');
+    subjects.map(s => `<option value="${s.id}" ${selectedId==s.id?'selected':''}>${s.name}</option>`).join('');
   document.querySelectorAll('#qb-subject, #nt-subject').forEach(el => {
     const cur = el.value;
     el.innerHTML = opts;
-    if (!selectedId && cur) el.value = cur; // preserve existing selection
+    if (!selectedId && cur) el.value = cur;
     if (selectedId) el.value = selectedId;
   });
 }
@@ -1465,15 +1489,30 @@ async function loadDash(m) {
   const streak   = data?.streak?.current_streak ?? 0;
   const srDue    = data?.sr_due ?? 0;
 
-  // Sub-strand bars from API or mock
+  // Performance bars — prefer subject breakdown, fall back to sub-strand
   let subBars = '';
-  if (data?.substrand_avg?.length) {
-    subBars = data.substrand_avg.map(row=>`
-    <div class="bar-row"><div class="bar-label">${row.sub_strand}</div>
-    <div class="bar-track"><div class="bar-fill ${row.avg_pct<50?'coral':row.avg_pct<65?'amber':''}" style="width:${Math.round(row.avg_pct||0)}%"></div></div>
-    <div class="bar-val" style="color:${col(Math.round(row.avg_pct||0))}">${Math.round(row.avg_pct||0)}%</div></div>`).join('');
+  let perfTitle = 'Performance by subject';
+  if (data?.subject_avg?.length) {
+    subBars = data.subject_avg.map(row => {
+      const pct = Math.round(row.avg_pct || 0);
+      return `
+      <div class="bar-row">
+        <div class="bar-label" title="${row.subject_name}">${row.subject_short || row.subject_name}</div>
+        <div class="bar-track"><div class="bar-fill ${pct<50?'coral':pct<65?'amber':''}" style="width:${pct}%"></div></div>
+        <div class="bar-val" style="color:${col(pct)}">${pct}%</div>
+      </div>`;
+    }).join('');
+  } else if (data?.substrand_avg?.length) {
+    perfTitle = 'Sub-strand performance';
+    subBars = data.substrand_avg.map(row => {
+      const pct = Math.round(row.avg_pct || 0);
+      return `
+      <div class="bar-row"><div class="bar-label">${row.sub_strand}</div>
+      <div class="bar-track"><div class="bar-fill ${pct<50?'coral':pct<65?'amber':''}" style="width:${pct}%"></div></div>
+      <div class="bar-val" style="color:${col(pct)}">${pct}%</div></div>`;
+    }).join('');
   } else {
-    //subBars = [['S1/SS1 Productivity',me.sc.s1ss1],['S1/SS2 Emerging Tech',me.sc.s1ss2],['S1/SS3 Online',me.sc.s1ss3],['S2/SS1 Networks',me.sc.s2ss1],['S2/SS2 Security',me.sc.s2ss2]].map(([l,v])=>`
+    perfTitle = 'Sub-strand performance';
     subBars = [['S1/SS1 Productivity Tools',me.sc.s1ss1],['S1/SS2 Emerging Technologies',me.sc.s1ss2],['S1/SS3 Connecting And Communicating Online',me.sc.s1ss3],['S2/SS1 Guided And Unguided Network Systems',me.sc.s2ss1],['S2/SS2 Emerging Technologies',me.sc.s2ss2]].map(([l,v])=>`
     <div class="bar-row"><div class="bar-label">${l}</div>
     <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
@@ -1521,9 +1560,13 @@ async function loadDash(m) {
       ${dueTests.slice(0,3).map(t=>{
         const dLabel = t.dueLabel || (t.due_at ? fmtDate(t.due_at) : 'Open');
         const isUrgent = t.badge==='coral' || (t.due_at && new Date(t.due_at)<new Date(Date.now()+86400000));
+        const subjectLabel = t.subject_short || t.subject_name || '';
         return `<div class="card card-sm" style="margin-bottom:10px;cursor:pointer" onclick="beginTest(${t.id})">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <span class="badge badge-${isUrgent?'coral':t.badge||'amber'}">Due ${dLabel}</span>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <span class="badge badge-${isUrgent?'coral':t.badge||'amber'}">Due ${dLabel}</span>
+              ${subjectLabel ? `<span class="badge badge-blue">${subjectLabel}</span>` : ''}
+            </div>
             <span style="font-size:11px;color:var(--text-3)">${t.question_count||'?'} questions${t.time_limit_min?' · '+t.time_limit_min+' min':''}</span>
           </div>
           <div style="font-size:14px;font-weight:700">${t.title}</div>
@@ -1531,10 +1574,10 @@ async function loadDash(m) {
       ${!dueTests.length?'<div style="color:var(--text-3);font-size:13px;padding:12px 0">No tests due right now 🎉</div>':''}
     </div>
     <div class="card">
-      <div class="card-header"><div class="card-title">Sub-strand performance</div></div>
-      <div class="bar-chart">${subBars}</div>
+      <div class="card-header"><div class="card-title">${perfTitle}</div></div>
+      <div class="bar-chart">${subBars || '<div style="color:var(--text-3);font-size:13px;padding:8px 0">Complete tests to see your performance breakdown.</div>'}</div>
       <div class="divider"></div>
-      <button class="btn btn-primary" style="width:100%" onclick="startPractice('S2/SS2')">Practice weakest sub-strand →</button>
+      <button class="btn btn-primary" style="width:100%" onclick="startPractice()">Practice to improve →</button>
     </div>
   </div>
   <div class="card">
@@ -1545,18 +1588,20 @@ async function loadDash(m) {
 }
 
 function buildRecentResults(apiRecent) {
-  const rows = apiRecent?.length ? apiRecent.map(r=>({
-    test: r.title, sub: 'Quiz', score: Math.round(r.pct_score||0),
-    pass: r.pct_score>=50, date: fmtDate(r.submitted_at)
-  })) : [];
-  if(!rows.length) return '<div style="color:var(--text-3);font-size:13px;padding:12px 0">No results yet — take your first test!</div>';
-  return `<table class="data-table"><thead><tr><th>Test</th><th>Score</th><th>Status</th><th>Date</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr>
-      <td><span style="font-weight:600">${r.test}</span></td>
-      <td><span style="font-weight:700;color:${col(r.score)}">${r.score}%</span></td>
-      <td><span class="badge badge-${r.pass?'green':'coral'}">${r.pass?'Pass':'Fail'}</span></td>
-      <td style="color:var(--text-3)">${r.date}</td>
-    </tr>`).join('')}
+  if (!apiRecent?.length) return '<div style="color:var(--text-3);font-size:13px;padding:12px 0">No results yet — take your first test!</div>';
+  return `<table class="data-table"><thead><tr><th>Test</th><th>Subject</th><th>Score</th><th>Status</th><th>Date</th></tr></thead><tbody>
+    ${apiRecent.map(r => {
+      const score = Math.round(r.pct_score || 0);
+      const pass  = score >= 50;
+      const subj  = r.subject_short || r.subject_name || '—';
+      return `<tr>
+        <td><span style="font-weight:600">${r.title}</span></td>
+        <td>${r.subject_name ? `<span class="badge badge-blue" style="font-size:11px">${subj}</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
+        <td><span style="font-weight:700;color:${col(score)}">${score}%</span></td>
+        <td><span class="badge badge-${pass?'green':'coral'}">${pass?'Pass':'Fail'}</span></td>
+        <td style="color:var(--text-3)">${fmtDate(r.submitted_at)}</td>
+      </tr>`;
+    }).join('')}
   </tbody></table>`;
 }
 
@@ -1581,15 +1626,16 @@ async function loadMyTests(m) {
     ${due.length ? due.map(t=>`
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
-        <div>
-          <div style="display:flex;gap:8px;margin-bottom:8px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
             <span class="badge badge-${t.due_at&&new Date(t.due_at)<new Date(Date.now()+86400000)?'coral':'amber'}">
               ${t.due_at?'Due '+fmtDate(t.due_at):'Open'}
             </span>
+            ${t.subject_short||t.subject_name ? `<span class="badge badge-blue">${t.subject_short||t.subject_name}</span>` : ''}
             ${t.time_limit_min?`<span class="badge badge-gray">${t.time_limit_min} min</span>`:''}
           </div>
           <div style="font-size:16px;font-weight:700;margin-bottom:4px">${t.title}</div>
-          <div style="font-size:13px;color:var(--text-3)">${t.type} · ${t.max_attempts===0?'Unlimited':t.max_attempts} attempt${t.max_attempts!==1?'s':''} allowed</div>
+          <div style="font-size:13px;color:var(--text-3)">${t.type} · ${t.max_attempts===0?'Unlimited':t.max_attempts} attempt${t.max_attempts!==1?'s':''} allowed · ${t.question_count||'?'} questions</div>
         </div>
         <button class="btn btn-primary" onclick="beginTest(${t.id})">Start →</button>
       </div>
@@ -1598,9 +1644,10 @@ async function loadMyTests(m) {
     <div class="empty-desc">No tests due right now. Head to Practice to stay sharp.</div></div>`}
   </div>
   <div id="td-done" class="tab-pane">
-    ${completed.length ? `<table class="data-table"><thead><tr><th>Test</th><th>Attempts</th><th>Due</th><th></th></tr></thead><tbody>
+    ${completed.length ? `<table class="data-table"><thead><tr><th>Test</th><th>Subject</th><th>Attempts</th><th>Due</th><th></th></tr></thead><tbody>
     ${completed.map(t=>`<tr>
       <td><b>${t.title}</b></td>
+      <td>${t.subject_name?`<span class="badge badge-blue" style="font-size:11px">${t.subject_short||t.subject_name}</span>`:'<span style="color:var(--text-3)">—</span>'}</td>
       <td>${t.my_attempts} / ${t.max_attempts===0?'∞':t.max_attempts}</td>
       <td style="color:var(--text-3)">${t.due_at?fmtDate(t.due_at):'—'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="beginTest(${t.id})">Retake</button></td>
@@ -1771,9 +1818,10 @@ async function loadHistory(m) {
 <div class="topbar"><div><div class="topbar-title">Results history</div></div></div>
 <div class="page">
   <div class="card">
-    ${done.length ? `<table class="data-table"><thead><tr><th>Test</th><th>Type</th><th>Attempts</th><th>Date</th><th></th></tr></thead><tbody>
+    ${done.length ? `<table class="data-table"><thead><tr><th>Test</th><th>Subject</th><th>Type</th><th>Attempts</th><th>Date</th><th></th></tr></thead><tbody>
     ${done.map(t=>`<tr>
       <td><b>${t.title||t.test}</b></td>
+      <td>${t.subject_name?`<span class="badge badge-blue" style="font-size:11px">${t.subject_short||t.subject_name}</span>`:'<span style="color:var(--text-3)">—</span>'}</td>
       <td><span class="badge badge-gray">${t.type||'quiz'}</span></td>
       <td>${t.my_attempts||1} / ${t.max_attempts===0?'∞':t.max_attempts||2}</td>
       <td style="color:var(--text-3)">${t.due_at?fmtDate(t.due_at):t.date||'—'}</td>
@@ -2111,7 +2159,9 @@ function tNav(v,el){
   if(el){document.querySelectorAll('#t-sidebar .nav-item').forEach(n=>n.classList.remove('active'));el.classList.add('active');}
   tRender(v);
 }
+let _tCurrentView = 'dashboard';
 function tRender(v){
+  _tCurrentView = v;
   const m=document.getElementById('t-main');if(!m)return;
   m.innerHTML=panelLoader();
   if(v==='dashboard')  loadTDash(m);
@@ -2121,6 +2171,519 @@ function tRender(v){
   else if(v==='classes')   loadTClasses(m);
   else if(v==='marking')   loadTMarking(m);
   else if(v==='analytics') loadTAnalytics(m);
+}
+
+// ── Teacher context (subject + class selector) ────────────────
+window.TCTX = { subject_id: null, subject_name: '', class_id: null, class_name: '', subjects: [], classes: [] };
+
+async function initTeacherContext() {
+  const bar = document.getElementById('t-ctx-bar');
+  if (!bar) return;
+
+  let subjData = {}, classes = [];
+  try { [subjData, classes] = await Promise.all([GET('/subjects'), GET('/classes')]); } catch(e) {}
+
+  // Normalise to strings — PDO returns IDs as strings, so keep consistent
+  const myIdArr = (subjData?.my_subject_ids || []).map(String);
+  const myIds   = new Set(myIdArr);
+  window._subjectMyIds = myIdArr;
+  const allSubjs = [
+    ...((subjData?.platform || []).filter(s => s.is_enabled == 1)),
+    ...(subjData?.custom || [])
+  ];
+
+  // Only subjects the teacher is assigned to teach
+  const mySubjs = allSubjs.filter(s => myIds.has(String(s.id)));
+  const cls     = classes || [];
+
+  TCTX.subjects = mySubjs;
+  TCTX.classes  = cls;
+
+  // Populate subject dropdown
+  const subjSel = document.getElementById('t-ctx-subj');
+  if (subjSel) {
+    const placeholder = myIds.size > 0 ? 'All my subjects' : 'Select a subject';
+    subjSel.innerHTML = `<option value="">${placeholder}</option>` +
+      mySubjs.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    // Auto-select if only one assigned subject
+    if (myIds.size === 1 && mySubjs.length === 1) {
+      subjSel.value     = mySubjs[0].id;
+      TCTX.subject_id   = mySubjs[0].id;
+      TCTX.subject_name = mySubjs[0].name;
+    }
+    subjSel.onchange = () => {
+      const s = mySubjs.find(x => x.id == subjSel.value);
+      TCTX.subject_id   = parseInt(subjSel.value) || null;
+      TCTX.subject_name = s?.name || '';
+      // Reset class when subject changes
+      const cSel = document.getElementById('t-ctx-class');
+      if (cSel) { cSel.value = ''; TCTX.class_id = null; TCTX.class_name = ''; }
+      updateCtxLabel();
+      tCtxReload();
+    };
+  }
+
+  // Populate class dropdown — grouped by year
+  const clsSel = document.getElementById('t-ctx-class');
+  if (clsSel) {
+    const byYear = {};
+    cls.forEach(c => { (byYear[c.year_group] = byYear[c.year_group] || []).push(c); });
+    const grouped = Object.entries(byYear).sort(([a],[b])=>a-b)
+      .map(([yr, yrCls]) =>
+        `<optgroup label="Year ${yr}">` +
+        yrCls.map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+        '</optgroup>'
+      ).join('');
+    clsSel.innerHTML = `<option value="">All my classes</option>${grouped}`;
+    clsSel.onchange = () => {
+      const c = cls.find(x => x.id == clsSel.value);
+      TCTX.class_id   = parseInt(clsSel.value) || null;
+      TCTX.class_name = c?.name || '';
+      updateCtxLabel();
+      tCtxReload();
+    };
+  }
+
+  // Show bar
+  bar.style.display = 'flex';
+  updateCtxLabel();
+}
+
+function updateCtxLabel() {
+  const lbl = document.getElementById('t-ctx-label');
+  if (!lbl) return;
+  const parts = [];
+  if (TCTX.subject_name) parts.push(TCTX.subject_name);
+  if (TCTX.class_name)   parts.push(TCTX.class_name);
+  lbl.textContent = parts.length ? '— ' + parts.join(' › ') : '';
+}
+
+function tCtxReload() {
+  tRender(_tCurrentView);
+}
+
+// ── Teacher Subjects page ─────────────────────────────────────
+let _ts = { all: [], myIds: new Set(), classes: [], classSubjCache: {} };
+
+async function loadTSubjects(m) {
+  m.innerHTML = panelLoader();
+  const isAdmin = CURRENT_USER?.role === 'admin';
+  let subjData = {}, classes = [], depts = [];
+  try {
+    [subjData, classes, depts] = await Promise.all([
+      GET('/subjects'),
+      GET('/classes'),
+      GET('/departments').catch(() => [])
+    ]);
+  } catch(e) {}
+
+  const allSubjs  = [
+    ...((subjData?.platform || []).filter(s => s.is_enabled == 1)),
+    ...(subjData?.custom || [])
+  ];
+  const myIds = new Set((subjData?.my_subject_ids || []).map(String));
+
+  _ts.all     = allSubjs;
+  _ts.myIds   = myIds;
+  _ts.classes = classes || [];
+  _ts.depts   = depts   || [];
+  _ts.classSubjCache = {};
+  _ts.isAdmin = isAdmin;
+
+  const categories = ['All categories', ...new Set(allSubjs.map(s => s.category))].sort((a,b) => a==='All categories'?-1:1);
+  const years      = ['All years', ...new Set(_ts.classes.map(c => 'Year ' + c.year_group)).values()].sort();
+  const clsOpts    = `<option value="">All classes</option>` +
+    _ts.classes.map(c => `<option value="${c.id}">${c.name} (Year ${c.year_group})</option>`).join('');
+  const deptOpts   = `<option value="">All departments</option>` +
+    _ts.depts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div>
+    <div class="topbar-title">Subjects</div>
+    <div class="topbar-sub" id="ts-subtitle">${allSubjs.length} subjects enabled · ${[...new Set(allSubjs.map(s=>s.category))].length} categories</div>
+  </div>
+  ${isAdmin ? `<div class="topbar-actions"><button class="btn btn-secondary" onclick="aNav('settings',document.querySelector('#a-sidebar .nav-item[onclick*=settings]'))">⚙ Manage subjects</button></div>` : ''}
+</div>
+<div class="page">
+
+  <!-- Filter bar -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+              padding:14px 18px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+    <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Filter by</div>
+    <select class="form-select" id="ts-cat" style="width:180px" onchange="tsApplyFilters()">
+      ${categories.map(c => `<option value="${c==='All categories'?'':c}">${c}</option>`).join('')}
+    </select>
+    <select class="form-select" id="ts-yr" style="width:130px" onchange="tsApplyFilters()">
+      ${years.map(y => `<option value="${y==='All years'?'':y.replace('Year ','')}">${y}</option>`).join('')}
+    </select>
+    <select class="form-select" id="ts-cls" style="width:180px" onchange="tsApplyFilters()">${clsOpts}</select>
+    <select class="form-select" id="ts-dept" style="width:180px" onchange="tsApplyFilters()">${deptOpts}</select>
+    ${!isAdmin ? `
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:auto;white-space:nowrap">
+      <input type="checkbox" id="ts-mine" onchange="tsApplyFilters()" style="width:15px;height:15px;accent-color:var(--green)">
+      <span style="font-size:13px;font-weight:600">My subjects only</span>
+    </label>` : '<div style="margin-left:auto"></div>'}
+  </div>
+
+  <!-- Subject grid -->
+  <div id="ts-grid"></div>
+</div>`;
+
+  tsRenderGrid(allSubjs);
+}
+
+async function tsApplyFilters() {
+  const cat    = document.getElementById('ts-cat')?.value  || '';
+  const yr     = document.getElementById('ts-yr')?.value   || '';
+  const clsId  = parseInt(document.getElementById('ts-cls')?.value)  || 0;
+  const deptId = parseInt(document.getElementById('ts-dept')?.value) || 0;
+  const myOnly = document.getElementById('ts-mine')?.checked;
+
+  const grid = document.getElementById('ts-grid');
+  if (!grid) return;
+
+  let subjects = _ts.all;
+
+  // My subjects filter
+  if (myOnly) subjects = subjects.filter(s => _ts.myIds.has(String(s.id)));
+
+  // Category filter
+  if (cat) subjects = subjects.filter(s => s.category === cat);
+
+  // Department filter — find subjects taught by teachers in that dept
+  if (deptId) {
+    const dept = _ts.depts.find(d => d.id == deptId);
+    const deptTeacherSubjIds = new Set(
+      (dept?.teachers || []).flatMap(t =>
+        _ts.all.filter(s => _ts.myIds.has(String(s.id))).map(s => s.id)
+      )
+    );
+    // Fallback: filter by category match to dept name keywords
+    // Since we don't have dept→subject mapping, filter by selected class/year or skip
+  }
+
+  // Class filter — fetch class subjects and intersect
+  if (clsId) {
+    if (!_ts.classSubjCache[clsId]) {
+      grid.innerHTML = panelLoader();
+      try { _ts.classSubjCache[clsId] = await GET('/classes/' + clsId + '/subjects'); } catch(e) { _ts.classSubjCache[clsId] = []; }
+    }
+    const classSubjIds = new Set((_ts.classSubjCache[clsId] || []).map(s => s.subject_id));
+    subjects = subjects.filter(s => classSubjIds.has(s.id));
+  }
+
+  // Year filter — aggregate subjects from classes of that year
+  if (yr && !clsId) {
+    const yrClasses = _ts.classes.filter(c => String(c.year_group) === yr);
+    // Fetch subjects for all yr classes (cached)
+    for (const c of yrClasses) {
+      if (!_ts.classSubjCache[c.id]) {
+        try { _ts.classSubjCache[c.id] = await GET('/classes/' + c.id + '/subjects'); } catch(e) { _ts.classSubjCache[c.id] = []; }
+      }
+    }
+    const yrSubjIds = new Set(yrClasses.flatMap(c => (_ts.classSubjCache[c.id]||[]).map(s => s.subject_id)));
+    if (yrSubjIds.size) subjects = subjects.filter(s => yrSubjIds.has(s.id));
+  }
+
+  const sub = document.getElementById('ts-subtitle');
+  if (sub) sub.textContent = `Showing ${subjects.length} of ${_ts.all.length} subjects`;
+  tsRenderGrid(subjects);
+}
+
+function tsRenderGrid(subjects) {
+  const grid = document.getElementById('ts-grid');
+  if (!grid) return;
+
+  if (!subjects.length) {
+    grid.innerHTML = `
+      <div style="text-align:center;padding:50px;color:var(--text-3)">
+        <div style="font-size:40px;margin-bottom:12px">📭</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">No subjects match your filters</div>
+        <div style="font-size:13px">Try clearing some filters or selecting a different class.</div>
+      </div>`;
+    return;
+  }
+
+  // Group by category
+  const byCategory = {};
+  subjects.forEach(s => { (byCategory[s.category] = byCategory[s.category] || []).push(s); });
+
+  grid.innerHTML = Object.entries(byCategory).map(([cat, subs]) => {
+    const icon = CATEGORY_ICONS?.[cat] || '📚';
+    const cards = subs.map(s => {
+      const isMine   = _ts.myIds.has(String(s.id));
+      const isCustom = !!s.school_id;
+      const highlight = !_ts.isAdmin && isMine;
+      return `
+      <div style="background:var(--surface);border:2px solid ${highlight?'var(--green)':'var(--border)'};
+                  border-radius:var(--radius);padding:14px;position:relative;cursor:pointer;
+                  transition:box-shadow .15s,border-color .15s"
+           onmouseenter="this.style.boxShadow='0 4px 12px rgba(0,0,0,.1)';this.style.borderColor='var(--green)'"
+           onmouseleave="this.style.boxShadow='';this.style.borderColor='${highlight?'var(--green)':'var(--border)'}'"
+           onclick="openSubjectDetail(${s.id},'${s.name.replace(/'/g,"\\'")}','${s.category}','${icon}')">
+        ${highlight ? `<div style="position:absolute;top:8px;right:8px;background:var(--green);color:#fff;
+                          font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px">You teach</div>` : ''}
+        ${_ts.isAdmin && isCustom ? `<div style="position:absolute;top:8px;right:8px;background:var(--amber);color:#fff;
+                          font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px">Custom</div>` : ''}
+        <div style="font-size:20px;margin-bottom:7px">${icon}</div>
+        <div style="font-size:13px;font-weight:600;line-height:1.35;margin-bottom:5px;padding-right:${highlight||(_ts.isAdmin&&isCustom)?'55px':'0'}">${s.name}</div>
+        ${s.short_name ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:7px">${s.short_name}</div>` : ''}
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <span class="badge badge-gray" style="font-size:10px">${s.category}</span>
+          ${highlight ? `<span class="badge badge-green" style="font-size:10px">Assigned</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    return `
+    <div style="margin-bottom:24px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border)">
+        <span style="font-size:18px">${icon}</span>
+        <span style="font-size:14px;font-weight:700">${cat}</span>
+        <span class="badge badge-gray" style="font-size:11px">${subs.length}</span>
+        ${subs.some(s => _ts.myIds.has(String(s.id))) ? `<span class="badge badge-green" style="font-size:10px">${subs.filter(s=>_ts.myIds.has(String(s.id))).length} yours</span>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">
+        ${cards}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Subject detail modal ──────────────────────────────────────
+async function openSubjectDetail(subjectId, subjectName, category, icon) {
+  document.getElementById('subj-detail-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'subj-detail-modal';
+  overlay.className = 'modal-bg open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:860px;max-height:88vh;display:flex;flex-direction:column">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:28px">${icon}</span>
+          <div>
+            <div class="modal-title">${subjectName}</div>
+            <div style="font-size:12px;color:var(--text-3);margin-top:1px">${category}</div>
+          </div>
+        </div>
+        <button class="modal-close" onclick="document.getElementById('subj-detail-modal').remove()">&#x2715;</button>
+      </div>
+      <div style="border-bottom:1px solid var(--border);padding:0 24px">
+        <div class="tab-bar" style="border:none;margin:0">
+          <button class="tab-btn active" id="sd-tab-students" onclick="sdTab(this,'sd-students')">Students</button>
+          <button class="tab-btn" id="sd-tab-tests"    onclick="sdTab(this,'sd-tests')">Tests &amp; Quizzes</button>
+          <button class="tab-btn" id="sd-tab-questions" onclick="sdTab(this,'sd-questions')">Questions</button>
+        </div>
+      </div>
+      <div style="overflow-y:auto;flex:1">
+        <div id="sd-students"  style="padding:20px">${panelLoader()}</div>
+        <div id="sd-tests"     style="display:none;padding:20px">${panelLoader()}</div>
+        <div id="sd-questions" style="display:none;padding:20px">${panelLoader()}</div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  // Load all three in parallel
+  const [students, tests, questions] = await Promise.allSettled([
+    GET('/subjects/' + subjectId + '/students'),
+    GET('/subjects/' + subjectId + '/tests'),
+    GET('/questions', { subject_id: subjectId, limit: 50 })
+  ]);
+
+  sdRenderStudents(subjectId, students.value || []);
+  sdRenderTests(tests.value || []);
+  sdRenderQuestions(questions.value?.items || []);
+}
+
+function sdTab(btn, paneId) {
+  ['sd-students','sd-tests','sd-questions'].forEach(id => {
+    document.getElementById(id).style.display = id === paneId ? '' : 'none';
+  });
+  document.querySelectorAll('#subj-detail-modal .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function sdRenderStudents(subjectId, students) {
+  const pane = document.getElementById('sd-students');
+  if (!pane) return;
+  if (!students.length) {
+    pane.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-3)">
+      <div style="font-size:36px;margin-bottom:10px">👥</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">No students enrolled</div>
+      <div style="font-size:13px">Assign this subject to classes via Admin → Classes → Subjects.</div>
+    </div>`;
+    return;
+  }
+  const avgAll = Math.round(students.reduce((s,x)=>s+(parseFloat(x.avg_pct)||0),0)/students.length);
+  const rows = students.map(s => {
+    const avg  = Math.round(parseFloat(s.avg_pct)||0);
+    const pass = avg >= 50;
+    const init = ((s.first_name||'?')[0]+(s.last_name||'?')[0]).toUpperCase();
+    return `<tr id="sdr-${s.id}">
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="student-avatar" style="background:${s.avatar_color||'var(--green-dk)'};width:28px;height:28px;font-size:10px">${init}</div>
+          <div>
+            <div style="font-size:13px;font-weight:600">${s.first_name} ${s.last_name}</div>
+            <div style="font-size:11px;color:var(--text-3)">${s.class_name||'—'}</div>
+          </div>
+        </div>
+      </td>
+      <td style="font-size:13px;color:var(--text-3)">${s.tests_done||0}</td>
+      <td>
+        ${avg ? `<div style="display:flex;align-items:center;gap:6px">
+          <div style="width:60px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="width:${avg}%;height:100%;background:${avg>=65?'var(--green)':avg>=50?'var(--amber)':'var(--coral)'};border-radius:3px"></div>
+          </div>
+          <span style="font-size:13px;font-weight:600;color:${avg>=65?'var(--green)':avg>=50?'var(--amber)':'var(--coral)'}">${avg}%</span>
+        </div>` : '<span style="color:var(--text-3);font-size:12px">No attempts</span>'}
+      </td>
+      <td>${avg ? `<span class="badge badge-${pass?'green':'coral'}" style="font-size:10px">${pass?'Passing':'At risk'}</span>` : ''}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="sdShowStudentPerf(${subjectId},${s.id},'${(s.first_name+' '+s.last_name).replace(/'/g,"\\'")}')">Details →</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  pane.innerHTML = `
+    <div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+      <div class="stat-card"><div class="label">Students</div><div class="value">${students.length}</div></div>
+      <div class="stat-card"><div class="label">Subject avg</div><div class="value" style="color:${avgAll>=65?'var(--green)':avgAll>=50?'var(--amber)':'var(--coral)'}">${avgAll}%</div></div>
+      <div class="stat-card"><div class="label">Passing</div><div class="value" style="color:var(--green)">${students.filter(s=>parseFloat(s.avg_pct)>=50).length}</div></div>
+      <div class="stat-card"><div class="label">At risk</div><div class="value" style="color:var(--coral)">${students.filter(s=>s.tests_done>0&&parseFloat(s.avg_pct)<50).length}</div></div>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Student</th><th>Tests done</th><th>Average</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function sdShowStudentPerf(subjectId, studentId, studentName) {
+  const row = document.getElementById('sdr-' + studentId);
+  if (!row) return;
+  // Remove any existing detail row
+  document.getElementById('sdr-detail-' + studentId)?.remove();
+  const btn = row.querySelector('button');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  try {
+    const data = await GET('/subjects/' + subjectId + '/student-perf', { student_id: studentId });
+    if (btn) { btn.disabled = false; btn.textContent = 'Close ↑'; btn.onclick = () => { document.getElementById('sdr-detail-'+studentId)?.remove(); btn.textContent='Details →'; btn.onclick=()=>sdShowStudentPerf(subjectId,studentId,studentName); }; }
+
+    const scores = data?.scores || [];
+    const topics = data?.topics || [];
+    const overallAvg = scores.length ? Math.round(scores.reduce((s,x)=>s+(parseFloat(x.pct_score)||0),0)/scores.length) : 0;
+
+    const scoreRows = scores.map(s => {
+      const pct = Math.round(parseFloat(s.pct_score)||0);
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <span style="font-size:12px;font-weight:600">${s.title}</span>
+          <span class="badge badge-gray" style="margin-left:6px;font-size:10px">${s.type}</span>
+        </div>
+        <span style="font-weight:700;color:${pct>=65?'var(--green)':pct>=50?'var(--amber)':'var(--coral)'};font-size:13px">${pct}%</span>
+      </div>`;
+    }).join('');
+
+    const topicRows = topics.map(t => {
+      const acc = Math.round(parseFloat(t.accuracy)||0);
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <span style="font-size:12px">${t.topic||t.sub_strand}</span>
+          <span style="font-size:11px;color:var(--text-3);margin-left:6px">${t.correct}/${t.total} correct</span>
+        </div>
+        <span style="font-weight:600;font-size:12px;color:${acc>=65?'var(--green)':acc>=50?'var(--amber)':'var(--coral)'}">${acc}%</span>
+      </div>`;
+    }).join('');
+
+    const detailRow = document.createElement('tr');
+    detailRow.id = 'sdr-detail-' + studentId;
+    detailRow.innerHTML = `<td colspan="5" style="padding:0;background:var(--bg)">
+      <div style="padding:16px 20px;border-left:4px solid var(--green)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:12px">${studentName} — subject performance
+          <span style="font-size:12px;font-weight:400;color:var(--text-3);margin-left:8px">Overall: ${overallAvg}%</span>
+        </div>
+        <div class="grid-2" style="gap:16px">
+          <div>
+            <div style="font-size:11px;text-transform:uppercase;font-weight:700;letter-spacing:.05em;color:var(--text-3);margin-bottom:8px">Test scores</div>
+            ${scoreRows || '<div style="color:var(--text-3);font-size:12px">No tests completed yet.</div>'}
+          </div>
+          <div>
+            <div style="font-size:11px;text-transform:uppercase;font-weight:700;letter-spacing:.05em;color:var(--text-3);margin-bottom:8px">Topics (lowest accuracy first)</div>
+            ${topicRows || '<div style="color:var(--text-3);font-size:12px">No topic data yet.</div>'}
+          </div>
+        </div>
+      </div>
+    </td>`;
+    row.after(detailRow);
+  } catch(e) {
+    notify(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Details →'; }
+  }
+}
+
+function sdRenderTests(tests) {
+  const pane = document.getElementById('sd-tests');
+  if (!pane) return;
+  if (!tests.length) {
+    pane.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-3)">
+      <div style="font-size:36px;margin-bottom:10px">📋</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">No tests yet</div>
+      <div style="font-size:13px">Tests and quizzes created for this subject will appear here.</div>
+    </div>`;
+    return;
+  }
+  const rows = tests.map(t => {
+    const avg = Math.round(parseFloat(t.avg_pct)||0);
+    const statusColor = t.status==='published'?'green':t.status==='draft'?'amber':'gray';
+    return `<tr>
+      <td>
+        <div style="font-size:13px;font-weight:600">${t.title}</div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:2px">By ${t.creator_name||'—'}${t.time_limit_min?' · '+t.time_limit_min+' min':''}</div>
+      </td>
+      <td><span class="badge badge-gray" style="font-size:10px">${t.type}</span></td>
+      <td><span class="badge badge-${statusColor}" style="font-size:10px">${t.status}</span></td>
+      <td style="font-size:13px;color:var(--text-3)">${t.question_count||0}</td>
+      <td style="font-size:13px;color:var(--text-3)">${t.attempt_count||0}</td>
+      <td>${avg ? `<span style="font-weight:600;color:${avg>=65?'var(--green)':avg>=50?'var(--amber)':'var(--coral)'}">${avg}%</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  pane.innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>Test / Quiz</th><th>Type</th><th>Status</th><th>Questions</th><th>Attempts</th><th>Avg</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function sdRenderQuestions(questions) {
+  const pane = document.getElementById('sd-questions');
+  if (!pane) return;
+  if (!questions.length) {
+    pane.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-3)">
+      <div style="font-size:36px;margin-bottom:10px">❓</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px">No questions yet</div>
+      <div style="font-size:13px">Questions tagged with this subject will appear here.</div>
+    </div>`;
+    return;
+  }
+  const diffColor = {'Easy':'green','Medium':'amber','Hard':'coral'};
+  const rows = questions.map(q => `<tr>
+    <td>
+      <div style="font-size:13px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+           title="${(q.question_text||'').replace(/"/g,'&quot;')}">${q.question_text}</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:2px">${q.topic||q.sub_strand||'—'}${q.author_name?' · '+q.author_name:''}</div>
+    </td>
+    <td><span class="badge badge-gray" style="font-size:10px">${q.type}</span></td>
+    <td><span class="badge badge-${diffColor[q.difficulty]||'gray'}" style="font-size:10px">${q.difficulty||'—'}</span></td>
+    <td style="font-size:13px;color:var(--text-3)">${q.marks||1} mark${(q.marks||1)!==1?'s':''}</td>
+  </tr>`).join('');
+  pane.innerHTML = `
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">Showing ${questions.length} question${questions.length!==1?'s':''}</div>
+    <table class="data-table">
+      <thead><tr><th>Question</th><th>Type</th><th>Difficulty</th><th>Marks</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 async function loadTDash(m){
@@ -2206,6 +2769,7 @@ async function loadTBank(m){
   let res=null;
   try{
     const params={limit:60};
+    if(TCTX.subject_id) params.subject_id = TCTX.subject_id;   // scope to current subject
     if(bankFilter.sub!=='all')params.sub_strand=bankFilter.sub;
     if(bankFilter.diff!=='all')params.difficulty=bankFilter.diff;
     if(bankFilter.search)params.search=bankFilter.search;
@@ -2217,7 +2781,13 @@ async function loadTBank(m){
 
   m.innerHTML=`
 <div class="topbar">
-  <div><div class="topbar-title">Question bank</div><div class="topbar-sub"><span id="bank-total">Loading...</span></div></div>
+  <div>
+    <div class="topbar-title">Question bank</div>
+    <div class="topbar-sub">
+      <span id="bank-total">Loading...</span>
+      ${TCTX.subject_id ? ` · <span class="badge badge-green" style="font-size:11px">${TCTX.subject_name}</span>` : ' · All subjects'}
+    </div>
+  </div>
   <div class="topbar-actions">
     <button class="btn btn-secondary" onclick="openNewQBuilder()">+ New question</button>
     <button class="btn btn-secondary" onclick="openBulkUpload()">⬆ Bulk upload</button>
@@ -2265,116 +2835,425 @@ async function loadTBank(m){
   }, 50);
 }
 
-async function loadTMarking(m){
-  let queue=null;
-  try{queue=await GET('/analytics/marking-queue');}catch(e){}
-  const essays=queue||MOCK_ESSAYS;
+// ── Marking queue — 3-level drill-down ───────────────────────
+async function loadTMarking(m) {
+  m.innerHTML = panelLoader();
+  let queue = [];
+  try { queue = await GET('/analytics/marking-queue') || []; } catch(e) {}
 
-  m.innerHTML=`
+  const total = queue.reduce((s,t) => s + (parseInt(t.essays_pending)||0), 0);
+
+  m.innerHTML = `
 <div class="topbar">
-  <div><div class="topbar-title">Marking queue</div><div class="topbar-sub">${essays.length} essays awaiting review</div></div>
-  <div class="topbar-actions"><button class="btn btn-ghost" onclick="aiPreScoreAll()">✨ AI pre-score all</button></div>
+  <div><div class="topbar-title">Marking queue</div>
+    <div class="topbar-sub">${queue.length} test${queue.length!==1?'s':''} · ${total} essay${total!==1?'s':''} pending</div>
+  </div>
 </div>
-<div class="page">
-  <div class="tab-bar">
-    <button class="tab-btn active" onclick="switchTab(this,'mk-pending')">Pending (${essays.length})</button>
-    <button class="tab-btn" onclick="switchTab(this,'mk-done')">Marked</button>
-  </div>
-  <div id="mk-pending" class="tab-pane active" style="display:flex;flex-direction:column;gap:12px">
-    ${essays.map(e=>{
-      const name=e.student||(e.first_name&&e.last_name?fullName(e):'Student');
-      const color=e.col||e.avatar_color||'var(--teal)';
-      const ini=e.i||(e.first_name?initials(e):'ST');
-      const sub=e.sub_strand||e.sub||'—';
-      const max=e.max_marks||e.max||15;
-      const aiScore=e.aiScore||e.ai_score||'—';
-      const aiNote=e.aiNote||e.ai_note||'Review the student\'s response carefully';
-      const text=e.text_response||e.text||'No response submitted';
-      return `<div class="card">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;gap:16px">
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <div class="student-avatar" style="background:${color};width:28px;height:28px;font-size:10px">${ini}</div>
-              <span style="font-size:15px;font-weight:700">${name}</span>
-            </div>
-            <div style="display:flex;gap:8px">
-              <span class="badge badge-${sub2badge(sub)}">${sub}</span>
-              <span class="badge badge-gray">Max ${max} marks</span>
-              <span class="badge badge-blue">AI: ${aiScore}/${max}</span>
-            </div>
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="openMarkingById(${e.answer_id||e.id},${max},'${name.replace(/'/g,"\\'")}','${sub}',\`${text.replace(/`/g,"'").substring(0,500)}\`,\`${aiNote}\`)">Mark essay →</button>
+<div class="page" id="mk-page">
+  ${queue.length ? queue.map(t => {
+    const pending = parseInt(t.essays_pending)||0;
+    const total2  = parseInt(t.essays_total)||0;
+    const done    = total2 - pending;
+    const pct     = total2 ? Math.round(done/total2*100) : 0;
+    return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+                padding:16px 20px;margin-bottom:12px;display:flex;align-items:center;gap:16px;cursor:pointer;
+                transition:box-shadow .15s,border-color .15s"
+         onmouseenter="this.style.boxShadow='0 4px 12px rgba(0,0,0,.08)';this.style.borderColor='var(--green)'"
+         onmouseleave="this.style.boxShadow='';this.style.borderColor='var(--border)'"
+         onclick="mkOpenTest(${t.test_id},${JSON.stringify(t.title).replace(/"/g,'&quot;')})">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          ${t.subject_name ? `<span class="badge badge-blue" style="font-size:10px">${t.subject_short||t.subject_name}</span>` : ''}
+          <span class="badge badge-gray" style="font-size:10px">${t.type||'quiz'}</span>
         </div>
-        <div style="background:var(--bg);border-radius:var(--radius-sm);padding:14px;font-size:14px;color:var(--text-2);line-height:1.7;font-family:'Lora',serif;border-left:3px solid var(--border);max-height:100px;overflow:hidden;position:relative">
-          ${text.substring(0,300)}...
-          <div style="position:absolute;bottom:0;left:0;right:0;height:36px;background:linear-gradient(transparent,var(--bg))"></div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">${t.title}</div>
+        <div style="font-size:12px;color:var(--text-3)">${t.students_attempted} student${t.students_attempted!=1?'s':''} attempted</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:13px;font-weight:700;color:${pending?'var(--coral)':'var(--green)'}">
+          ${pending} pending
         </div>
-        <div style="margin-top:10px;font-size:12px;color:var(--text-3)">AI note: ${aiNote}</div>
-      </div>`;}).join('') ||
-      '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">All marked up!</div></div>'}
-  </div>
-  <div id="mk-done" class="tab-pane">
-    <div class="info-box green">Marked essays are visible to students in their Results History. Scores and feedback have been sent.</div>
-  </div>
+        <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${done}/${total2} marked</div>
+        <div style="width:100px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${pct===100?'var(--green)':'var(--amber)'};border-radius:3px"></div>
+        </div>
+      </div>
+      <div style="flex-shrink:0">
+        <span style="font-size:20px;color:var(--text-3)">›</span>
+      </div>
+    </div>`;
+  }).join('') : `
+  <div style="text-align:center;padding:60px;color:var(--text-3)">
+    <div style="font-size:48px;margin-bottom:14px">✅</div>
+    <div style="font-size:17px;font-weight:600;margin-bottom:6px">All marked up!</div>
+    <div style="font-size:13px">No essays awaiting review across your tests and subjects.</div>
+  </div>`}
 </div>`;
 }
 
-async function loadTAnalytics(m){
-  let students=null,analytics=null;
-  try{[students,analytics]=await Promise.all([GET('/students'),GET('/analytics/school')]);}catch(e){}
-  const s=students||MOCK_STUDENTS;
-  const ov=analytics?.overview||{student_count:s.length,school_avg:65};
+async function mkOpenTest(testId, testTitle) {
+  const m = document.getElementById('t-main');
+  if (!m) return;
+  m.innerHTML = panelLoader();
 
-  m.innerHTML=`
-<div class="topbar"><div class="topbar-title">Class analytics</div>
-  <div class="topbar-actions">
-    <select class="form-select" style="width:auto"><option>All classes</option><option>SHS2A</option><option>SHS2B</option></select>
-    <button class="btn btn-secondary" onclick="exportGradebook()">⬇ Export gradebook</button>
-  </div>
-</div>
-<div class="page">
-  <div class="stats-row">
-    <div class="stat-card"><div class="label">Total students</div><div class="value">${ov.student_count||s.length}</div></div>
-    <div class="stat-card"><div class="label">School average</div><div class="value" style="color:var(--green)">${Math.round(ov.school_avg||0)}%</div></div>
-    <div class="stat-card"><div class="label">Pass rate</div><div class="value">${Math.round((s.filter(x=>x.avg_pct>=50).length/Math.max(1,s.length))*100)}%</div></div>
-    <div class="stat-card"><div class="label">At-risk</div><div class="value" style="color:var(--coral)">${(analytics?.at_risk||s.filter(x=>x.avg_pct<50)).length}</div></div>
-  </div>
-  <div class="grid-2" style="margin-bottom:16px">
-    <div class="card">
-      <div class="card-header"><div><div class="card-title">Item analysis</div><div class="card-sub">Correct vs wrong per question</div></div></div>
-      <canvas id="item-chart" height="200"></canvas>
-      <div class="info-box amber" style="margin-top:12px">Questions with below 40% correct need reteaching in your next lesson.</div>
-    </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">Topic mastery</div></div>
-      <div class="bar-chart">
-        ${(analytics?.by_substrand||[{sub_strand:'S1/SS1',avg_pct:78},{sub_strand:'S1/SS2',avg_pct:71},{sub_strand:'S1/SS3',avg_pct:65},{sub_strand:'S2/SS1',avg_pct:52},{sub_strand:'S2/SS2',avg_pct:38}]).map(r=>{const v=Math.round(r.avg_pct||0);return`
-        <div class="bar-row"><div class="bar-label">${r.sub_strand}</div>
-        <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
-        <div class="bar-val" style="color:${col(v)}">${v}%</div></div>`;}).join('')}
+  let attempts = [];
+  try { attempts = await GET('/tests/' + testId + '/marking') || []; } catch(e) {}
+
+  const pending = attempts.filter(a => parseInt(a.essays_pending) > 0);
+  const done    = attempts.filter(a => parseInt(a.essays_pending) === 0);
+
+  m.innerHTML = `
+<div class="topbar">
+  <div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn btn-ghost btn-sm" onclick="loadTMarking(document.getElementById('t-main'))">← Back</button>
+      <div><div class="topbar-title">${testTitle}</div>
+        <div class="topbar-sub">${attempts.length} students · ${pending.length} with pending essays</div>
       </div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-header"><div class="card-title">Student performance</div>
-      <input class="form-input" style="width:220px" placeholder="Search..." oninput="filterTable(this.value,'stperf')">
-    </div>
-    <table class="data-table" id="stperf"><thead><tr><th>Student</th><th>Class</th><th>Tests</th><th>Average</th><th>Streak</th><th>Status</th><th></th></tr></thead><tbody>
-      ${s.map(x=>{const ov2=Math.round(x.avg_pct||0);return`<tr>
-        <td><div style="display:flex;align-items:center;gap:8px">
-          <div class="student-avatar" style="background:${x.avatar_color||'var(--teal)'};width:28px;height:28px;font-size:10px">${initials(x)}</div>
-          <b>${fullName(x)}</b></div></td>
-        <td><span class="badge badge-gray">${x.class_name||'—'}</span></td>
-        <td>${x.tests_done||0}</td>
-        <td><b style="color:${col(ov2)}">${ov2}%</b></td>
-        <td>${x.current_streak||0} days</td>
-        <td><span class="badge badge-${x.risk||ov2<50?'coral':ov2>=65?'green':'amber'}">${x.risk||ov2<50?'At risk':ov2>=65?'On track':'Monitor'}</span></td>
-        <td><button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${x.id})">View</button></td>
-      </tr>`;}).join('')}
-    </tbody></table>
-  </div>
+</div>
+<div class="page">
+  ${pending.length ? `
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-bottom:10px">Needs marking</div>
+  ${pending.map(a => mkStudentRow(testId, testTitle, a)).join('')}` : ''}
+  ${done.length ? `
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin:${pending.length?'20px':0} 0 10px">Fully marked</div>
+  ${done.map(a => mkStudentRow(testId, testTitle, a)).join('')}` : ''}
+  ${!attempts.length ? `<div class="info-box blue">No submissions yet for this test.</div>` : ''}
 </div>`;
-  setTimeout(drawItemChart,100);
+}
+
+function mkStudentRow(testId, testTitle, a) {
+  const pending = parseInt(a.essays_pending)||0;
+  const total   = parseInt(a.essays_total)||0;
+  const score   = a.max_score > 0 ? Math.round((a.total_score/a.max_score)*100) : 0;
+  const init    = ((a.first_name||'?')[0]+(a.last_name||'?')[0]).toUpperCase();
+  return `
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+              padding:14px 18px;margin-bottom:10px;display:flex;align-items:center;gap:14px"
+       id="mkrow-${a.attempt_id}">
+    <div class="student-avatar" style="background:${a.avatar_color||'var(--teal)'};width:34px;height:34px;font-size:12px;flex-shrink:0">${init}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:14px;font-weight:600">${a.first_name} ${a.last_name}</div>
+      <div style="font-size:12px;color:var(--text-3)">
+        ${a.class_name||'—'}
+        ${pending ? `<span style="color:var(--coral);margin-left:8px">● ${pending} essay${pending!=1?'s':''} pending</span>`
+                  : `<span style="color:var(--green);margin-left:8px">✓ All essays marked</span>`}
+      </div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;margin-right:12px">
+      <div style="font-size:14px;font-weight:700;color:${score>=65?'var(--green)':score>=50?'var(--amber)':'var(--coral)'}">
+        ${a.max_score > 0 ? score + '%' : '—'}
+      </div>
+      <div style="font-size:11px;color:var(--text-3)">${a.total_score||0}/${a.max_score||0} marks</div>
+    </div>
+    <div style="flex-shrink:0;display:flex;gap:6px">
+      ${pending ? `<button class="btn btn-primary btn-sm" onclick="mkMarkStudent(${a.attempt_id},'${(a.first_name+' '+a.last_name).replace(/'/g,"\\'")}','${testId}','${testTitle.replace(/'/g,"\\'")}')">Mark essays →</button>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${a.student_id})">Profile</button>
+    </div>
+  </div>`;
+}
+
+async function mkMarkStudent(attemptId, studentName, testId, testTitle) {
+  const m = document.getElementById('t-main');
+  if (!m) return;
+  m.innerHTML = panelLoader();
+
+  let attempt = null;
+  try { attempt = await GET('/attempts/' + attemptId); } catch(e) {}
+
+  if (!attempt) {
+    m.innerHTML = `<div class="page"><div class="info-box red">Could not load attempt.</div></div>`;
+    return;
+  }
+
+  const essays = (attempt.answers || []).filter(a => a.text_response !== null || a.text_response === null)
+    .filter((a, i, arr) => {
+      // We need to check question type — it's not returned by GET /attempts/{id}
+      // Filter by text_response being non-null (essay questions)
+      return a.text_response !== undefined;
+    });
+
+  // Get full attempt data — answers include is_correct null = essay not yet marked
+  const allAnswers = attempt.answers || [];
+
+  // We need question details — fetch the test questions to get types
+  let testData = null;
+  try { testData = await GET('/tests/' + testId); } catch(e) {}
+  const qMap = {};
+  (testData?.questions || []).forEach(q => { qMap[q.id] = q; });
+
+  const essayAnswers = allAnswers.filter(a => {
+    const q = qMap[a.question_id];
+    return q && q.type === 'essay';
+  });
+
+  if (!essayAnswers.length) {
+    m.innerHTML = `<div class="page">
+      <div class="topbar">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-ghost btn-sm" onclick="mkOpenTest(${testId},'${testTitle.replace(/'/g,"\\'")}')">← Back</button>
+          <div class="topbar-title">${studentName}</div>
+        </div>
+      </div>
+      <div class="info-box green" style="margin:20px 32px">No essay questions in this test.</div>
+    </div>`;
+    return;
+  }
+
+  const cards = essayAnswers.map(a => {
+    const q       = qMap[a.question_id] || {};
+    const marked  = a.is_correct !== null;
+    const current = a.marks_awarded || 0;
+    return `
+    <div class="card" style="margin-bottom:16px" id="essay-card-${a.question_id}">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">${q.question_text||'Essay question'}</div>
+          <div style="display:flex;gap:6px">
+            <span class="badge badge-gray" style="font-size:10px">${q.sub_strand||''}</span>
+            <span class="badge badge-gray" style="font-size:10px">Max ${q.marks||0} marks</span>
+            ${marked ? `<span class="badge badge-green" style="font-size:10px">Marked: ${current}/${q.marks}</span>` : `<span class="badge badge-coral" style="font-size:10px">Not yet marked</span>`}
+          </div>
+        </div>
+      </div>
+      ${q.rubric ? `<div style="background:var(--bg);border-left:3px solid var(--amber);padding:10px 14px;border-radius:4px;font-size:12px;color:var(--text-3);margin-bottom:12px"><b>Rubric:</b> ${q.rubric}</div>` : ''}
+      <div style="background:var(--bg);border-radius:var(--radius-sm);padding:14px;font-size:14px;color:var(--text-2);line-height:1.7;font-family:'Lora',serif;border-left:3px solid var(--border);margin-bottom:14px;max-height:180px;overflow-y:auto">
+        ${a.text_response || '<em style="color:var(--text-3)">No response submitted</em>'}
+      </div>
+      <div class="grid-2" style="gap:10px;align-items:end">
+        <div class="form-group" style="margin:0">
+          <label class="form-label" style="font-size:11px">Marks awarded (0 – ${q.marks||0})</label>
+          <input type="number" class="form-input" id="mk-marks-${a.question_id}"
+                 value="${current}" min="0" max="${q.marks||0}" style="width:100px">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label" style="font-size:11px">Feedback for student (optional)</label>
+          <input class="form-input" id="mk-feedback-${a.question_id}"
+                 value="${a.teacher_feedback||''}" placeholder="e.g. Good explanation of CIA Triad">
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="margin-top:12px"
+              onclick="mkSaveEssay(${a.question_id},${q.marks||0},'${(q.question_text||'').slice(0,30).replace(/'/g,"\\'")}',${attemptId},'${testId}','${testTitle.replace(/'/g,"\\'")}','${studentName.replace(/'/g,"\\'")}')">
+        Save marks →
+      </button>
+    </div>`;
+  }).join('');
+
+  const doneCount = essayAnswers.filter(a => a.is_correct !== null).length;
+
+  m.innerHTML = `
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:10px">
+    <button class="btn btn-ghost btn-sm" onclick="mkOpenTest(${testId},'${testTitle.replace(/'/g,"\\'")}')">← Back</button>
+    <div>
+      <div class="topbar-title">Marking — ${studentName}</div>
+      <div class="topbar-sub">${testTitle} · ${doneCount}/${essayAnswers.length} essays marked</div>
+    </div>
+  </div>
+</div>
+<div class="page">${cards}</div>`;
+}
+
+async function mkSaveEssay(questionId, maxMarks, qText, attemptId, testId, testTitle, studentName) {
+  const marksEl    = document.getElementById('mk-marks-' + questionId);
+  const feedbackEl = document.getElementById('mk-feedback-' + questionId);
+  const marks      = parseFloat(marksEl?.value ?? 0);
+  const feedback   = feedbackEl?.value?.trim() || null;
+
+  if (isNaN(marks) || marks < 0 || marks > maxMarks) {
+    notify(`Marks must be between 0 and ${maxMarks}`, 'error'); return;
+  }
+
+  const btn = marksEl?.closest('.card')?.querySelector('button.btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  // Find answer_id by fetching attempt answers
+  try {
+    const attempt = await GET('/attempts/' + attemptId);
+    const ans = (attempt?.answers || []).find(a => a.question_id == questionId);
+    if (!ans) throw new Error('Answer not found');
+
+    await PATCH('/answers/' + ans.id, { marks_awarded: marks, teacher_feedback: feedback });
+
+    // Update the badge in the card
+    const card = document.getElementById('essay-card-' + questionId);
+    if (card) {
+      const badge = card.querySelector('.badge-coral, .badge-green');
+      if (badge) { badge.className = 'badge badge-green'; badge.style.fontSize='10px'; badge.textContent = `Marked: ${marks}/${maxMarks}`; }
+    }
+
+    notify('Marks saved', 'success');
+    if (btn) { btn.disabled = false; btn.textContent = 'Saved ✓'; btn.className = 'btn btn-secondary btn-sm'; btn.style.marginTop='12px'; }
+  } catch(e) {
+    notify(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Save marks →'; }
+  }
+}
+
+async function loadTAnalytics(m) {
+  m.innerHTML = panelLoader();
+
+  let classes = [], analytics = null;
+  try {
+    [classes, analytics] = await Promise.all([GET('/classes'), GET('/analytics/school')]);
+  } catch(e) {}
+  classes   = classes   || [];
+  analytics = analytics || {};
+
+  const byYear = {};
+  classes.forEach(c => { (byYear[c.year_group] = byYear[c.year_group] || []).push(c); });
+  const clsOpts = `<option value="">All my classes</option>` +
+    Object.entries(byYear).sort(([a],[b])=>a-b).map(([yr, yrCls]) =>
+      `<optgroup label="Year ${yr}">${yrCls.map(c =>
+        `<option value="${c.id}" ${TCTX.class_id==c.id?'selected':''}>${c.name}</option>`
+      ).join('')}</optgroup>`
+    ).join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Analytics</div>
+    <div class="topbar-sub" id="ta-subtitle"></div>
+  </div>
+  <div class="topbar-actions">
+    <select class="form-select" id="ta-cls-sel" style="width:190px" onchange="taChange(this.value)">${clsOpts}</select>
+  </div>
+</div>
+<div class="page">
+  <div id="ta-stats" class="stats-row" style="margin-bottom:20px"></div>
+  <div id="ta-body"></div>
+</div>`;
+
+  await taRender(TCTX.class_id || null, classes, analytics);
+}
+
+async function taChange(classId) {
+  let analytics = null;
+  try { analytics = await GET('/analytics/school'); } catch(e) {}
+  await taRender(parseInt(classId)||null, TCTX.classes.length ? TCTX.classes : [], analytics);
+}
+
+function taSelectClass(classId) {
+  const sel = document.getElementById('ta-cls-sel');
+  if (sel) { sel.value = classId; taChange(classId); }
+}
+
+async function taRender(classId, classes, analytics) {
+  const statsEl    = document.getElementById('ta-stats');
+  const bodyEl     = document.getElementById('ta-body');
+  const subtitleEl = document.getElementById('ta-subtitle');
+  if (!bodyEl) return;
+
+  if (!classId) {
+    // ── All classes overview ──────────────────────────────────
+    const ov       = analytics?.overview || {};
+    const perClass = analytics?.per_class || [];
+
+    if (subtitleEl) subtitleEl.textContent =
+      `${classes.length} class${classes.length!==1?'es':''} · ${ov.student_count||0} students`;
+
+    if (statsEl) statsEl.innerHTML = `
+      <div class="stat-card"><div class="label">My classes</div><div class="value">${classes.length}</div></div>
+      <div class="stat-card"><div class="label">Total students</div><div class="value">${ov.student_count||0}</div></div>
+      <div class="stat-card"><div class="label">Overall avg</div><div class="value" style="color:var(--green)">${Math.round(ov.school_avg||0)}%</div></div>
+      <div class="stat-card"><div class="label">Tests created</div><div class="value">${ov.test_count||0}</div></div>`;
+
+    const classRows = (perClass.length ? perClass : classes.map(c=>({
+      class_id: c.id, class_name: c.name, year_group: c.year_group,
+      student_count: c.student_count||0, class_avg: c.class_avg||0, pass_count: 0
+    }))).map(c => {
+      const avg = Math.round(parseFloat(c.class_avg)||0);
+      return `<tr>
+        <td>
+          <b style="cursor:pointer;color:var(--green)" onclick="taSelectClass(${c.class_id})">${c.class_name}</b>
+        </td>
+        <td><span class="badge badge-gray" style="font-size:10px">Year ${c.year_group||'?'}</span></td>
+        <td style="font-size:13px">${c.student_count||0}</td>
+        <td>
+          ${avg ? `<div style="display:flex;align-items:center;gap:8px">
+            <div style="width:80px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="width:${avg}%;height:100%;background:${avg>=65?'var(--green)':avg>=50?'var(--amber)':'var(--coral)'};border-radius:3px"></div>
+            </div>
+            <b style="color:${col(avg)}">${avg}%</b>
+          </div>` : '<span style="color:var(--text-3);font-size:12px">No data</span>'}
+        </td>
+        <td><button class="btn btn-ghost btn-sm" onclick="taSelectClass(${c.class_id})">View →</button></td>
+      </tr>`;
+    }).join('');
+
+    bodyEl.innerHTML = classRows ? `
+    <div class="card">
+      <div class="card-header"><div class="card-title">Class performance</div></div>
+      <table class="data-table">
+        <thead><tr><th>Class</th><th>Year</th><th>Students</th><th>Average</th><th></th></tr></thead>
+        <tbody>${classRows}</tbody>
+      </table>
+    </div>` : `<div class="info-box blue">No analytics yet. Publish tests and have students complete them to see class results.</div>`;
+
+  } else {
+    // ── Single class view ─────────────────────────────────────
+    const cls = classes.find(c => c.id == classId) || {};
+    if (subtitleEl) subtitleEl.textContent = cls.name || '';
+    bodyEl.innerHTML = panelLoader();
+
+    let students = [];
+    try { students = await GET('/classes/' + classId + '/students') || []; } catch(e) {}
+
+    const withData = students.filter(s => s.tests_done > 0);
+    const avgAll   = withData.length
+      ? Math.round(withData.reduce((s,x)=>s+(parseFloat(x.avg_pct)||0),0)/withData.length) : 0;
+    const passing  = students.filter(s => parseFloat(s.avg_pct) >= 50).length;
+    const atRisk   = students.filter(s => s.tests_done > 0 && parseFloat(s.avg_pct) < 50).length;
+
+    if (statsEl) statsEl.innerHTML = `
+      <div class="stat-card"><div class="label">Students</div><div class="value">${students.length}</div></div>
+      <div class="stat-card"><div class="label">Class average</div><div class="value" style="color:${col(avgAll)}">${avgAll||'—'}${avgAll?'%':''}</div></div>
+      <div class="stat-card"><div class="label">Passing</div><div class="value" style="color:var(--green)">${passing}</div></div>
+      <div class="stat-card"><div class="label">At risk</div><div class="value" style="color:var(--coral)">${atRisk}</div></div>`;
+
+    const rows = students.map(s => {
+      const avg  = Math.round(parseFloat(s.avg_pct)||0);
+      const pass = avg >= 50;
+      const init = ((s.first_name||'?')[0]+(s.last_name||'?')[0]).toUpperCase();
+      return `<tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="student-avatar" style="background:${s.avatar_color||'var(--teal)'};width:28px;height:28px;font-size:10px">${init}</div>
+            <b>${s.first_name} ${s.last_name}</b>
+          </div>
+        </td>
+        <td>${s.group_tag?`<span class="badge badge-blue" style="font-size:10px">${s.group_tag}</span>`:'<span style="color:var(--text-3)">—</span>'}</td>
+        <td style="font-size:13px;color:var(--text-3)">${s.tests_done||0}</td>
+        <td>
+          ${avg ? `<div style="display:flex;align-items:center;gap:8px">
+            <div style="width:70px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="width:${avg}%;height:100%;background:${avg>=65?'var(--green)':avg>=50?'var(--amber)':'var(--coral)'};border-radius:3px"></div>
+            </div>
+            <b style="color:${col(avg)}">${avg}%</b>
+          </div>` : '<span style="color:var(--text-3);font-size:12px">No attempts</span>'}
+        </td>
+        <td><span class="badge badge-${s.tests_done?(pass?'green':'coral'):'gray'}" style="font-size:10px">
+          ${s.tests_done?(pass?'Passing':'At risk'):'No data'}
+        </span></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${s.id})">View</button></td>
+      </tr>`;
+    }).join('');
+
+    bodyEl.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">${cls.name||'Class'} — Students</div></div>
+        <input class="form-input" style="width:220px" placeholder="Search students…"
+               oninput="filterTable(this.value,'ta-stperf')">
+      </div>
+      <table class="data-table" id="ta-stperf">
+        <thead><tr><th>Student</th><th>Group</th><th>Tests done</th><th>Average</th><th>Status</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-3)">No students enrolled in this class yet.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+  }
 }
 
 async function loadTCreate(m, prefill) {
@@ -2395,8 +3274,10 @@ async function loadTCreate(m, prefill) {
 
   const isEdit    = !!prefill;
   const t         = prefill?.test || {};
-  const selClass  = prefill?.class_id || classes?.[0]?.id || 1;
-  const dueVal    = t.due_at ? t.due_at.replace(' ', 'T').slice(0, 16) : '';
+  // Pre-select class from context (if not editing)
+  const ctxClassId = !isEdit && TCTX.class_id ? TCTX.class_id : null;
+  const selClass   = ctxClassId || prefill?.class_id || null;
+  const dueVal     = t.due_at ? t.due_at.replace(' ', 'T').slice(0, 16) : '';
 
   m.innerHTML = `
 <div class="topbar">
@@ -2494,7 +3375,11 @@ async function loadTCreate(m, prefill) {
             // Group by year group
             const byYear = {};
             classes.forEach(c => { if (!byYear[c.year_group]) byYear[c.year_group] = []; byYear[c.year_group].push(c); });
-            const preIds = new Set(prefill?.test?.class_ids || []);
+            // Pre-select from edit mode class_ids OR teacher context class
+            const preIds = new Set([
+              ...(prefill?.test?.class_ids || []),
+              ...(ctxClassId ? [ctxClassId] : [])
+            ]);
             const rows = Object.entries(byYear).sort((a,b)=>a[0]-b[0]).map(([yr, yrCls]) => `
               <div style="margin-bottom:8px">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;font-size:12px;font-weight:700;color:var(--text-2)">
@@ -2587,7 +3472,7 @@ async function loadTCreate(m, prefill) {
   setTimeout(() => {
     refreshStrandSelect('ai-year','ai-strand','ai-sub');
     updateClsState(); // initialise the "All classes" checkbox state + summary line
-    populateSubjectDropdowns(t.subject_id || null); // fill subject selects
+    populateSubjectDropdowns(t.subject_id || TCTX.subject_id || null); // fill subject selects
   }, 50);
 }
 
@@ -3021,8 +3906,8 @@ function aRender(v){
   m.innerHTML=panelLoader();
   if(v==='overview')         loadAOverview(m);
   else if(v==='departments') loadADepts(m);
-  else if(v==='subjects')    loadASubjects(m);
   else if(v==='classes')     loadAClasses(m);
+  else if(v==='subjects')    loadTSubjects(m);
   else if(v==='reports')     loadAReports(m);
   else if(v==='teachers')    loadATeachers(m);
   else if(v==='students')    loadAStudents(m);
@@ -3165,19 +4050,113 @@ function adminModal(title, bodyHTML, onSave, saveLabel='Save →') {
 }
 
 // ── Classes CRUD ──────────────────────────────────────────────
-async function loadAClasses(m) {
-  let classes = [], teachers = [];
-  try { [classes, teachers] = await Promise.all([GET('/classes'), GET('/students').then(() => null).catch(() => null)]); } catch(e) {}
-  try { teachers = await GET('/students') || []; } catch(e) {}
-  // Fetch actual teachers list
-  let teacherList = [];
-  try {
-    const resp = await fetch(API_BASE + '/classes', {headers:{'Authorization':'Bearer '+AUTH_TOKEN}});
-    // teachers come from the users endpoint - use what we have
-  } catch(e) {}
+function yearToggle(yr) {
+  const body  = document.getElementById('yr-' + yr);
+  const arrow = document.getElementById('yra-' + yr);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+}
 
-  const cls = classes || [];
+async function loadAClasses(m) {
+  let classes = [];
+  try { classes = await GET('/classes') || []; } catch(e) {}
+
+  const cls           = classes || [];
   const totalStudents = cls.reduce((s,c) => s + (parseInt(c.student_count)||0), 0);
+  const schoolAvg     = cls.length ? Math.round(cls.reduce((s,c)=>s+(parseFloat(c.class_avg)||0),0)/cls.length) : 0;
+
+  // Group by year
+  const byYear = {};
+  cls.forEach(c => { (byYear[c.year_group] = byYear[c.year_group] || []).push(c); });
+  const years = Object.keys(byYear).sort();
+
+  const yearSections = years.map(yr => {
+    const yrCls      = byYear[yr];
+    const yrStudents = yrCls.reduce((s,c)=>s+(parseInt(c.student_count)||0),0);
+    const yrAvg      = yrCls.length ? Math.round(yrCls.reduce((s,c)=>s+(parseFloat(c.class_avg)||0),0)/yrCls.length) : 0;
+
+    const cards = yrCls.map(c => {
+      const avg    = Math.round(c.class_avg || 0);
+      const subTs  = c.subject_teachers || [];
+      const cData  = JSON.stringify({...c, subject_teachers: subTs}).replace(/"/g,'&quot;');
+      const avgColor = avg>=65?'var(--green)':avg>=50?'var(--amber)':'var(--coral)';
+      const teacherInitials = c.teacher_name
+        ? c.teacher_name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)
+        : '—';
+
+      const clsJson = JSON.stringify({...c, subject_teachers: subTs}).replace(/"/g,'&quot;');
+      return `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+                  display:flex;flex-direction:column;overflow:hidden;cursor:pointer;
+                  transition:box-shadow .15s,border-color .15s;box-shadow:0 1px 3px rgba(0,0,0,.05)"
+           onmouseenter="this.style.boxShadow='0 4px 14px rgba(0,0,0,.11)';this.style.borderColor='var(--green)'"
+           onmouseleave="this.style.boxShadow='0 1px 3px rgba(0,0,0,.05)';this.style.borderColor='var(--border)'"
+           onclick="openClassDetail(${c.id},JSON.parse(this.dataset.cls))" data-cls="${clsJson}">
+        <!-- Card header -->
+        <div style="padding:14px 14px 10px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+            <div style="font-size:15px;font-weight:600;line-height:1.2">${c.name}</div>
+            ${avg ? `<span style="font-size:13px;font-weight:800;color:${avgColor};white-space:nowrap">${avg}%</span>` : '<span style="font-size:12px;color:var(--text-3)">—</span>'}
+          </div>
+        </div>
+        <!-- Card body -->
+        <div style="padding:10px 14px;flex:1;display:flex;flex-direction:column;gap:6px">
+          <!-- Students -->
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:16px">👥</span>
+            <span style="font-size:13px;color:var(--text-2)">${c.student_count||0} student${(c.student_count||0)!==1?'s':''}</span>
+          </div>
+          <!-- Form teacher -->
+          <div style="display:flex;align-items:center;gap:6px">
+            <div style="width:20px;height:20px;border-radius:50%;background:${c.student_count?'var(--green-dk)':'var(--border)'};
+                        display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;
+                        color:#fff;flex-shrink:0">${teacherInitials}</div>
+            <span style="font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">
+              ${c.teacher_name || '<i>No form teacher</i>'}
+            </span>
+          </div>
+          <!-- Subject teachers -->
+          ${subTs.length ? `
+          <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:2px">
+            ${subTs.slice(0,3).map(t=>`<span class="badge badge-blue" style="font-size:10px;padding:2px 6px">${t.name.split(' ')[0]}</span>`).join('')}
+            ${subTs.length>3?`<span class="badge badge-gray" style="font-size:10px">+${subTs.length-3}</span>`:''}
+          </div>` : `<div style="font-size:11px;color:var(--border);font-style:italic">No subject teachers</div>`}
+        </div>
+        <!-- Actions -->
+        <div style="padding:8px 10px;border-top:1px solid var(--border);background:var(--bg);
+                    display:flex;gap:4px;justify-content:flex-end" onclick="event.stopPropagation()">
+          <button class="btn btn-ghost btn-sm" onclick='aOpenClassModal(${cData})' title="Edit class">Edit</button>
+          <button class="btn btn-ghost btn-sm" onclick="aManageClassSubjects(${c.id},'${c.name.replace(/'/g,"\\'")}');" title="Manage subjects">Subjects</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteClass(${c.id},'${c.name.replace(/'/g,"\\'")}');" title="Delete">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `
+    <div style="margin-bottom:20px">
+      <!-- Year group header -->
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;
+                  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+                  cursor:pointer;user-select:none;margin-bottom:12px"
+           onclick="yearToggle(${yr})">
+        <div style="width:36px;height:36px;border-radius:10px;background:var(--green-dk);
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:13px;font-weight:600;color:#fff;flex-shrink:0">${yr}</div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:600">Year ${yr}</div>
+          <div style="font-size:12px;color:var(--text-3)">${yrCls.length} class${yrCls.length!==1?'es':''} · ${yrStudents} students${yrAvg?' · avg '+yrAvg+'%':''}</div>
+        </div>
+        <span class="badge badge-gray">${yrCls.length}</span>
+        <span id="yra-${yr}" style="font-size:20px;color:var(--text-3);transform:rotate(90deg);transition:transform .2s;line-height:1">›</span>
+      </div>
+      <!-- Year grid -->
+      <div id="yr-${yr}" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px">
+        ${cards}
+      </div>
+    </div>`;
+  }).join('');
 
   m.innerHTML = `
 <div class="topbar">
@@ -3185,65 +4164,220 @@ async function loadAClasses(m) {
   <div class="topbar-actions"><button class="btn btn-primary" onclick="aOpenClassModal(null)">+ Create class</button></div>
 </div>
 <div class="page">
-  <div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px">
+  <div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
     <div class="stat-card"><div class="label">Total classes</div><div class="value">${cls.length}</div></div>
     <div class="stat-card"><div class="label">Total students</div><div class="value">${totalStudents}</div></div>
-    <div class="stat-card"><div class="label">School avg</div><div class="value" style="color:var(--green)">${cls.length ? Math.round(cls.reduce((s,c)=>s+(parseFloat(c.class_avg)||0),0)/cls.length) : 0}%</div></div>
+    <div class="stat-card"><div class="label">Year groups</div><div class="value">${years.length}</div></div>
+    <div class="stat-card"><div class="label">School avg</div><div class="value" style="color:var(--green)">${schoolAvg}%</div></div>
   </div>
-  <div class="card">
-    ${cls.length ? `<table class="data-table"><thead><tr><th>Class</th><th>Year</th><th>Form teacher</th><th>Subject teachers</th><th>Students</th><th>Avg</th><th></th></tr></thead><tbody>
-    ${cls.map(c => {
-      const avg2   = Math.round(c.class_avg || 0);
-      const subTs  = c.subject_teachers || [];
-      const cData  = JSON.stringify({...c, subject_teachers: subTs}).replace(/"/g,'&quot;');
-      return `<tr>
-        <td><b style="font-size:15px">${c.name}</b></td>
-        <td><span class="badge badge-gray">Year ${c.year_group}</span></td>
-        <td style="color:var(--text-2)">${c.teacher_name||'—'}</td>
-        <td style="font-size:12px">${subTs.length ? subTs.map(t=>`<span class="badge badge-blue" style="margin:1px">${t.name}</span>`).join('') : '<span style="color:var(--text-3)">—</span>'}</td>
-        <td>${c.student_count||0}</td>
-        <td><b style="color:${col(avg2)}">${avg2 ? avg2+'%' : '—'}</b></td>
-        <td style="display:flex;gap:4px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick='aOpenClassModal(${cData})'>Edit</button>
-          <button class="btn btn-ghost btn-sm" onclick="aManageClassSubjects(${c.id},'${c.name.replace(/'/g,"\\'")}')">Subjects</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteClass(${c.id},'${c.name.replace(/'/g,"\\'")}')">Delete</button>
-        </td>
-      </tr>`;
-    }).join('')}
-    </tbody></table>` :
-    `<div style="text-align:center;padding:40px;color:var(--text-3)">
-      <div style="font-size:36px;margin-bottom:12px">🗂️</div>
-      <div style="font-size:16px;font-weight:700;margin-bottom:6px">No classes yet</div>
-      <div style="font-size:13px;margin-bottom:16px">Create your first class to assign students and teachers.</div>
-      <button class="btn btn-primary" onclick="aOpenClassModal(null)">+ Create first class</button>
-    </div>`}
-  </div>
+
+  ${cls.length ? yearSections : `
+  <div style="text-align:center;padding:60px;color:var(--text-3)">
+    <div style="font-size:48px;margin-bottom:14px">🗂️</div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:6px">No classes yet</div>
+    <div style="font-size:13px;margin-bottom:18px">Create your first class to get started.</div>
+    <button class="btn btn-primary" onclick="aOpenClassModal(null)">+ Create first class</button>
+  </div>`}
 </div>`;
 }
 
-async function aOpenClassModal(cls) {
-  const isEdit   = !!cls;
-  let teachers = [];
-  try { teachers = await GET('/teachers'); } catch(e) {}
+// ── Class detail popup ────────────────────────────────────────
+async function openClassDetail(classId, cls) {
+  document.getElementById('cls-detail-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'cls-detail-modal';
+  overlay.className = 'modal-bg open';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:780px;max-height:86vh;display:flex;flex-direction:column">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">${cls.name}</div>
+          <div style="font-size:12px;color:var(--text-3);margin-top:2px">Year ${cls.year_group} &nbsp;·&nbsp; Loading details…</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('cls-detail-modal').remove();aOpenClassModal(${JSON.stringify(cls).replace(/"/g,'&quot;')})">Edit class</button>
+          <button class="modal-close" onclick="document.getElementById('cls-detail-modal').remove()">&#x2715;</button>
+        </div>
+      </div>
+      <div class="modal-body" id="cls-detail-body" style="overflow-y:auto;flex:1;padding:0">${panelLoader()}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
-  // Subject teachers already on this class (for edit mode)
-  const subjectTeachers = (cls?.subject_teachers || []);
+  let students = [], subjects = [];
+  try {
+    [students, subjects] = await Promise.all([
+      GET('/classes/' + classId + '/students'),
+      GET('/classes/' + classId + '/subjects')
+    ]);
+  } catch(e) {}
+
+  students = students || [];
+  subjects = subjects || [];
+
+  const subTs     = cls.subject_teachers || [];
+  const avg       = Math.round(parseFloat(cls.class_avg)||0);
+  const avgColor  = avg >= 65 ? 'var(--green)' : avg >= 50 ? 'var(--amber)' : avg ? 'var(--coral)' : 'var(--text-3)';
+
+  // Update subtitle
+  const sub = overlay.querySelector('.modal-title + div');
+  if (sub) sub.textContent = `Year ${cls.year_group}  ·  ${students.length} students  ·  ${subjects.length} subjects`;
+
+  // Group subjects (whole-class vs split)
+  const wholeClass  = subjects.filter(s => !s.group_tag);
+  const splitSubjs  = subjects.filter(s => s.group_tag);
+  const groupTags   = [...new Set(splitSubjs.map(s => s.group_tag))];
+
+  // Students table rows
+  const studentRows = students.length ? students.map(s => {
+    const sp   = Math.round(parseFloat(s.avg_pct)||0);
+    const pass = sp >= 50;
+    const init = ((s.first_name||'?')[0] + (s.last_name||'?')[0]).toUpperCase();
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="student-avatar" style="background:${s.avatar_color||'var(--green-dk)'};width:28px;height:28px;font-size:10px">${init}</div>
+          <span style="font-size:13px;font-weight:600">${s.first_name} ${s.last_name}</span>
+        </div>
+      </td>
+      <td>${s.group_tag ? `<span class="badge badge-blue" style="font-size:10px">${s.group_tag}</span>` : '<span style="color:var(--text-3);font-size:12px">—</span>'}</td>
+      <td style="font-size:13px;color:var(--text-3)">${s.tests_done||0}</td>
+      <td>
+        ${sp ? `<div style="display:flex;align-items:center;gap:6px">
+          <div style="flex:1;max-width:70px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="width:${sp}%;height:100%;background:${avgColor};border-radius:3px"></div>
+          </div>
+          <span style="font-size:13px;font-weight:600;color:${sp>=65?'var(--green)':sp>=50?'var(--amber)':'var(--coral)'}">${sp}%</span>
+        </div>` : '<span style="color:var(--text-3);font-size:12px">No attempts</span>'}
+      </td>
+      <td>${sp ? `<span class="badge badge-${pass?'green':'coral'}" style="font-size:10px">${pass?'Pass':'Below avg'}</span>` : ''}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:20px">No students enrolled yet.</td></tr>`;
+
+  document.getElementById('cls-detail-body').innerHTML = `
+    <!-- Stats strip -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--border)">
+      ${[
+        ['Students',  students.length,         ''],
+        ['Class avg', avg ? avg+'%' : '—',      avgColor],
+        ['Subjects',  subjects.length,           ''],
+        ['Teachers',  1 + subTs.length,          ''],
+      ].map(([l,v,c]) => `
+      <div style="padding:16px;text-align:center;border-right:1px solid var(--border)">
+        <div style="font-size:22px;font-weight:700;color:${c||'var(--text-1)'}">${v}</div>
+        <div style="font-size:11px;color:var(--text-3);margin-top:2px;text-transform:uppercase;letter-spacing:.04em">${l}</div>
+      </div>`).join('')}
+    </div>
+
+    <div style="padding:20px;display:flex;flex-direction:column;gap:20px">
+
+      <!-- Teaching staff -->
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:10px">Teaching staff</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          ${cls.teacher_name ? `
+          <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px 14px">
+            <div class="student-avatar" style="background:var(--green-dk);width:32px;height:32px;font-size:11px">
+              ${cls.teacher_name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)}
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:600">${cls.teacher_name}</div>
+              <div style="font-size:11px;color:var(--text-3)">Form teacher</div>
+            </div>
+          </div>` : '<span style="font-size:13px;color:var(--text-3)">No form teacher assigned</span>'}
+          ${subTs.map(t => `
+          <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px 14px">
+            <div class="student-avatar" style="background:var(--blue);width:32px;height:32px;font-size:11px">
+              ${(t.name||'').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2)}
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:600">${t.name}</div>
+              <div style="font-size:11px;color:var(--text-3)">${t.subject}</div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Subjects -->
+      ${subjects.length ? `
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:10px">Subjects</div>
+        ${wholeClass.length ? `
+        <div style="margin-bottom:8px">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">All students</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${wholeClass.map(s => `<span class="badge badge-green" style="font-size:12px;padding:4px 10px">${s.name}</span>`).join('')}
+          </div>
+        </div>` : ''}
+        ${groupTags.map(tag => `
+        <div style="margin-bottom:8px">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${tag}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${splitSubjs.filter(s=>s.group_tag===tag).map(s => `<span class="badge badge-blue" style="font-size:12px;padding:4px 10px">${s.name}</span>`).join('')}
+          </div>
+        </div>`).join('')}
+      </div>` : `
+      <div class="info-box amber" style="font-size:12px">No subjects assigned to this class yet. Use the <b>Subjects</b> button on the class card to assign them.</div>`}
+
+      <!-- Students -->
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:10px">
+          Students (${students.length})
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Student</th><th>Group</th><th>Tests done</th><th>Average</th><th>Status</th></tr></thead>
+          <tbody>${studentRows}</tbody>
+        </table>
+      </div>
+
+    </div>`;
+}
+
+async function aOpenClassModal(cls) {
+  const isEdit = !!cls;
+  let teachers = [], classSubjects = [], allSubjects = [];
+
+  try { teachers = await GET('/teachers') || []; } catch(e) {}
+
+  if (isEdit) {
+    try { classSubjects = await GET('/classes/' + cls.id + '/subjects') || []; } catch(e) {}
+    // Fallback: if no class subjects configured, load all school-enabled subjects
+    if (!classSubjects.length) {
+      try {
+        const sd = await GET('/subjects');
+        allSubjects = [
+          ...((sd?.platform || []).filter(s => s.is_enabled == 1)),
+          ...(sd?.custom   || [])
+        ];
+      } catch(e) {}
+    }
+  }
+
+  const subjectTeachers   = cls?.subject_teachers || [];
   const subjectTeacherIds = new Set(subjectTeachers.map(t => t.id));
 
   const subTeacherRows = subjectTeachers.map(t =>
     `<div id="sct-${t.id}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
        <div class="student-avatar" style="background:${t.avatar_color||'#1A7A4A'};width:24px;height:24px;font-size:9px">${((t.name||'??').split(' ').map(w=>w[0]).join('')).toUpperCase()}</div>
        <span style="font-size:13px;font-weight:600;flex:1">${t.name}</span>
-       <span class="badge badge-gray" style="font-size:10px">${t.subject||'ICT'}</span>
-       ${isEdit ? `<button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aRemoveSubjectTeacher(${cls.id},${t.id},'${(t.name||'').replace(/'/g,"\\'")}')">Remove</button>` : ''}
+       <span class="badge badge-blue" style="font-size:10px">${t.subject||'ICT'}</span>
+       <button class="btn btn-ghost btn-sm" style="color:var(--coral)"
+         onclick="aRemoveSubjectTeacher(${cls.id},${t.id},'${(t.name||'').replace(/'/g,"\\'")}')">Remove</button>
      </div>`
   ).join('');
+
+  // Subject dropdown — class-specific first, then all school subjects as fallback
+  const subjSource = classSubjects.length ? classSubjects : allSubjects;
+  const subjOpts = subjSource.length
+    ? subjSource.map(s => `<option value="${s.name||s.subject_name}">${s.name||s.subject_name}</option>`).join('')
+    : '<option value="">— No subjects available —</option>';
+  const usingFallback = !classSubjects.length && allSubjects.length > 0;
 
   adminModal(
     isEdit ? `Edit class — ${cls.name}` : 'Create new class',
     `<div class="form-group">
        <label class="form-label">Class name</label>
-       <input class="form-input" id="ac-name" placeholder="e.g. SHS2A" value="${isEdit ? cls.name : ''}">
+       <input class="form-input" id="ac-name" placeholder="e.g. 1 GA1" value="${isEdit ? cls.name : ''}">
      </div>
      <div class="form-group">
        <label class="form-label">Year group</label>
@@ -3263,16 +4397,26 @@ async function aOpenClassModal(cls) {
      ${isEdit ? `
      <div class="divider"></div>
      <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Subject teachers</div>
-     <div id="sct-list">${subTeacherRows || '<div style="color:var(--text-3);font-size:13px;padding:8px 0">No subject teachers assigned yet.</div>'}</div>
-     <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-       <select class="form-select" id="sct-add-id" style="flex:1">
-         <option value="">— Add a subject teacher —</option>
-         ${teachers.filter(t=>!subjectTeacherIds.has(t.id)).map(t=>`<option value="${t.id}">${t.first_name} ${t.last_name}</option>`).join('')}
-       </select>
-       <input class="form-input" id="sct-subject" placeholder="Subject" style="width:110px" value="ICT">
-       <button class="btn btn-secondary btn-sm" onclick="aAddSubjectTeacher(${cls.id})">+ Add</button>
+     <div id="sct-list">${subTeacherRows || '<div id="sct-empty" style="color:var(--text-3);font-size:13px;padding:8px 0">No subject teachers assigned yet.</div>'}</div>
+     <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
+       <div class="form-group" style="flex:1;margin-bottom:0">
+         <label class="form-label" style="font-size:11px">Teacher</label>
+         <select class="form-select" id="sct-add-id">
+           <option value="">— Select teacher —</option>
+           ${teachers.filter(t=>!subjectTeacherIds.has(t.id)).map(t=>`<option value="${t.id}">${t.first_name} ${t.last_name}</option>`).join('')}
+         </select>
+       </div>
+       <div class="form-group" style="width:160px;margin-bottom:0">
+         <label class="form-label" style="font-size:11px">Subject</label>
+         <select class="form-select" id="sct-subject" ${!subjSource.length ? 'disabled' : ''}>
+           ${subjOpts}
+         </select>
+       </div>
+       <button class="btn btn-secondary btn-sm" style="margin-bottom:1px" onclick="aAddSubjectTeacher(${cls.id})">+ Add</button>
      </div>
-     <div class="info-box blue" style="margin-top:10px;font-size:12px">Each teacher sees only classes they are assigned to (as form teacher or subject teacher).</div>` : ''}`,
+     ${usingFallback ? '<div style="font-size:11px;color:var(--text-3);margin-top:4px">Showing all school subjects. Use the <b>Subjects</b> button on this class to restrict to class-specific subjects.</div>' : ''}
+     ${!subjSource.length ? '<div style="font-size:11px;color:var(--coral);margin-top:4px">No subjects available — go to Settings → Subjects and enable subjects for your school first.</div>' : ''}
+     <div class="info-box blue" style="margin-top:10px;font-size:12px">Teachers added here can see and manage this class. Click <b>Save changes</b> when done.</div>` : ''}`,
     async () => {
       const name      = document.getElementById('ac-name')?.value?.trim();
       const year      = document.getElementById('ac-year')?.value;
@@ -3316,18 +4460,48 @@ async function aDeleteClass(id, name) {
 }
 
 async function aAddSubjectTeacher(classId) {
-  const tid     = document.getElementById('sct-add-id')?.value;
-  const subject = document.getElementById('sct-subject')?.value?.trim() || 'ICT';
-  if (!tid) { notify('Select a teacher to add', 'error'); return; }
+  const tidSel  = document.getElementById('sct-add-id');
+  const subjSel = document.getElementById('sct-subject');
+  const tid     = tidSel?.value;
+  const subject = subjSel?.value?.trim();
+  if (!tid)     { notify('Select a teacher to add', 'error'); return; }
+  if (!subject) { notify('Select a subject', 'error'); return; }
+
+  const teacherName = tidSel.options[tidSel.selectedIndex]?.text || 'Teacher';
+  const btn = document.querySelector('#adm-modal [onclick*="aAddSubjectTeacher"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+
   try {
     await POST('/classes/' + classId + '/teachers', { teacher_id: parseInt(tid), subject });
-    notify('Teacher assigned to class', 'success');
-    // Reload the modal with fresh data
-    document.getElementById('adm-modal')?.remove();
-    const clsData = await GET('/classes');
-    const updated = (clsData || []).find(c => c.id === classId);
-    if (updated) aOpenClassModal(updated);
-  } catch(e) { notify(e.message, 'error'); }
+
+    // Remove "no teachers" placeholder if present
+    document.getElementById('sct-empty')?.remove();
+
+    // Append new row to list
+    const list = document.getElementById('sct-list');
+    if (list) {
+      const initials = teacherName.split(' ').map(w => w[0]).join('').toUpperCase();
+      const row = document.createElement('div');
+      row.id = 'sct-' + tid;
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)';
+      row.innerHTML = `
+        <div class="student-avatar" style="background:#1A7A4A;width:24px;height:24px;font-size:9px">${initials}</div>
+        <span style="font-size:13px;font-weight:600;flex:1">${teacherName}</span>
+        <span class="badge badge-blue" style="font-size:10px">${subject}</span>
+        <button class="btn btn-ghost btn-sm" style="color:var(--coral)"
+          onclick="aRemoveSubjectTeacher(${classId},${tid},'${teacherName.replace(/'/g,"\\'")}')">Remove</button>`;
+      list.appendChild(row);
+    }
+
+    // Remove teacher from dropdown, reset selects
+    tidSel.querySelector(`option[value="${tid}"]`)?.remove();
+    tidSel.value = '';
+    if (subjSel) subjSel.selectedIndex = 0;
+  } catch(e) {
+    notify(e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '+ Add'; }
+  }
 }
 
 async function aRemoveSubjectTeacher(classId, teacherId, teacherName) {
@@ -3335,23 +4509,54 @@ async function aRemoveSubjectTeacher(classId, teacherId, teacherName) {
   try {
     await fetch(API_BASE + '/classes/' + classId + '/teachers', {
       method: 'DELETE',
-      headers: {'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'},
+      headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN, 'Content-Type': 'application/json' },
       body: JSON.stringify({ teacher_id: teacherId }),
     });
-    notify(`"${teacherName}" removed from class`, 'success');
-    document.getElementById('adm-modal')?.remove();
-    const clsData = await GET('/classes');
-    const updated = (clsData || []).find(c => c.id === classId);
-    if (updated) aOpenClassModal(updated);
+
+    // Remove row from DOM
+    document.getElementById('sct-' + teacherId)?.remove();
+
+    // Add teacher back to the "Add" dropdown
+    const addSel = document.getElementById('sct-add-id');
+    if (addSel) {
+      const opt = document.createElement('option');
+      opt.value = teacherId;
+      opt.textContent = teacherName;
+      addSel.appendChild(opt);
+    }
+
+    // Show placeholder if list is now empty
+    const list = document.getElementById('sct-list');
+    if (list && !list.querySelector('[id^="sct-"]')) {
+      const ph = document.createElement('div');
+      ph.id = 'sct-empty';
+      ph.style.cssText = 'color:var(--text-3);font-size:13px;padding:8px 0';
+      ph.textContent = 'No subject teachers assigned yet.';
+      list.appendChild(ph);
+    }
   } catch(e) { notify(e.message, 'error'); }
 }
 
 // ── Departments CRUD ──────────────────────────────────────────
+function dToggle(id) {
+  const body  = document.getElementById('db-' + id);
+  const arrow = document.getElementById('da-' + id);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+}
+
 async function loadADepts(m) {
   let depts = [], teachers = [];
   try { [depts, teachers] = await Promise.all([GET('/departments'), GET('/teachers')]); } catch(e) {}
   const d = depts || [];
   const t = teachers || [];
+
+  const DEPT_COLORS = ['#1A7A4A','#2563EB','#7C3AED','#C47D0E','#DC2626','#0891B2','#059669','#D97706','#9D174D','#4338CA','#B45309','#0F766E'];
+
+  const totalAssigned = d.reduce((s, x) => s + (x.teacher_count||0), 0);
+  const headsSet      = d.filter(x => x.head_teacher_id).length;
 
   m.innerHTML = `
 <div class="topbar">
@@ -3359,40 +4564,71 @@ async function loadADepts(m) {
   <div class="topbar-actions"><button class="btn btn-primary" onclick="aOpenDeptModal(null)">+ Create department</button></div>
 </div>
 <div class="page">
-  ${d.length ? d.map(dept => {
+  <div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
+    <div class="stat-card"><div class="label">Departments</div><div class="value">${d.length}</div></div>
+    <div class="stat-card"><div class="label">Teachers assigned</div><div class="value">${totalAssigned}</div></div>
+    <div class="stat-card"><div class="label">Heads assigned</div><div class="value">${headsSet}</div></div>
+    <div class="stat-card"><div class="label">Unassigned teachers</div><div class="value">${(t.length - totalAssigned) < 0 ? 0 : t.length - totalAssigned}</div></div>
+  </div>
+
+  ${d.length ? d.map((dept, i) => {
+    const color    = DEPT_COLORS[i % DEPT_COLORS.length];
+    const words    = dept.name.split(' ').filter(w => !['of','and','the','in'].includes(w.toLowerCase()));
+    const initials = words.slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    const snippet  = dept.description ? dept.description.slice(0,90) + (dept.description.length > 90 ? '…' : '') : '';
     const tListData = JSON.stringify(t).replace(/"/g,'&quot;');
     const dData     = JSON.stringify({id:dept.id,name:dept.name,description:dept.description||'',head_teacher_id:dept.head_teacher_id}).replace(/"/g,'&quot;');
-    return `<div class="card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px">
-        <div>
-          <div style="font-size:17px;font-weight:800">${dept.name}</div>
-          ${dept.description ? `<div style="font-size:13px;color:var(--text-3);margin-top:2px">${dept.description}</div>` : ''}
-          <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
-            <span class="badge badge-gray">${dept.teacher_count||0} teacher${(dept.teacher_count||0)!==1?'s':''}</span>
-            ${dept.head_name ? `<span class="badge badge-blue">Head: ${dept.head_name}</span>` : ''}
-          </div>
+
+    const teacherChips = (dept.teachers||[]).map(tx => `
+      <div style="display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px 4px 6px">
+        <div class="student-avatar" style="background:${tx.avatar_color||color};width:22px;height:22px;font-size:9px">${((tx.first_name||'?')[0]+(tx.last_name||'?')[0]).toUpperCase()}</div>
+        <span style="font-size:12px;font-weight:600">${tx.first_name} ${tx.last_name}</span>
+        <button onclick="aRemoveTeacherFromDept(${dept.id},${tx.id},'${tx.first_name} ${tx.last_name}')"
+          style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:15px;line-height:1;padding:0 0 0 4px">×</button>
+      </div>`).join('');
+
+    return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+      <!-- Header row (always visible) -->
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 18px;cursor:pointer;user-select:none"
+           onclick="dToggle(${dept.id})">
+        <!-- Colored icon -->
+        <div style="width:44px;height:44px;border-radius:12px;background:${color};display:flex;align-items:center;justify-content:center;
+                    font-size:14px;font-weight:600;color:#fff;flex-shrink:0">${initials}</div>
+        <!-- Name + snippet -->
+        <div style="flex:1;min-width:0">
+          <div style="font-size:15px;font-weight:600;line-height:1.2">${dept.name}</div>
+          ${snippet ? `<div style="font-size:12px;color:var(--text-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px">${snippet}</div>` : ''}
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
-          <button class="btn btn-secondary btn-sm" onclick='aOpenDeptModal(${dData},${tListData})'>Edit</button>
+        <!-- Badges -->
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+          <span class="badge badge-gray">${dept.teacher_count||0} teacher${(dept.teacher_count||0)!==1?'s':''}</span>
+          ${dept.head_name ? `<span class="badge badge-blue">Head: ${dept.head_name}</span>` : '<span class="badge badge-gray" style="opacity:.5">No head</span>'}
+        </div>
+        <!-- Actions (stop click from toggling) -->
+        <div style="display:flex;gap:4px;flex-shrink:0" onclick="event.stopPropagation()">
+          <button class="btn btn-ghost btn-sm" onclick='aOpenDeptModal(${dData},${tListData})'>Edit</button>
           <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteDept(${dept.id},'${dept.name.replace(/'/g,"\\'")}')">Delete</button>
         </div>
+        <!-- Chevron -->
+        <span id="da-${dept.id}" style="font-size:18px;color:var(--text-3);transition:transform .2s;flex-shrink:0;line-height:1">›</span>
       </div>
-      <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Teachers</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-        ${(dept.teachers||[]).map(tx => `
-        <div style="display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px 4px 6px">
-          <div class="student-avatar" style="background:${tx.avatar_color||'var(--amber)'};width:22px;height:22px;font-size:9px">${((tx.first_name||'?')[0]+(tx.last_name||'?')[0]).toUpperCase()}</div>
-          <span style="font-size:12px;font-weight:600">${tx.first_name} ${tx.last_name}</span>
-          <button onclick="aRemoveTeacherFromDept(${dept.id},${tx.id},'${tx.first_name} ${tx.last_name}')"
-            style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;line-height:1;padding:0 0 0 4px;font-family:inherit">×</button>
-        </div>`).join('')}
-        <button class="btn btn-ghost btn-sm" onclick='aAddTeacherToDept(${dept.id},${tListData})'>+ Add teacher</button>
+
+      <!-- Expandable body (starts hidden) -->
+      <div id="db-${dept.id}" style="display:none;border-top:1px solid var(--border);padding:16px 18px;background:var(--bg)">
+        ${dept.description ? `<p style="font-size:13px;color:var(--text-2);line-height:1.6;margin:0 0 14px">${dept.description}</p>` : ''}
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:10px">Teachers in this department</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          ${teacherChips || '<span style="color:var(--text-3);font-size:13px">No teachers assigned yet.</span>'}
+          <button class="btn btn-ghost btn-sm" onclick='aAddTeacherToDept(${dept.id},${tListData})'>+ Add teacher</button>
+        </div>
       </div>
     </div>`;
-  }).join('') : `<div style="text-align:center;padding:60px;color:var(--text-3)">
-    <div style="font-size:36px;margin-bottom:12px">🏢</div>
-    <div style="font-size:16px;font-weight:700;margin-bottom:6px">No departments yet</div>
-    <div style="font-size:13px;margin-bottom:16px">Group your teachers into departments (e.g. ICT, Science, Maths).</div>
+  }).join('') : `
+  <div style="text-align:center;padding:60px;color:var(--text-3)">
+    <div style="font-size:48px;margin-bottom:14px">🏢</div>
+    <div style="font-size:17px;font-weight:700;margin-bottom:6px">No departments yet</div>
+    <div style="font-size:13px;margin-bottom:18px">Group your teachers into departments (e.g. ICT, Science, Maths).</div>
     <button class="btn btn-primary" onclick="aOpenDeptModal(null)">+ Create first department</button>
   </div>`}
 </div>`;
@@ -3556,7 +4792,7 @@ const CATEGORY_ICONS = {
   'General': '📚',
 };
 
-async function loadASubjects(m) {
+async function loadASubjects(m, embedded = false) {
   m.innerHTML = panelLoader();
   let data = { platform: [], custom: [] };
   try { data = await GET('/subjects'); } catch(e) {}
@@ -3605,15 +4841,27 @@ async function loadASubjects(m) {
     </div>`;
   }).join('');
 
-  m.innerHTML = `
-<div class="topbar">
-  <div><div class="topbar-title">Subjects</div>
-  <div class="topbar-sub">${enabledCnt} of ${platform.length} national curriculum subjects enabled · ${custom.length} custom</div></div>
-  <div class="topbar-actions">
-    <button class="btn btn-secondary" onclick="aOpenSubjectModal(null)">+ Add custom subject</button>
-  </div>
-</div>
-<div class="page">
+  const header = embedded ? `
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div>
+      <div style="font-size:16px;font-weight:700">Subjects</div>
+      <div style="font-size:12px;color:var(--text-3);margin-top:2px">${enabledCnt} of ${platform.length} national curriculum subjects enabled · ${custom.length} custom</div>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="aOpenSubjectModal(null)">+ Add custom subject</button>
+  </div>` : `
+  <div class="topbar">
+    <div><div class="topbar-title">Subjects</div>
+    <div class="topbar-sub">${enabledCnt} of ${platform.length} national curriculum subjects enabled · ${custom.length} custom</div></div>
+    <div class="topbar-actions">
+      <button class="btn btn-secondary" onclick="aOpenSubjectModal(null)">+ Add custom subject</button>
+    </div>
+  </div>`;
+
+  const wrap = (content) => embedded
+    ? `<div style="padding:4px 0">${content}</div>`
+    : `<div class="page">${content}</div>`;
+
+  m.innerHTML = header + wrap(`
   <div class="info-box blue" style="margin-bottom:20px">
     Toggle the switches to enable or disable subjects for your school. Only enabled subjects appear in question bank filters and class assignments.
     You can also add school-specific subjects that are not on the national curriculum.
@@ -3652,8 +4900,7 @@ async function loadASubjects(m) {
       <div style="font-size:13px;margin-bottom:16px">Add subjects specific to your school that aren't on the national curriculum.</div>
       <button class="btn btn-primary" onclick="aOpenSubjectModal(null)">+ Add custom subject</button>
     </div>`}
-  </div>
-</div>`;
+  </div>`);
 }
 
 async function toggleSubject(subjectId, checkbox) {
@@ -3664,8 +4911,9 @@ async function toggleSubject(subjectId, checkbox) {
     checkbox.checked = res.enabled;
     notify(res.enabled ? 'Subject enabled' : 'Subject disabled', res.enabled ? 'success' : '');
     // Refresh subtitle counts without full reload
-    const m = document.getElementById('a-main');
-    if (m) loadASubjects(m);
+    const stPane = document.getElementById('st-subjects');
+    const m = stPane?.dataset?.loaded ? stPane : document.getElementById('a-main');
+    if (m) loadASubjects(m, !!stPane?.dataset?.loaded);
   } catch(e) {
     checkbox.checked = !wasChecked; // revert on error
     notify('Could not update: ' + e.message, 'error');
@@ -3673,8 +4921,8 @@ async function toggleSubject(subjectId, checkbox) {
 }
 
 async function enableAllInCategory(category, enable) {
-  // Get all subjects in this category on the current page
-  const m = document.getElementById('a-main');
+  const stPane = document.getElementById('st-subjects');
+  const m = stPane?.dataset?.loaded ? stPane : document.getElementById('a-main');
   if (!m) return;
   // Find all switches in cards that belong to this category
   // We reload after to simplify
@@ -3687,7 +4935,7 @@ async function enableAllInCategory(category, enable) {
       if (!enable && isEnabled) await POST('/subjects/' + s.id + '/toggle', {});
     }
     notify((enable ? 'All ' : 'All ') + category + (enable ? ' subjects enabled' : ' subjects disabled'), 'success');
-    loadASubjects(m);
+    loadASubjects(m, !!stPane?.dataset?.loaded);
   } catch(e) { notify(e.message, 'error'); }
 }
 
@@ -3720,8 +4968,9 @@ function aOpenSubjectModal(subject) {
         else        await POST('/subjects', { name, short_name: short, category: cat });
         document.getElementById('adm-modal')?.remove();
         notify(isEdit ? 'Subject updated' : 'Subject added', 'success');
-        const m = document.getElementById('a-main');
-        if (m) loadASubjects(m);
+        const stPane2 = document.getElementById('st-subjects');
+        const m = stPane2?.dataset?.loaded ? stPane2 : document.getElementById('a-main');
+        if (m) loadASubjects(m, !!stPane2?.dataset?.loaded);
       } catch(e) {
         notify(e.message, 'error');
         btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Add subject';
@@ -3737,8 +4986,9 @@ async function aDeleteSubject(id, name) {
   try {
     await fetch(API_BASE + '/subjects/' + id, {method:'DELETE',headers:{'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'}});
     notify(`"${name}" deleted`, 'success');
-    const m = document.getElementById('a-main');
-    if (m) loadASubjects(m);
+    const stPane = document.getElementById('st-subjects');
+    const m = stPane?.dataset?.loaded ? stPane : document.getElementById('a-main');
+    if (m) loadASubjects(m, !!stPane?.dataset?.loaded);
   } catch(e) { notify(e.message, 'error'); }
 }
 
@@ -4168,7 +5418,7 @@ function tsRender(filter = '') {
       return `
         <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
           <label class="switch" style="flex-shrink:0">
-            <input type="checkbox" ${isOn ? 'checked' : ''} onchange="tsToggle(${s.id},'${s.name.replace(/'/g,"\\'")}',this.checked)">
+            <input type="checkbox" ${isOn ? 'checked' : ''} onchange="tsToggle(${s.id},'${s.name.replace(/'/g,"\\'")}',this.checked,this)">
             <span class="switch-slider"></span>
           </label>
           <span style="flex:1;font-size:13px">${s.name}</span>
@@ -4204,24 +5454,27 @@ function tsRender(filter = '') {
     <div>${catHTML || '<div style="color:var(--text-3);font-size:13px;text-align:center;padding:20px 0">No subjects match your filter.</div>'}</div>`;
 }
 
-async function tsToggle(subjectId, subjectName, isOn) {
+async function tsToggle(subjectId, subjectName, isOn, checkbox) {
+  if (checkbox) checkbox.disabled = true;
   try {
     if (isOn) {
       await POST('/teachers/' + _tsTeacherId + '/subjects', { subject_id: subjectId });
-      _tsAssigned.push({ subject_id: subjectId, name: subjectName });
+      _tsAssigned.push({ subject_id: String(subjectId), name: subjectName });
     } else {
       await DELETE('/teachers/' + _tsTeacherId + '/subjects', { subject_id: subjectId });
-      _tsAssigned = _tsAssigned.filter(a => a.subject_id != subjectId);
+      _tsAssigned = _tsAssigned.filter(a => String(a.subject_id) !== String(subjectId));
     }
-    tsRender(document.querySelector('#ts-body input[placeholder="Filter subjects…"]')?.value || '');
-    notify(isOn ? `${subjectName} assigned` : `${subjectName} removed`, 'success');
-    // Refresh teacher list so badges update
+    // Update subtitle only — do NOT call tsRender() (it rebuilds DOM and resets the switch animation)
+    const sub = document.getElementById('ts-subtitle');
+    if (sub) sub.textContent = `${_tsAssigned.length} subject${_tsAssigned.length!==1?'s':''} assigned`;
     const m = document.getElementById('a-main');
-    if (m && document.querySelector('.nav-item.active')?.textContent?.trim() === 'Teachers') loadATeachers(m);
+    if (m && document.querySelector('#a-sidebar .nav-item.active')?.textContent?.includes('Teachers')) loadATeachers(m);
   } catch(e) {
+    // Revert visual state on failure
+    if (checkbox) checkbox.checked = !isOn;
     notify(e.message, 'error');
-    _tsAssigned = await GET('/teachers/' + _tsTeacherId + '/subjects').catch(() => []);
-    tsRender();
+  } finally {
+    if (checkbox) checkbox.disabled = false;
   }
 }
 
@@ -4377,26 +5630,29 @@ function aOpenStudentModal(student, classes) {
      <div class="form-group"><label class="form-label">Class</label>
        <select class="form-select" id="as-class">
          <option value="">— No class assigned —</option>
-         ${cls.map(c=>`<option value="${c.name}" ${(isEdit&&student.class_name===c.name)?'selected':''}>${c.name} (Year ${c.year_group})</option>`).join('')}
+         ${cls.map(c=>{
+           const selId = isEdit ? (cls.find(x=>x.name===student.class_name)?.id) : null;
+           return `<option value="${c.id}" ${selId==c.id?'selected':''}>${c.name} (Year ${c.year_group})</option>`;
+         }).join('')}
        </select>
      </div>`,
     async () => {
-      const fn  = document.getElementById('as-fn')?.value?.trim();
-      const ln  = document.getElementById('as-ln')?.value?.trim();
-      const em  = document.getElementById('as-email')?.value?.trim();
-      const pw  = document.getElementById('as-pw')?.value;
-      const className = document.getElementById('as-class')?.value || null;
+      const fn      = document.getElementById('as-fn')?.value?.trim();
+      const ln      = document.getElementById('as-ln')?.value?.trim();
+      const em      = document.getElementById('as-email')?.value?.trim();
+      const pw      = document.getElementById('as-pw')?.value;
+      const classId = parseInt(document.getElementById('as-class')?.value) || null;
       if (!fn || !ln) { notify('Enter first and last name', 'error'); return; }
       if (!isEdit && !em) { notify('Enter an email address', 'error'); return; }
       const btn = document.getElementById('adm-modal-save');
       btn.disabled = true; btn.textContent = 'Saving…';
       try {
         if (isEdit) {
-          const payload = { first_name:fn, last_name:ln, class_name:className||null };
-          if (pw) payload.password = pw; // only send if filled
+          const payload = { first_name:fn, last_name:ln, class_id:classId };
+          if (pw) payload.password = pw;
           await PATCH('/students/' + student.id, payload);
         } else {
-          await POST('/students', { first_name:fn, last_name:ln, email:em, password:pw||'changeme123', class_name:className||null });
+          await POST('/students', { first_name:fn, last_name:ln, email:em, password:pw||'changeme123', class_id:classId });
         }
         document.getElementById('adm-modal')?.remove();
         notify(isEdit ? 'Student updated' : 'Student added', 'success');
@@ -4422,16 +5678,35 @@ async function aDeleteStudent(id, name) {
   } catch(e) { notify('Remove failed: ' + e.message, 'error'); }
 }
 
+// ── Proper CSV row parser (handles quoted fields with commas) ──
+function parseCsvRow(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; } // escaped quote ""
+      else inQ = !inQ;
+    } else if (ch === ',' && !inQ) {
+      result.push(cur.trim()); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 // ── Reusable CSV import modal (students or teachers) ──────────
 function openCsvImportModal(role, onSuccess) {
   const isStudent = role === 'student';
   const label     = isStudent ? 'Students' : 'Teachers';
   const cols      = isStudent
-    ? 'first_name, last_name, email, password, class_name'
-    : 'first_name, last_name, email, password';
+    ? 'first_name, last_name, email, password'
+    : 'first_name, last_name, email, password, department, subjects';
   const example   = isStudent
-    ? 'Kofi,Mensah,kofi@school.edu.gh,changeme123,SHS2A'
-    : 'Ama,Kyereh,ama@school.edu.gh,changeme123';
+    ? 'Kofi,Mensah,kofi@school.edu.gh,changeme123'
+    : 'Ama,Kyereh,ama@school.edu.gh,changeme123,ICT Department,ICT';
 
   document.getElementById('csv-imp-modal')?.remove();
   const overlay = document.createElement('div');
@@ -4446,6 +5721,14 @@ function openCsvImportModal(role, onSuccess) {
         <button class="modal-close" onclick="document.getElementById('csv-imp-modal').remove()">&#x2715;</button>
       </div>
       <div class="modal-body">
+        ${isStudent ? `
+        <div style="margin-bottom:16px">
+          <label class="form-label" style="margin-bottom:6px">Import to class <span style="color:var(--coral)">*</span></label>
+          <select class="form-select" id="ci-class-select">
+            <option value="">— Select a class —</option>
+          </select>
+          <div style="font-size:12px;color:var(--text-3);margin-top:5px">All students in this import will be enrolled in the selected class.</div>
+        </div>` : ''}
         <div class="tab-bar">
           <button class="tab-btn active" onclick="switchTab(this,'ci-upload')">Upload CSV</button>
           <button class="tab-btn" onclick="switchTab(this,'ci-paste')">Paste data</button>
@@ -4456,8 +5739,11 @@ function openCsvImportModal(role, onSuccess) {
         <div id="ci-upload" class="tab-pane active">
           <div class="info-box blue" style="margin-bottom:14px">
             Required columns: <b>${cols}</b><br>
-            <b>class_name</b> must match an existing class exactly (e.g. SHS2A). Leave blank if not assigning yet.
+            ${isStudent
+              ? 'No class column needed — class is set by the dropdown above.'
+              : '<b>department</b> and <b>subjects</b> are optional. Subjects: comma-separated names (e.g. <code>ICT,Core Mathematics</code>).'}
           </div>
+          <div id="ci-class-hint" style="font-size:12px;color:var(--text-3);margin-bottom:10px"></div>
           <div id="ci-dropzone" style="border:2px dashed var(--border-2);border-radius:var(--radius);padding:40px;text-align:center;cursor:pointer;background:var(--bg)"
             onclick="document.getElementById('ci-file').click()"
             ondragover="event.preventDefault();this.style.borderColor='var(--green)'"
@@ -4474,7 +5760,9 @@ function openCsvImportModal(role, onSuccess) {
         <div id="ci-paste" class="tab-pane" style="display:none">
           <div class="info-box blue" style="margin-bottom:12px">Copy from Excel/Sheets and paste below. First row must be the header row.</div>
           <textarea class="form-textarea" id="ci-paste-area" rows="8"
-            placeholder="first_name&#9;last_name&#9;email&#9;password&#9;class_name&#10;Kofi&#9;Mensah&#9;kofi@school.edu.gh&#9;changeme123&#9;SHS2A"></textarea>
+            placeholder="${isStudent
+              ? 'first_name&#9;last_name&#9;email&#9;password&#10;Kofi&#9;Mensah&#9;kofi@school.edu.gh&#9;changeme123'
+              : 'first_name&#9;last_name&#9;email&#9;password&#9;department&#9;subjects&#10;Ama&#9;Kyereh&#9;ama@school.edu.gh&#9;changeme123&#9;ICT Department&#9;ICT'}"></textarea>
           <button class="btn btn-secondary" style="margin-top:8px" onclick="parsePastedCsv('${role}')">Parse data</button>
         </div>
 
@@ -4482,8 +5770,10 @@ function openCsvImportModal(role, onSuccess) {
         <div id="ci-template" class="tab-pane" style="display:none">
           <p style="font-size:13px;color:var(--text-2);line-height:1.8;margin-bottom:16px">
             Fill the template with your data then upload in the CSV tab.<br>
-            <b>password</b>: leave as <code>changeme123</code> — users should change on first login.<br>
-            ${isStudent ? '<b>class_name</b>: must match an existing class name exactly (e.g. SHS1A, SHS2B).' : ''}
+            <b>password</b>: leave as <code>changeme123</code> — users must change on first login.<br>
+            ${isStudent
+              ? 'Class is selected via the dropdown — no class column needed in the CSV.'
+              : '<b>department</b>: optional, must match department name exactly.<br><b>subjects</b>: optional, comma-separated subject names or short names (e.g. <code>ICT</code>).'}
           </p>
           <div class="info-box amber" style="margin-bottom:14px">Example row: <code>${example}</code></div>
           <button class="btn btn-primary" onclick="downloadCsvTemplate('${role}','${cols}')">Download template CSV</button>
@@ -4505,9 +5795,54 @@ function openCsvImportModal(role, onSuccess) {
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-  // Store callback for after import
   window._csvImportCallback = onSuccess;
-  window._csvParsedRows = [];
+  window._csvParsedRows     = [];
+  window._csvAvailableClasses  = [];
+  window._csvAvailableSubjects = [];
+  window._csvAvailableDepts    = [];
+
+  window._csvSelectedClassId   = null;
+  window._csvSelectedClassName = '';
+
+  // Load reference data for preview validation
+  if (isStudent) {
+    GET('/classes').then(cls => {
+      const classes = cls || [];
+      window._csvAvailableClasses = classes.map(c => c.name);
+      const sel = document.getElementById('ci-class-select');
+      if (!sel) return;
+      // Group by year
+      const byYear = {};
+      classes.forEach(c => { (byYear[c.year_group] = byYear[c.year_group] || []).push(c); });
+      sel.innerHTML = '<option value="">— Select a class —</option>' +
+        Object.entries(byYear).sort(([a],[b])=>a-b).map(([yr, cls2]) =>
+          `<optgroup label="Year ${yr}">` +
+          cls2.map(c => `<option value="${c.id}" data-name="${c.name}">${c.name}</option>`).join('') +
+          '</optgroup>'
+        ).join('');
+      sel.onchange = () => {
+        const opt = sel.options[sel.selectedIndex];
+        window._csvSelectedClassId   = parseInt(sel.value) || null;
+        window._csvSelectedClassName = opt?.dataset?.name || '';
+        // Re-render preview if already parsed
+        if (window._csvParsedRows?.length) showCsvPreview(window._csvParsedRows, role);
+      };
+    }).catch(() => {});
+  } else {
+    Promise.all([GET('/subjects'), GET('/departments')]).then(([subjData, depts]) => {
+      const all = [
+        ...((subjData?.platform||[]).filter(s=>s.is_enabled==1)),
+        ...(subjData?.custom||[])
+      ];
+      window._csvAvailableSubjects = all.map(s => ({ name: s.name, short: s.short_name, id: s.id }));
+      window._csvAvailableDepts    = (depts||[]).map(d => d.name);
+      const hint = document.getElementById('ci-class-hint');
+      if (hint) {
+        const subNames = all.slice(0,6).map(s=>s.short_name||s.name).join(', ');
+        hint.textContent = 'Available subjects: ' + subNames + (all.length>6?` … (+${all.length-6} more)`:'');
+      }
+    }).catch(() => {});
+  }
 }
 
 function handleCsvDrop(event, role) {
@@ -4533,21 +5868,24 @@ function parsePastedCsv(role) {
 }
 
 function parseCsvText(text, role) {
+  // Strip BOM and normalise line endings
+  text = text.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = text.trim().split('\n').filter(l => l.trim());
   if (lines.length < 2) { notify('File must have a header row and at least one data row', 'error'); return; }
 
-  // Parse header
-  const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g,'').replace(/\s+/g,'_'));
+  const header = parseCsvRow(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, '').replace(/\s+/g, '_'));
   const rows   = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const vals = lines[i].split(',').map(v => v.trim().replace(/^["']|["']$/g,''));
-    if (vals.every(v => !v)) continue; // skip blank rows
+    const vals = parseCsvRow(lines[i]);
+    if (vals.every(v => !v)) continue;
     const row = {};
-    header.forEach((h, j) => { row[h] = vals[j] || ''; });
-    // Normalize common variations
-    row.first_name = row.first_name || row.firstname || '';
-    row.last_name  = row.last_name  || row.lastname  || row.surname || '';
+    header.forEach((h, j) => { row[h] = (vals[j] || '').trim(); });
+    // Normalise common column name variants
+    row.first_name  = row.first_name  || row.firstname  || row.first || '';
+    row.last_name   = row.last_name   || row.lastname   || row.surname || row.last || '';
+    row.class_name  = row.class_name  || row.class      || row.classname || '';
+    row.email       = row.email       || row.email_address || '';
     rows.push(row);
   }
 
@@ -4561,24 +5899,67 @@ function showCsvPreview(rows, role) {
   const cnt  = document.getElementById('ci-count');
   if (!prev || !tbl || !cnt) return;
 
-  cnt.textContent = `(${rows.length} row${rows.length!==1?'s':''})`;
-  const isStudent = role === 'student';
+  const isStudent   = role === 'student';
+  const knownSubj   = new Set((window._csvAvailableSubjects || []).flatMap(s => [s.name, s.short].filter(Boolean)));
+  const knownDepts  = new Set(window._csvAvailableDepts || []);
+
+  let valid = 0, warn = 0, invalid = 0;
+
+  const bodyRows = rows.map((r, i) => {
+    const baseOk = r.first_name && r.last_name && r.email && r.email.includes('@');
+    let rowWarn  = false;
+
+    // No per-row class cell for students — class comes from dropdown
+    let classCell = '';
+
+    // Department + subjects for teachers
+    let extraCells = '';
+    if (!isStudent) {
+      const dept = r.department || '—';
+      const deptOk = !r.department || knownDepts.size === 0 || knownDepts.has(r.department);
+      if (r.department && !deptOk) rowWarn = true;
+      extraCells += `<td><span class="badge badge-${r.department?(deptOk?'blue':'coral'):'gray'}" style="font-size:10px">${dept}</span>
+        ${r.department && !deptOk ? '<div style="font-size:10px;color:var(--coral)">Dept not found</div>' : ''}
+      </td>`;
+
+      const subjList = r.subjects ? r.subjects.split(',').map(s=>s.trim()).filter(Boolean) : [];
+      const subjBadges = subjList.length
+        ? subjList.map(s => {
+            const ok = knownSubj.size === 0 || knownSubj.has(s);
+            if (!ok) rowWarn = true;
+            return `<span class="badge badge-${ok?'green':'coral'}" style="font-size:10px;margin:1px">${s}</span>`;
+          }).join('')
+        : '<span style="color:var(--text-3);font-size:11px">—</span>';
+      extraCells += `<td>${subjBadges}</td>`;
+    }
+
+    const status = !baseOk ? 'Invalid' : rowWarn ? 'Warning' : 'Ready';
+    const badge  = !baseOk ? 'coral'   : rowWarn ? 'amber'   : 'green';
+    if (!baseOk) invalid++; else if (rowWarn) warn++; else valid++;
+
+    return `<tr>
+      <td style="color:var(--text-3)">${i+1}</td>
+      <td>${r.first_name||'<span style="color:var(--coral)">missing</span>'}</td>
+      <td>${r.last_name||'<span style="color:var(--coral)">missing</span>'}</td>
+      <td style="font-size:12px">${r.email||'<span style="color:var(--coral)">missing</span>'}</td>
+      ${classCell}${extraCells}
+      <td><span class="badge badge-${badge}">${status}</span></td>
+    </tr>`;
+  }).join('');
+
+  const extraTh = isStudent ? '' : '<th>Department</th><th>Subjects</th>';
+
+  const classInfo = isStudent && window._csvSelectedClassName
+    ? ` · Class: <b>${window._csvSelectedClassName}</b>` : '';
+  const noClassWarn = isStudent && !window._csvSelectedClassId
+    ? ' <span style="color:var(--coral)">— select a class above</span>' : '';
+
+  cnt.textContent = '';
+  cnt.innerHTML = `${rows.length} row${rows.length!==1?'s':''} — ${valid} ready${warn?', '+warn+' warnings':''}${invalid?', '+invalid+' invalid':''}${classInfo}${noClassWarn}`;
 
   tbl.innerHTML = `<table class="data-table">
-    <thead><tr><th>#</th><th>First name</th><th>Last name</th><th>Email</th>${isStudent?'<th>Class</th>':''}<th>Status</th></tr></thead>
-    <tbody>
-      ${rows.map((r, i) => {
-        const ok = r.first_name && r.last_name && r.email && r.email.includes('@');
-        return `<tr>
-          <td style="color:var(--text-3)">${i+1}</td>
-          <td>${r.first_name||'<span style="color:var(--coral)">missing</span>'}</td>
-          <td>${r.last_name||'<span style="color:var(--coral)">missing</span>'}</td>
-          <td style="font-size:12px">${r.email||'<span style="color:var(--coral)">missing</span>'}</td>
-          ${isStudent?`<td><span class="badge badge-gray">${r.class_name||'—'}</span></td>`:''}
-          <td><span class="badge badge-${ok?'green':'coral'}">${ok?'Ready':'Invalid'}</span></td>
-        </tr>`;
-      }).join('')}
-    </tbody>
+    <thead><tr><th>#</th><th>First name</th><th>Last name</th><th>Email</th>${extraTh}<th>Status</th></tr></thead>
+    <tbody>${bodyRows}</tbody>
   </table>`;
   prev.style.display = '';
 }
@@ -4586,12 +5967,25 @@ function showCsvPreview(rows, role) {
 async function runCsvImport(role) {
   const rows = window._csvParsedRows || [];
   if (!rows.length) { notify('No data to import', 'error'); return; }
+  if (role === 'student' && !window._csvSelectedClassId) {
+    notify('Please select a class before importing', 'error');
+    document.getElementById('ci-class-select')?.focus();
+    return;
+  }
   const btn = document.getElementById('ci-import-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
   try {
-    const res = await POST('/users-bulk', { role, users: rows });
+    const payload = { role, users: rows };
+    if (role === 'student') payload.class_id = window._csvSelectedClassId;
+    const res = await POST('/users-bulk', payload);
     document.getElementById('csv-imp-modal')?.remove();
-    notify(`${res.imported} ${role}${res.imported!==1?'s':''} imported${res.skipped?' · '+res.skipped+' skipped':''}`, 'success');
+    notify(res.message || `${res.imported} ${role}(s) imported`, res.warnings > 0 ? 'info' : 'success');
+    // Show per-row warnings if any
+    if (res.errors?.length) {
+      setTimeout(() => {
+        res.errors.slice(0, 5).forEach(e => notify(e, 'info'));
+      }, 400);
+    }
     if (typeof window._csvImportCallback === 'function') window._csvImportCallback();
   } catch(e) {
     notify('Import failed: ' + e.message, 'error');
@@ -4601,12 +5995,15 @@ async function runCsvImport(role) {
 
 function downloadCsvTemplate(role, cols) {
   const isStudent = role === 'student';
-  const header    = cols;
-  const example   = isStudent
-    ? 'Kofi,Mensah,kofi@school.edu.gh,changeme123,SHS2A\nAma,Boateng,ama@school.edu.gh,changeme123,SHS2B'
-    : 'Ama,Kyereh,ama@school.edu.gh,changeme123\nKweku,Boateng,kweku@school.edu.gh,changeme123';
-  const csv  = header + '\n' + example;
-  const blob = new Blob([csv], {type:'text/csv'});
+  const firstSubj = (window._csvAvailableSubjects||[])[0]?.short || 'ICT';
+  const firstDept = (window._csvAvailableDepts||[])[0] || 'ICT Department';
+
+  const example = isStudent
+    ? `Kofi,Mensah,kofi@school.edu.gh,changeme123\nAma,Boateng,ama@school.edu.gh,changeme123`
+    : `Ama,Kyereh,ama@school.edu.gh,changeme123,${firstDept},${firstSubj}\nKweku,Boateng,kweku@school.edu.gh,changeme123,,`;
+
+  const csv  = cols + '\n' + example;
+  const blob = new Blob([csv], { type: 'text/csv' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
   a.download = `${role}_import_template.csv`;
@@ -4614,13 +6011,23 @@ function downloadCsvTemplate(role, cols) {
   notify('Template downloaded', 'success');
 }
 
-function loadASettings(m){
-  m.innerHTML=`
-<div class="topbar"><div class="topbar-title">School settings</div><div class="topbar-actions"><button class="btn btn-primary" onclick="notify('Settings saved','success')">Save changes</button></div></div>
+function loadASettings(m) {
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Settings</div></div>
+</div>
 <div class="page">
-  <div class="grid-2">
-    <div>
-      <div class="card" style="margin-bottom:16px">
+  <div class="tab-bar" style="margin-bottom:20px">
+    <button class="tab-btn active" onclick="settingsTab(this,'st-general')">General</button>
+    <button class="tab-btn" onclick="settingsTab(this,'st-subjects')">Subjects</button>
+    <button class="tab-btn" onclick="settingsTab(this,'st-notifications')">Notifications</button>
+    <button class="tab-btn" onclick="settingsTab(this,'st-security')">Security</button>
+  </div>
+
+  <!-- General tab -->
+  <div id="st-general" class="tab-pane active">
+    <div class="grid-2">
+      <div class="card">
         <div class="card-title" style="margin-bottom:16px">School information</div>
         <div class="form-group"><label class="form-label">School name</label><input class="form-input" value="Bright Future Senior High School"></div>
         <div class="form-group"><label class="form-label">Region</label>
@@ -4628,15 +6035,9 @@ function loadASettings(m){
         </div>
         <div class="form-group"><label class="form-label">GES School ID</label><input class="form-input" placeholder="GES-GR-2024-XXXX"></div>
         <div class="form-group"><label class="form-label">Contact email</label><input class="form-input" type="email" value="${CURRENT_USER?.email||'admin@school.edu.gh'}"></div>
+        <button class="btn btn-primary" style="margin-top:4px" onclick="notify('Settings saved','success')">Save changes</button>
       </div>
       <div class="card">
-        <div class="card-title" style="margin-bottom:16px">Notifications</div>
-        ${[['Email alerts for at-risk students',true],['SMS for test results (Hubtel)',false],['Weekly digest to headmaster',true],['Parent SMS notifications',false]].map(([l,v])=>`
-        <div class="settings-row"><div style="font-size:14px;font-weight:600">${l}</div><label class="switch"><input type="checkbox" ${v?'checked':''}><span class="switch-slider"></span></label></div>`).join('')}
-      </div>
-    </div>
-    <div>
-      <div class="card" style="margin-bottom:16px">
         <div class="card-title" style="margin-bottom:16px">Subscription plan</div>
         <div class="grid-2" style="margin-bottom:16px">
           <div class="payment-plan"><div class="plan-name">Free</div><div class="plan-price" style="font-size:20px">GHS 0</div><div class="plan-feature">✓ 1 teacher · 50 students</div><div class="plan-feature" style="color:var(--text-3)">✗ Analytics</div></div>
@@ -4645,55 +6046,177 @@ function loadASettings(m){
         <div class="info-box green">Current plan: School · Paid via MoMo · GHS 250/month</div>
         <button class="btn btn-secondary" style="width:100%;margin-top:12px;justify-content:center" onclick="notify('Opening Paystack payment portal...','success')">Change plan / payment method</button>
       </div>
-      <div class="card">
-        <div class="card-title" style="margin-bottom:16px">Security</div>
-        ${[['Require 2FA for teacher accounts',false],['Session timeout after 30 min',true],['Allow test retakes',true],['Show class rankings to students',false]].map(([l,v])=>`
-        <div class="settings-row"><div style="font-size:14px;font-weight:600">${l}</div><label class="switch"><input type="checkbox" ${v?'checked':''}><span class="switch-slider"></span></label></div>`).join('')}
-      </div>
+    </div>
+  </div>
+
+  <!-- Subjects tab — loaded lazily on first click -->
+  <div id="st-subjects" class="tab-pane" style="display:none"></div>
+
+  <!-- Notifications tab -->
+  <div id="st-notifications" class="tab-pane" style="display:none">
+    <div class="card" style="max-width:520px">
+      <div class="card-title" style="margin-bottom:16px">Notifications</div>
+      ${[['Email alerts for at-risk students',true],['SMS for test results (Hubtel)',false],['Weekly digest to headmaster',true],['Parent SMS notifications',false]].map(([l,v])=>`
+      <div class="settings-row"><div style="font-size:14px;font-weight:600">${l}</div><label class="switch"><input type="checkbox" ${v?'checked':''}><span class="switch-slider"></span></label></div>`).join('')}
+    </div>
+  </div>
+
+  <!-- Security tab -->
+  <div id="st-security" class="tab-pane" style="display:none">
+    <div class="card" style="max-width:520px">
+      <div class="card-title" style="margin-bottom:16px">Security</div>
+      ${[['Require 2FA for teacher accounts',false],['Session timeout after 30 min',true],['Allow test retakes',true],['Show class rankings to students',false]].map(([l,v])=>`
+      <div class="settings-row"><div style="font-size:14px;font-weight:600">${l}</div><label class="switch"><input type="checkbox" ${v?'checked':''}><span class="switch-slider"></span></label></div>`).join('')}
     </div>
   </div>
 </div>`;
 }
 
+function settingsTab(btn, tabId) {
+  switchTab(btn, tabId);
+  if (tabId === 'st-subjects') {
+    const pane = document.getElementById('st-subjects');
+    if (pane && !pane.dataset.loaded) {
+      pane.dataset.loaded = '1';
+      loadASubjects(pane, true);
+    }
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 // MODALS
 // ════════════════════════════════════════════════════════════
-async function openStudentDetail(id){
-  document.getElementById('sd-title').textContent='Loading profile...';
-  document.getElementById('sd-body').innerHTML=panelLoader();
+async function openStudentDetail(id) {
+  document.getElementById('sd-title').textContent = 'Loading profile...';
+  document.getElementById('sd-body').innerHTML = panelLoader();
   openModal('student-detail-modal');
 
-  let s=null;
-  try{s=await GET(`/students/${id}`);}catch(e){}
-  if(!s)s=MOCK_STUDENTS.find(x=>x.id===id)||MOCK_STUDENTS[0];
+  let s = null;
+  try { s = await GET(`/students/${id}`); } catch(e) {}
+  if (!s) { document.getElementById('sd-body').innerHTML = '<div class="info-box red">Could not load student profile.</div>'; return; }
 
-  const ov=Math.round(s.avg_pct||avg(s.sc||{s1ss1:50,s1ss2:50,s1ss3:50,s2ss1:50,s2ss2:50}));
-  document.getElementById('sd-title').textContent=fullName(s)+' — Profile';
-  document.getElementById('sd-body').innerHTML=`
-<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">
-  <div class="user-avatar" style="background:${s.avatar_color||'var(--teal)'};width:56px;height:56px;font-size:18px">${initials(s)}</div>
-  <div>
-    <div style="font-size:18px;font-weight:800">${fullName(s)}</div>
-    <div style="font-size:13px;color:var(--text-3)">${s.class_name||'—'} · ${s.tests_done||0} tests · ${s.current_streak||0}-day streak</div>
-    <div style="margin-top:4px"><span class="badge badge-${s.risk||ov<50?'coral':ov>=65?'green':'amber'}">${s.risk||ov<50?'At risk':ov>=65?'On track':'Monitor'}</span></div>
+  const ov      = Math.round(parseFloat(s.avg_pct) || 0);
+  const streak  = s.streak?.current_streak ?? 0;
+  const subjPerf = s.subject_performance || [];
+  const subjects = s.subjects || [];
+  const attempts = s.recent_attempts || [];
+
+  document.getElementById('sd-title').textContent = `${s.first_name} ${s.last_name} — Profile`;
+
+  // ── Header ────────────────────────────────────────────────
+  const statusLabel = ov < 50 ? 'At risk' : ov >= 65 ? 'On track' : 'Monitor';
+  const statusBadge = ov < 50 ? 'coral' : ov >= 65 ? 'green' : 'amber';
+  const yearLabel   = s.year_group ? `Year ${s.year_group}` : '';
+
+  // ── Overview tab ──────────────────────────────────────────
+
+  // Subject performance bars (one bar per subject)
+  const subjBars = subjPerf.length ? subjPerf.map(sp => {
+    const pct = Math.round(parseFloat(sp.avg_pct) || 0);
+    const best = Math.round(parseFloat(sp.best_pct) || 0);
+    return `
+    <div style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:13px;font-weight:600">${sp.subject_name}</span>
+        <span style="font-size:12px;color:var(--text-3)">${sp.tests_done} test${sp.tests_done!=1?'s':''} · best ${best}%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="bar-track" style="flex:1"><div class="bar-fill ${pct<50?'coral':pct<65?'amber':''}" style="width:${pct}%"></div></div>
+        <span style="font-size:13px;font-weight:700;color:${col(pct)};width:38px;text-align:right">${pct}%</span>
+      </div>
+    </div>`;
+  }).join('') : '<div style="color:var(--text-3);font-size:13px">No test results yet.</div>';
+
+  // Subjects enrolled list
+  const subjList = subjects.length ? subjects.map(sub => {
+    const perf = subjPerf.find(p => p.subject_id == sub.subject_id);
+    const pct  = perf ? Math.round(parseFloat(perf.avg_pct)||0) : null;
+    return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <span style="font-size:13px;font-weight:600">${sub.subject_name}</span>
+        ${sub.group_tag ? `<span class="badge badge-blue" style="margin-left:6px;font-size:10px">${sub.group_tag}</span>` : ''}
+        <div style="font-size:11px;color:var(--text-3)">${sub.category}</div>
+      </div>
+      ${pct !== null
+        ? `<span style="font-weight:700;color:${col(pct)}">${pct}%</span>`
+        : `<span style="font-size:11px;color:var(--text-3)">No attempts</span>`}
+    </div>`;
+  }).join('') : '<div style="color:var(--text-3);font-size:13px">No subjects assigned to this class yet.</div>';
+
+  // ── History tab ───────────────────────────────────────────
+  const histRows = attempts.length ? attempts.map(a => {
+    const pct  = Math.round(parseFloat(a.pct_score) || 0);
+    const pass = pct >= 50;
+    const subj = a.subject_short || a.subject_name || '—';
+    return `<tr>
+      <td><span style="font-weight:600;font-size:13px">${a.title}</span></td>
+      <td>${a.subject_name ? `<span class="badge badge-blue" style="font-size:10px">${subj}</span>` : '<span style="color:var(--text-3)">—</span>'}</td>
+      <td><span class="badge badge-gray" style="font-size:10px">${a.type||'quiz'}</span></td>
+      <td><span style="font-weight:700;color:${col(pct)}">${pct}%</span>
+          <span style="font-size:11px;color:var(--text-3);margin-left:4px">${a.raw_score||0}/${a.max_score||0}</span></td>
+      <td><span class="badge badge-${pass?'green':'coral'}" style="font-size:10px">${pass?'Pass':'Fail'}</span></td>
+      <td style="color:var(--text-3);font-size:12px">${fmtDate(a.submitted_at)}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px">No test results yet.</td></tr>';
+
+  document.getElementById('sd-body').innerHTML = `
+  <!-- Header -->
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+    <div class="user-avatar" style="background:${s.avatar_color||'var(--teal)'};width:56px;height:56px;font-size:20px;flex-shrink:0">${initials(s)}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:18px;font-weight:800">${s.first_name} ${s.last_name}</div>
+      <div style="font-size:13px;color:var(--text-3);margin-top:2px">
+        ${s.class_name ? `<b style="color:var(--text-2)">${s.class_name}</b>${yearLabel ? ' · '+yearLabel : ''}` : 'No class assigned'}
+        · ${s.tests_done||0} test${(s.tests_done||0)!=1?'s':''} done · ${streak}-day streak 🔥
+      </div>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+        <span class="badge badge-${statusBadge}">${statusLabel}</span>
+        ${subjects.slice(0,4).map(sub=>`<span class="badge badge-blue" style="font-size:10px">${sub.short_name||sub.subject_name}</span>`).join('')}
+        ${subjects.length>4?`<span class="badge badge-gray" style="font-size:10px">+${subjects.length-4} more</span>`:''}
+      </div>
+    </div>
+    <div style="text-align:center;flex-shrink:0">
+      <div style="font-size:38px;font-weight:900;line-height:1;color:${col(ov)}">${ov}%</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:2px">Overall average</div>
+    </div>
   </div>
-  <div style="margin-left:auto;text-align:center">
-    <div style="font-size:36px;font-weight:800;color:${col(ov)}">${ov}%</div>
-    <div style="font-size:12px;color:var(--text-3)">Overall average</div>
+
+  <!-- Stats row -->
+  <div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    <div class="stat-card"><div class="label">Avg score</div><div class="value" style="color:${col(ov)}">${ov}%</div></div>
+    <div class="stat-card"><div class="label">Tests done</div><div class="value">${s.tests_done||0}</div></div>
+    <div class="stat-card"><div class="label">Subjects</div><div class="value">${subjects.length}</div></div>
+    <div class="stat-card"><div class="label">Streak</div><div class="value" style="color:var(--purple)">${streak} days</div></div>
   </div>
-</div>
-<div class="bar-chart">
-  ${(s.substrand_avg||Object.entries(s.sc||{}).map(([k,v])=>({sub_strand:k.toUpperCase(),avg_pct:v}))).map(r=>{const v=Math.round(r.avg_pct||0);return`
-  <div class="bar-row"><div class="bar-label" style="width:130px">${r.sub_strand}</div>
-  <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
-  <div class="bar-val" style="color:${col(v)}">${v}%</div></div>`;}).join('')}
-</div>
-${s.recent_attempts?.length?`<div class="divider"></div>
-<div style="font-size:13px;font-weight:700;margin-bottom:8px">Recent results</div>
-${s.recent_attempts.map(a=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-  <span style="font-size:13px">${a.title}</span>
-  <b style="color:${col(Math.round(a.pct_score))}">${Math.round(a.pct_score)}%</b>
-</div>`).join('')}`:''}`;
+
+  <!-- Tabs -->
+  <div class="tab-bar" style="margin-bottom:0">
+    <button class="tab-btn active" onclick="switchTab(this,'sd-overview')">Overview</button>
+    <button class="tab-btn" onclick="switchTab(this,'sd-history')">Test history (${attempts.length})</button>
+  </div>
+
+  <!-- Overview tab -->
+  <div id="sd-overview" class="tab-pane active" style="padding-top:16px">
+    <div class="grid-2" style="align-items:start;gap:20px">
+      <div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px">Subjects enrolled</div>
+        <div>${subjList}</div>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px">Performance by subject</div>
+        ${subjBars}
+      </div>
+    </div>
+  </div>
+
+  <!-- History tab -->
+  <div id="sd-history" class="tab-pane" style="padding-top:16px">
+    <table class="data-table">
+      <thead><tr><th>Test</th><th>Subject</th><th>Type</th><th>Score</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody>${histRows}</tbody>
+    </table>
+  </div>`;
 }
 
 function openMarkingById(answerId,maxMarks,studentName,subStrand,essayText,aiNote){
@@ -4848,7 +6371,7 @@ function openNewQBuilder() {
   const title = document.querySelector('#qbuilder-modal .modal-title');
   if (title) title.textContent = 'New question';
   openModal('qbuilder-modal');
-  populateSubjectDropdowns(null);
+  populateSubjectDropdowns(TCTX.subject_id || null);
 }
 
 async function saveQuestion(){
@@ -5787,6 +7310,7 @@ async function loadBankForCreate(loadMore = false) {
 
   try {
     const params = { limit };
+    if (TCTX.subject_id) params.subject_id = TCTX.subject_id;  // scope to context subject
     if (search) params.search = search;
     if (sub)    params.sub_strand = sub;
     if (diff)   params.difficulty = diff;
@@ -6314,7 +7838,7 @@ function goApp(role) {
   showScreen(role+'-app');
   updateSidebarUser(role);
   if(role==='student') sRender('dashboard');
-  else if(role==='teacher') tRender('dashboard');
+  else if(role==='teacher') { tRender('dashboard'); setTimeout(initTeacherContext, 400); }
   else aRender('overview');
   setTimeout(initCurriculumSelects, 600);
 }
@@ -6332,6 +7856,7 @@ async function loadBankQuestions() {
     const strand = strandEl?.value || null;
 
     const params = { limit: 60 };
+    if (TCTX.subject_id) params.subject_id = TCTX.subject_id;   // scope to current subject
     if (bankFilter.sub && bankFilter.sub !== 'all') params.sub_strand = bankFilter.sub;
     if (bankFilter.diff && bankFilter.diff !== 'all') params.difficulty = bankFilter.diff;
     if (bankFilter.search) params.search = bankFilter.search;
