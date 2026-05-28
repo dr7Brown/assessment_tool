@@ -2034,73 +2034,161 @@ async function loadPractice(m) {
 // ── Performance ────────────────────────────────────────────────
 async function loadPerformance(m) {
   let data = null;
-  const perfParams = SCTX.subject_id ? { subject_id: SCTX.subject_id } : {};
+  const perfParams = {};
+  if (SCTX.subject_id)    perfParams.subject_id    = SCTX.subject_id;
+  if (SCTX.academic_year) { perfParams.academic_year = SCTX.academic_year; if (SCTX.semester) perfParams.semester = SCTX.semester; }
   try { data = await GET('/students/dashboard', perfParams); } catch(e) {}
 
-  const stats  = data?.stats || {};
-  const avgPct = stats.avg_pct != null ? Math.round(stats.avg_pct) : 0;
-  const streak = data?.streak?.current_streak ?? 0;
-  const best   = stats.best_pct != null ? Math.round(stats.best_pct) : 0;
-  const subjName = SCTX.subject_name || '';
+  const stats     = data?.stats       || {};
+  const avgPct    = stats.avg_pct  != null ? Math.round(stats.avg_pct)  : 0;
+  const streak    = data?.streak?.current_streak ?? 0;
+  const best      = stats.best_pct != null ? Math.round(stats.best_pct) : 0;
+  const subjName  = SCTX.subject_name || '';
+  const rank      = data?.class_rank;
+  const compRate  = data?.completion_rate ?? 0;
+  const testsDone = stats.tests_done || 0;
+  const semStats  = data?.semester_stats  || [];
+  const typeStats = data?.type_stats      || [];
+  const bloomData = data?.bloom_stats     || [];
+  const history   = data?.test_history    || [];
 
-  let subRows = '';
-  if (data?.substrand_avg?.length) {
-    subRows = data.substrand_avg.map(r=>{const v=Math.round(r.avg_pct||0);return`
-    <div class="bar-row"><div class="bar-label" style="width:200px">${r.sub_strand}</div>
-    <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
-    <div class="bar-val" style="color:${col(v)}">${v}%</div>
-    <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="startPractice('${r.sub_strand}')">Practice</button>
-    </div>`;}).join('');
-  } else {
-    subRows = `<div style="color:var(--text-3);font-size:13px;padding:8px 0">No topic data yet${subjName?' for '+subjName:''}. Complete some tests to see your breakdown.</div>`;
-  }
-
-  const wPct = !subjName && data?.substrand_avg?.length
-    ? wassceReadiness({a:data.substrand_avg[0]?.avg_pct||0,b:data.substrand_avg[1]?.avg_pct||0,c:data.substrand_avg[2]?.avg_pct||0,d:data.substrand_avg[3]?.avg_pct||0,e:data.substrand_avg[4]?.avg_pct||0})
-    : 0;
+  // WASSCE readiness
+  const wPct   = !subjName && data?.substrand_avg?.length
+    ? wassceReadiness({a:data.substrand_avg[0]?.avg_pct||0,b:data.substrand_avg[1]?.avg_pct||0,c:data.substrand_avg[2]?.avg_pct||0,d:data.substrand_avg[3]?.avg_pct||0,e:data.substrand_avg[4]?.avg_pct||0}) : 0;
   const wGrade = wassceGrade(wPct);
+
+  // Sub-strand / topic bars
+  const subRows = (data?.substrand_avg?.length)
+    ? data.substrand_avg.map(r=>{const v=Math.round(r.avg_pct||0);return`
+      <div class="bar-row"><div class="bar-label" style="width:200px">${r.sub_strand}</div>
+      <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
+      <div class="bar-val" style="color:${col(v)}">${v}%</div>
+      <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="startPractice('${r.sub_strand}')">Practice</button>
+      </div>`;}).join('')
+    : `<div style="color:var(--text-3);font-size:13px;padding:8px 0">No topic data yet. Complete some tests to see your breakdown.</div>`;
+
+  // Subject bars (when no subject selected)
+  const subjRows = (!subjName && data?.subject_avg?.length)
+    ? data.subject_avg.map(r=>{const v=Math.round(r.avg_pct||0);return`
+      <div class="bar-row">
+        <div class="bar-label" style="width:180px">${r.subject_short||r.subject_name}</div>
+        <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
+        <div class="bar-val" style="color:${col(v)}">${v}%</div>
+        <span style="font-size:11px;color:var(--text-3);margin-left:8px">${r.attempt_count} test${r.attempt_count!=1?'s':''}</span>
+      </div>`;}).join('')
+    : '';
+
+  // Question type accuracy
+  const TYPE_N = {mcq:'MCQ',multi:'Multi-select',short:'Short answer',essay:'Essay','fill-in':'Fill in',tf:'True/False'};
+  const typeRows = typeStats.length
+    ? typeStats.map(t=>{const v=Math.round(t.accuracy_pct||0);return`
+      <div class="bar-row">
+        <div class="bar-label" style="width:140px">${TYPE_N[t.type]||t.type}</div>
+        <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
+        <div class="bar-val" style="color:${col(v)}">${v}%</div>
+        <span style="font-size:11px;color:var(--text-3);margin-left:8px">${t.total_answers} answers</span>
+      </div>`;}).join('')
+    : `<div style="color:var(--text-3);font-size:12px;padding:8px 0">No data yet.</div>`;
+
+  // Bloom's bars (real data)
+  const BLOOM_ORDER = ['Remember','Understand','Apply','Analyse','Evaluate','Create'];
+  const bloomRows = bloomData.length
+    ? BLOOM_ORDER.map(level=>{
+        const d = bloomData.find(b=>b.bloom_level===level);
+        if (!d) return '';
+        const v = Math.round(d.avg_pct||0);
+        return `<div class="bar-row">
+          <div class="bar-label">${level}</div>
+          <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
+          <div class="bar-val" style="color:${col(v)}">${v}%</div>
+          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${d.total} Qs</span>
+        </div>`;
+      }).join('')
+    : `<div style="color:var(--text-3);font-size:12px;padding:8px 0">No Bloom's data yet. Answer more questions to see your cognitive profile.</div>`;
+
+  // Semester comparison
+  const semRows = semStats.length
+    ? semStats.map(s=>{const v=Math.round(s.avg_pct||0);const pr=s.pass_count&&s.tests_done?Math.round(s.pass_count/s.tests_done*100):0;return`
+      <tr>
+        <td><b>${s.academic_year}</b></td>
+        <td><span class="badge badge-${s.semester==1?'blue':'purple'}" style="font-size:10px">Sem ${s.semester}</span></td>
+        <td>${s.tests_done}</td>
+        <td><span style="color:${col(v)};font-weight:700">${v}%</span></td>
+        <td><span class="badge badge-${pr>=50?'green':'coral'}" style="font-size:10px">${pr}% pass rate</span></td>
+      </tr>`;}).join('')
+    : `<tr><td colspan="5" style="color:var(--text-3);text-align:center">No historical data yet.</td></tr>`;
 
   m.innerHTML = `
 <div class="topbar">
-  <div><div class="topbar-title">My performance</div>
-  <div class="topbar-sub">${subjName ? `<span class="badge badge-blue" style="font-size:11px">${subjName}</span>` : 'All subjects'}</div></div>
-  <div class="topbar-actions"><button class="btn btn-secondary" onclick="printCurrentPage('My Performance','perf-page')">🖨 Print</button></div>
+  <div>
+    <div class="topbar-title">My performance</div>
+    <div class="topbar-sub">${subjName?`<span class="badge badge-blue" style="font-size:11px">${subjName}</span>`:''} ${SCTX.period_label && SCTX.period_label!=='Current period'?`<span class="badge badge-amber" style="font-size:11px">${SCTX.period_label}</span>`:''}</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="printCurrentPage('My Performance','perf-page')">🖨 Print</button>
+  </div>
 </div>
 <div class="page" id="perf-page">
-  <div class="stats-row">
-    <div class="stat-card"><div class="label">Average score</div><div class="value" style="color:${pctCol(avgPct)}">${avgPct}%</div><div class="trend">${subjName||'All tests'}</div></div>
-    <div class="stat-card"><div class="label">Best score</div><div class="value" style="color:${pctCol(best)}">${best}%</div></div>
-    ${!subjName ? `<div class="stat-card"><div class="label">WASSCE grade</div><div class="value" style="color:${wGrade.c}">${wGrade.g}</div><div class="trend">${wPct}% readiness</div></div>` :
-      `<div class="stat-card"><div class="label">Tests done</div><div class="value">${stats.tests_done||0}</div><div class="trend">in ${subjName}</div></div>`}
-    <div class="stat-card"><div class="label">Study streak</div><div class="value" style="color:var(--purple)">${streak}</div><div class="trend">days</div></div>
+
+  <!-- Key stats -->
+  <div class="stats-row" style="margin-bottom:20px">
+    <div class="stat-card"><div class="label">Average score</div><div class="value" style="color:${pctCol(avgPct)}">${avgPct}%</div><div class="trend">${subjName||'All subjects'}</div></div>
+    <div class="stat-card"><div class="label">Best score</div><div class="value" style="color:var(--green)">${best}%</div><div class="trend">${testsDone} test${testsDone!==1?'s':''} done</div></div>
+    ${!subjName?`<div class="stat-card"><div class="label">WASSCE forecast</div><div class="value" style="color:${wGrade.c}">${wGrade.g}</div><div class="trend">${wPct}% readiness</div></div>`
+               :`<div class="stat-card"><div class="label">Completion rate</div><div class="value">${compRate}%</div><div class="trend">${testsDone} done / ${data?.assigned_count||0} assigned</div></div>`}
+    <div class="stat-card"><div class="label">Study streak</div><div class="value" style="color:var(--purple)">${streak}</div><div class="trend">days in a row</div></div>
+    ${rank?`<div class="stat-card"><div class="label">Class rank</div><div class="value" style="color:${rank.rank<=3?'var(--green)':'var(--text-1)'}">#${rank.rank}</div><div class="trend">of ${rank.total} · top ${100-rank.percentile+1}%</div></div>`:''}
   </div>
+
+  <!-- Progress + radar -->
   <div class="grid-2" style="margin-bottom:16px">
     <div class="card">
-      <div class="card-title" style="margin-bottom:16px">Progress over time</div>
-      <canvas id="progress-chart" height="180"></canvas>
+      <div class="card-header"><div class="card-title">Score trend</div><div class="card-sub">${history.length} tests</div></div>
+      ${history.length?`<canvas id="progress-chart" height="160"></canvas>`
+        :`<div style="color:var(--text-3);font-size:13px;padding:20px;text-align:center">No test history yet — complete tests to see your progress.</div>`}
     </div>
     <div class="card">
-      <div class="card-title" style="margin-bottom:16px">Sub-strand radar profile</div>
-      <canvas id="radar-chart" width="260" height="220" style="display:block;margin:0 auto"></canvas>
+      <div class="card-header"><div class="card-title">Topic radar</div></div>
+      ${data?.substrand_avg?.length?`<canvas id="radar-chart" width="260" height="200" style="display:block;margin:0 auto"></canvas>`
+        :`<div style="color:var(--text-3);font-size:13px;padding:20px;text-align:center">Answer more questions to build your radar profile.</div>`}
     </div>
   </div>
+
+  <!-- Per-subject (when no subject filter) + topic breakdown -->
+  ${subjRows?`<div class="card" style="margin-bottom:16px">
+    <div class="card-header"><div class="card-title">Performance by subject</div></div>
+    <div class="bar-chart">${subjRows}</div>
+  </div>`:''}
+
   <div class="card" style="margin-bottom:16px">
-    <div class="card-header"><div class="card-title">${subjName ? 'Topic breakdown — '+subjName : 'Sub-strand breakdown'}</div></div>
+    <div class="card-header"><div class="card-title">${subjName?subjName+' — topic breakdown':'Sub-strand breakdown'}</div></div>
     <div class="bar-chart">${subRows}</div>
-    <div class="info-box ${wGrade.c.includes('green')?'green':wGrade.c.includes('amber')?'amber':'coral'}" style="margin-top:12px">
-      WASSCE prediction: <b>${wGrade.g}</b> — ${wGrade.tip}
+    ${!subjName?`<div class="info-box ${wPct>=65?'green':wPct>=50?'amber':'coral'}" style="margin-top:12px">WASSCE prediction: <b>${wGrade.g}</b> — ${wGrade.tip}</div>`:''}
+  </div>
+
+  <!-- Question type + Bloom's side by side -->
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-header"><div class="card-title">Accuracy by question type</div></div>
+      <div class="bar-chart">${typeRows}</div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Bloom's cognitive level</div></div>
+      <div class="bar-chart">${bloomRows}</div>
     </div>
   </div>
+
+  <!-- Semester comparison -->
   <div class="card">
-    <div class="card-header"><div class="card-title">Bloom's level breakdown</div></div>
-    <div class="bar-chart">
-      ${[["Remember",88,""],["Understand",76,""],["Apply",62,"amber"],["Analyse",45,"coral"]].map(([l,v,c])=>`
-      <div class="bar-row"><div class="bar-label">${l}</div><div class="bar-track"><div class="bar-fill ${c}" style="width:${v}%"></div></div>
-      <div class="bar-val" style="color:${c?'var(--'+c+')':'var(--text-2)'}">${v}%</div></div>`).join('')}
-    </div>
-    <div class="info-box amber" style="margin-top:12px">Strong at recall, weaker at application. Focus on WASSCE scenario-analysis questions.</div>
+    <div class="card-header"><div class="card-title">Performance by semester</div></div>
+    <table class="data-table">
+      <thead><tr><th>Academic year</th><th>Semester</th><th>Tests done</th><th>Avg score</th><th>Pass rate</th></tr></thead>
+      <tbody>${semRows}</tbody>
+    </table>
   </div>
 </div>`;
+  window._perfHistory = history;
+  window._perfSubstrands = data?.substrand_avg || [];
   setTimeout(()=>{drawProgress();drawRadar();},100);
 }
 
@@ -3957,11 +4045,13 @@ async function mkSaveAll(nextTarget) {
 
 async function loadTAnalytics(m) {
   m.innerHTML = panelLoader();
-  const subjParams = TCTX.subject_id ? { subject_id: TCTX.subject_id } : {};
+  const aParams = {};
+  if (TCTX.subject_id)    aParams.subject_id    = TCTX.subject_id;
+  if (TCTX.academic_year) { aParams.academic_year = TCTX.academic_year; if (TCTX.semester) aParams.semester = TCTX.semester; }
 
   let classes = [], analytics = null;
   try {
-    [classes, analytics] = await Promise.all([GET('/classes'), GET('/analytics/school', subjParams)]);
+    [classes, analytics] = await Promise.all([GET('/classes'), GET('/analytics/school', aParams)]);
   } catch(e) {}
   classes   = classes   || [];
   analytics = analytics || {};
@@ -3975,6 +4065,16 @@ async function loadTAnalytics(m) {
       ).join('')}</optgroup>`
     ).join('');
 
+  // Collect available periods for the period selector
+  const allPeriods = TCTX.available_periods || [];
+  const periodOpts = [`<option value="">All periods</option>`,
+    ...allPeriods.map(p=>{
+      const val=`${p.academic_year}|${p.semester}`;
+      const sel=TCTX.academic_year===p.academic_year&&TCTX.semester==p.semester?'selected':'';
+      return `<option value="${val}" ${sel}>${p.academic_year} · Sem ${p.semester}</option>`;
+    })
+  ].join('');
+
   m.innerHTML = `
 <div class="topbar">
   <div>
@@ -3982,8 +4082,9 @@ async function loadTAnalytics(m) {
     <div class="topbar-sub" id="ta-subtitle">${TCTX.subject_name?`<span class="badge badge-green" style="font-size:11px">${TCTX.subject_name}</span>`:''}</div>
   </div>
   <div class="topbar-actions">
+    <select class="form-select" style="width:170px" onchange="taChangePeriod(this.value)">${periodOpts}</select>
     <select class="form-select" id="ta-cls-sel" style="width:190px" onchange="taChange(this.value)">${clsOpts}</select>
-    <button class="btn btn-secondary" onclick="printCurrentPage('Analytics','ta-page','Teacher analytics')">🖨 Print</button>
+    <button class="btn btn-secondary" onclick="printCurrentPage('Analytics','ta-page')">🖨 Print</button>
   </div>
 </div>
 <div class="page" id="ta-page">
@@ -3994,10 +4095,26 @@ async function loadTAnalytics(m) {
   await taRender(TCTX.class_id || null, classes, analytics);
 }
 
+function taChangePeriod(val) {
+  if (val) {
+    const [ay, sem] = val.split('|');
+    TCTX.academic_year = ay || null;
+    TCTX.semester = sem ? parseInt(sem) : null;
+  } else {
+    TCTX.academic_year = null; TCTX.semester = null;
+  }
+  tCtxReload();
+}
+
 async function taChange(classId) {
   let analytics = null;
-  const subjParams = TCTX.subject_id ? { subject_id: TCTX.subject_id } : {};
-  try { analytics = await GET('/analytics/school', subjParams); } catch(e) {}
+  const aParams = {};
+  if (TCTX.subject_id)    aParams.subject_id    = TCTX.subject_id;
+  if (TCTX.academic_year) { aParams.academic_year = TCTX.academic_year; if (TCTX.semester) aParams.semester = TCTX.semester; }
+  // For admin, use global period filter
+  if (window._aAnalyticsSem)  aParams.semester      = window._aAnalyticsSem;
+  if (window._aAnalyticsYear) aParams.academic_year = window._aAnalyticsYear;
+  try { analytics = await GET('/analytics/school', aParams); } catch(e) {}
   await taRender(parseInt(classId)||null, TCTX.classes.length ? TCTX.classes : [], analytics);
 }
 
@@ -4049,14 +4166,52 @@ async function taRender(classId, classes, analytics) {
       </tr>`;
     }).join('');
 
-    bodyEl.innerHTML = classRows ? `
-    <div class="card">
+    // Per-subject breakdown (when no subject filter)
+    const bySubject = analytics?.by_subject || [];
+    const subjHtml = (!TCTX.subject_id && bySubject.length) ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Performance by subject</div></div>
+      <div class="bar-chart">${bySubject.map(s=>{const v=Math.round(parseFloat(s.avg_pct)||0);return`
+        <div class="bar-row">
+          <div class="bar-label" style="width:150px">${s.subject_short||s.subject_name}</div>
+          <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
+          <div class="bar-val" style="color:${col(v)}">${v}%</div>
+          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${s.test_count} test${s.test_count!=1?'s':''} · ${s.student_count} students</span>
+        </div>`;}).join('')}
+      </div>
+    </div>` : '';
+
+    // Test stats (when viewing teacher-specific analytics)
+    const testStats = analytics?.test_stats || [];
+    const testHtml = testStats.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Recent test performance</div></div>
+      <table class="data-table">
+        <thead><tr><th>Test</th><th>Period</th><th>Students</th><th>Avg score</th><th>Pass rate</th></tr></thead>
+        <tbody>${testStats.map(t=>{
+          const avg=Math.round(parseFloat(t.avg_pct)||0);
+          const pr=t.pass_count&&t.attempts?Math.round(t.pass_count/t.attempts*100):0;
+          return`<tr>
+            <td><b>${t.title}</b></td>
+            <td style="font-size:11px;color:var(--text-3)">${t.academic_year?`${t.academic_year} S${t.semester||'—'}`:'—'}</td>
+            <td>${t.attempts}</td>
+            <td><span style="color:${col(avg)};font-weight:700">${avg}%</span></td>
+            <td><span class="badge badge-${pr>=50?'green':'coral'}" style="font-size:10px">${pr}%</span></td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+    bodyEl.innerHTML = (classRows || subjHtml || testHtml) ? `
+    ${subjHtml}
+    ${classRows ? `<div class="card" style="margin-bottom:16px">
       <div class="card-header"><div class="card-title">Class performance</div></div>
       <table class="data-table">
         <thead><tr><th>Class</th><th>Year</th><th>Students</th><th>Average</th><th></th></tr></thead>
         <tbody>${classRows}</tbody>
       </table>
-    </div>` : `<div class="info-box blue">No analytics yet. Publish tests and have students complete them to see class results.</div>`;
+    </div>` : ''}
+    ${testHtml}` : `<div class="info-box blue">No analytics yet. Publish tests and have students complete them to see results.</div>`;
 
   } else {
     // ── Single class view ─────────────────────────────────────
@@ -5227,26 +5382,153 @@ async function apSavePeriod() {
 
 async function loadAAnalytics(m) {
   m.innerHTML = panelLoader();
-  let classes = [], analytics = null;
+  const aParams = {};
+  if (window._aAnalyticsSem)  aParams.semester = window._aAnalyticsSem;
+  if (window._aAnalyticsYear) aParams.academic_year = window._aAnalyticsYear;
+
+  let classes = [], analytics = null, teacherData = null;
   try {
-    [classes, analytics] = await Promise.all([
+    [classes, analytics, teacherData] = await Promise.all([
       GET('/classes'),
-      GET('/analytics/school')
+      GET('/analytics/school', aParams),
+      GET('/analytics/teachers', aParams)
     ]);
   } catch(e) {}
+
+  const allPeriods = (teacherData?.semTrend || []);
+  const periodPills = [`<span class="tag${!window._aAnalyticsSem&&!window._aAnalyticsYear?' active':''}" onclick="aAnalyticsPeriod(null,null)" style="cursor:pointer">All time</span>`,
+    ...allPeriods.map(p=>{
+      const active = window._aAnalyticsSem==p.semester && window._aAnalyticsYear===p.academic_year ? ' active' : '';
+      return `<span class="tag${active}" onclick="aAnalyticsPeriod(${p.semester},'${p.academic_year}')" style="cursor:pointer">${p.academic_year} S${p.semester}</span>`;
+    })
+  ].join('');
+
   m.innerHTML = `
 <div class="topbar">
-  <div><div class="topbar-title">School analytics</div>
-  <div class="topbar-sub">All subjects · All teachers</div></div>
+  <div>
+    <div class="topbar-title">School analytics</div>
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${periodPills}</div>
+  </div>
   <div class="topbar-actions">
-    <button class="btn btn-secondary" onclick="printCurrentPage('School Analytics','a-main')">🖨 Print</button>
+    <button class="btn btn-secondary" onclick="printCurrentPage('School Analytics','aa-page')">🖨 Print</button>
   </div>
 </div>
-<div class="page" id="ta-page">
-  <div id="ta-stats" class="stats-row" style="margin-bottom:20px"></div>
-  <div id="ta-body"></div>
+<div class="page" id="aa-page">
+  <div class="tab-bar" style="margin-bottom:20px">
+    <button class="tab-btn active" onclick="switchTab(this,'aa-school')">School overview</button>
+    <button class="tab-btn" onclick="switchTab(this,'aa-teachers')">Teacher analytics</button>
+    <button class="tab-btn" onclick="switchTab(this,'aa-subjects')">By subject</button>
+  </div>
+
+  <!-- School overview tab -->
+  <div id="aa-school" class="tab-pane active">
+    <div id="ta-stats" class="stats-row" style="margin-bottom:20px"></div>
+    <div id="ta-body"></div>
+  </div>
+
+  <!-- Teacher analytics tab -->
+  <div id="aa-teachers" class="tab-pane" style="display:none">
+    ${renderTeacherAnalytics(teacherData)}
+  </div>
+
+  <!-- By subject tab -->
+  <div id="aa-subjects" class="tab-pane" style="display:none">
+    ${renderSubjectAnalytics(analytics?.by_subject || [])}
+  </div>
 </div>`;
+
   await taRender(null, classes || [], analytics);
+}
+
+function aAnalyticsPeriod(sem, year) {
+  window._aAnalyticsSem  = sem;
+  window._aAnalyticsYear = year;
+  loadAAnalytics(document.getElementById('a-main'));
+}
+
+function renderTeacherAnalytics(data) {
+  if (!data) return '<div class="info-box blue">Loading teacher analytics…</div>';
+  const teachers = data.teachers || [];
+  const school   = data.schoolAvg || {};
+  const schoolAvg = Math.round(parseFloat(school.avg_pct)||0);
+  if (!teachers.length) return '<div class="info-box blue">No teacher analytics yet. Teachers need to publish tests and have students attempt them.</div>';
+  const rows = teachers.map(t => {
+    const avg = Math.round(parseFloat(t.avg_pct)||0);
+    const pr  = t.pass_count && t.total_attempts ? Math.round(t.pass_count/t.total_attempts*100) : 0;
+    const ini = (t.teacher_name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const vsSchool = avg - schoolAvg;
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:30px;height:30px;border-radius:50%;background:${t.avatar_color||'var(--green-dk)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${ini}</div>
+          <div>
+            <div style="font-weight:600">${t.teacher_name}</div>
+            <div style="font-size:11px;color:var(--text-3)">${t.department_name||'—'}</div>
+          </div>
+        </div>
+      </td>
+      <td style="text-align:center">${t.test_count||0}</td>
+      <td style="text-align:center">${t.students_tested||0}</td>
+      <td style="text-align:center">${t.total_attempts||0}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:70px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="width:${avg}%;height:100%;background:${avg>=65?'var(--green)':avg>=50?'var(--amber)':'var(--coral)'};border-radius:3px"></div>
+          </div>
+          <b style="color:${col(avg)}">${avg}%</b>
+          <span style="font-size:10px;color:${vsSchool>=0?'var(--green)':'var(--coral)'}">${vsSchool>=0?'+':''}${vsSchool}%</span>
+        </div>
+      </td>
+      <td><span class="badge badge-${pr>=50?'green':'coral'}" style="font-size:10px">${pr}%</span></td>
+      <td style="font-size:11px;color:var(--text-3)">${t.question_count||0} questions</td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="card" style="margin-bottom:16px;padding:14px 20px">
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
+      <div><div style="font-size:11px;color:var(--text-3)">School average</div><div style="font-size:20px;font-weight:800;color:${col(schoolAvg)}">${schoolAvg}%</div></div>
+      <div><div style="font-size:11px;color:var(--text-3)">Total attempts</div><div style="font-size:20px;font-weight:800">${school.total_attempts||0}</div></div>
+      <div><div style="font-size:11px;color:var(--text-3)">Pass count</div><div style="font-size:20px;font-weight:800;color:var(--green)">${school.pass_count||0}</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Teacher performance · ${teachers.length} teachers</div>
+      <div style="font-size:11px;color:var(--text-3)">vs school avg shown as ±%</div>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Teacher</th><th>Tests</th><th>Students</th><th>Attempts</th><th>Avg score</th><th>Pass rate</th><th>Questions</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderSubjectAnalytics(bySubject) {
+  if (!bySubject.length) return '<div class="info-box blue">No subject data yet.</div>';
+  const rows = bySubject.map(s=>{
+    const v=Math.round(parseFloat(s.avg_pct)||0);
+    return `<tr>
+      <td><b>${s.subject_name}</b>${s.subject_short?` <span style="font-size:11px;color:var(--text-3)">(${s.subject_short})</span>`:''}
+      </td>
+      <td style="text-align:center">${s.test_count||0}</td>
+      <td style="text-align:center">${s.student_count||0}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:80px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="width:${v}%;height:100%;background:${col(v)};border-radius:3px"></div>
+          </div>
+          <b style="color:${col(v)}">${v}%</b>
+        </div>
+      </td>
+    </tr>`;}).join('');
+  return `<div class="card">
+    <div class="card-header"><div class="card-title">Performance by subject</div></div>
+    <table class="data-table">
+      <thead><tr><th>Subject</th><th>Tests</th><th>Students</th><th>Avg score</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
 }
 
 async function loadAOverview(m) {
@@ -8291,39 +8573,55 @@ async function saveApproved(){
 function drawProgress(){
   const cv=document.getElementById('progress-chart');if(!cv)return;
   const ctx=cv.getContext('2d');
-  const scores=[55,60,58,64,62,68,65,70,68,72,68,75];
-  const W=cv.offsetWidth||400,H=180;cv.width=W;cv.height=H;
-  const pad={t:10,b:30,l:10,r:10},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
-  const mn=40,mx=100;
-  const x=i=>pad.l+(i/(scores.length-1))*cW;
+  // Use real test history from API
+  const history = window._perfHistory || [];
+  const scores  = history.length ? history.map(h=>parseFloat(h.pct_score)||0) : [55,60,58,64,70,68,75];
+  const labels  = history.length ? history.map(h=>h.submitted_at?new Date(h.submitted_at).toLocaleDateString('en-GH',{day:'numeric',month:'short'}):'') : [];
+  const W=cv.offsetWidth||400,H=160;cv.width=W;cv.height=H;
+  const pad={t:10,b:30,l:34,r:10},cW=W-pad.l-pad.r,cH=H-pad.t-pad.b;
+  const mn=0,mx=100;
+  const x=i=>pad.l+(scores.length>1?i/(scores.length-1):0.5)*cW;
   const y=v=>pad.t+cH-((v-mn)/(mx-mn))*cH;
+  // Grid lines + y-axis labels
   ctx.strokeStyle='rgba(0,0,0,.05)';ctx.lineWidth=1;
-  [50,60,70,80].forEach(v=>{ctx.beginPath();ctx.moveTo(pad.l,y(v));ctx.lineTo(pad.l+cW,y(v));ctx.stroke();});
-  ctx.beginPath();ctx.moveTo(x(0),y(scores[0]));
-  scores.forEach((s,i)=>i>0&&ctx.lineTo(x(i),y(s)));
-  ctx.lineTo(x(scores.length-1),pad.t+cH);ctx.lineTo(pad.l,pad.t+cH);ctx.closePath();
-  ctx.fillStyle='rgba(26,122,74,.08)';ctx.fill();
-  ctx.beginPath();ctx.moveTo(x(0),y(scores[0]));
-  scores.forEach((s,i)=>i>0&&ctx.lineTo(x(i),y(s)));
-  ctx.strokeStyle='#1A7A4A';ctx.lineWidth=2;ctx.lineJoin='round';ctx.stroke();
-  scores.forEach((s,i)=>{ctx.beginPath();ctx.arc(x(i),y(s),4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.strokeStyle='#1A7A4A';ctx.lineWidth=2;ctx.fill();ctx.stroke();});
-  ctx.fillStyle='#9CA3AF';ctx.font='11px Syne,sans-serif';ctx.textAlign='center';
-  [0,3,6,9,11].forEach(i=>{const lbs=['Jan','','','Apr','','','Jul','','','Oct','','Apr'];if(lbs[i])ctx.fillText(lbs[i],x(i),H-8);});
+  [0,25,50,75,100].forEach(v=>{
+    ctx.beginPath();ctx.moveTo(pad.l,y(v));ctx.lineTo(pad.l+cW,y(v));ctx.stroke();
+    ctx.fillStyle='#9CA3AF';ctx.font='10px Syne,sans-serif';ctx.textAlign='right';
+    ctx.fillText(v+'%',pad.l-4,y(v)+4);
+  });
+  // 50% pass line
+  ctx.strokeStyle='rgba(196,125,14,.3)';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.moveTo(pad.l,y(50));ctx.lineTo(pad.l+cW,y(50));ctx.stroke();
+  ctx.setLineDash([]);
+  if(scores.length>0){
+    // Fill area
+    ctx.beginPath();ctx.moveTo(x(0),y(scores[0]));
+    scores.forEach((s,i)=>i>0&&ctx.lineTo(x(i),y(s)));
+    ctx.lineTo(x(scores.length-1),pad.t+cH);ctx.lineTo(pad.l,pad.t+cH);ctx.closePath();
+    ctx.fillStyle='rgba(26,122,74,.08)';ctx.fill();
+    // Line
+    ctx.beginPath();ctx.moveTo(x(0),y(scores[0]));
+    scores.forEach((s,i)=>i>0&&ctx.lineTo(x(i),y(s)));
+    ctx.strokeStyle='#1A7A4A';ctx.lineWidth=2;ctx.lineJoin='round';ctx.stroke();
+    // Dots coloured by pass/fail
+    scores.forEach((s,i)=>{
+      ctx.beginPath();ctx.arc(x(i),y(s),4,0,Math.PI*2);
+      ctx.fillStyle=s>=50?'var(--green)':'var(--coral)';ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.fill();ctx.stroke();
+    });
+    // X-axis labels (sparse)
+    ctx.fillStyle='#9CA3AF';ctx.font='10px Syne,sans-serif';ctx.textAlign='center';
+    const step=Math.max(1,Math.floor(scores.length/5));
+    for(let i=0;i<scores.length;i+=step){if(labels[i])ctx.fillText(labels[i],x(i),H-8);}
+  }
 }
 
 function drawRadar(){
   const cv=document.getElementById('radar-chart');if(!cv)return;
   const ctx=cv.getContext('2d');
-  // Use current user's sub-strand data from last dashboard load
-  const radarScores = window._lastSubstrandAvg || {};
-  const me = MOCK_STUDENTS[0] || {avg_pct:0,tests_done:0,current_streak:0,sc:{s1ss1:0,s1ss2:0,s1ss3:0,s2ss1:0,s2ss2:0}};  const scores = [
-    radarScores.s1ss1 ?? me?.sc?.s1ss1 ?? 50,
-    radarScores.s1ss2 ?? me?.sc?.s1ss2 ?? 50,
-    radarScores.s1ss3 ?? me?.sc?.s1ss3 ?? 50,
-    radarScores.s2ss1 ?? me?.sc?.s2ss1 ?? 50,
-    radarScores.s2ss2 ?? me?.sc?.s2ss2 ?? 50,
-  ];
-  const labels=['S1/SS1','S1/SS2','S1/SS3','S2/SS1','S2/SS2'];
+  // Use real sub-strand data from performance load
+  const subs = window._perfSubstrands || [];
+  const scores = subs.length ? subs.slice(0,6).map(s=>Math.min(100,parseFloat(s.avg_pct)||0)) : [50,50,50,50,50];
+  const labels = subs.length ? subs.slice(0,6).map(s=>(s.sub_strand||'').split('/').pop()||s.sub_strand||'') : ['S1/SS1','S1/SS2','S1/SS3','S2/SS1','S2/SS2'];
   const n=scores.length;
   const W=cv.width,H=cv.height,cx=W/2,cy=H/2,r=Math.min(W,H)/2-36;
   ctx.clearRect(0,0,W,H);

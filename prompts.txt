@@ -595,12 +595,13 @@ show under "Fill in" in question bank.: done
 
 
 
-2. next: 
+2. next: sent
 1. Add more robust Analytics data to the students analytics. Analytics on the teacher dashboard should reflect
 the subject on the context bar as well as semester based or overall based.
 2. Create teacher analytics too on admin dashboard, should be semester, year or overall analytics
 
-
+next:
+1. when setting test, the current semester should be the default, unless teacher changes it
 
 
 

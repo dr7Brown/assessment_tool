@@ -1009,10 +1009,18 @@ function handleStudents(string $method, ?int $id, ?string $sub, array $body): vo
         $uid = $auth['user_id'];
         syncStudentClass($uid, $auth['school_id']);
 
-        // Optional subject filter — passed by the student context bar
+        // Optional filters
         $filterSubjId = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
+        $filterSem    = isset($_GET['semester'])    ? (int)$_GET['semester']    : 0;
+        $filterYear   = isset($_GET['academic_year']) ? trim($_GET['academic_year']) : '';
         $sF  = $filterSubjId ? 'AND t.subject_id = ?' : '';
         $sP  = $filterSubjId ? [$filterSubjId] : [];
+        $semF  = $filterSem  ? 'AND t.semester=?'       : '';
+        $semP  = $filterSem  ? [$filterSem]  : [];
+        $yearF = $filterYear ? 'AND t.academic_year=?'  : '';
+        $yearP = $filterYear ? [$filterYear] : [];
+        $periodF = $semF . ' ' . $yearF;
+        $periodP = array_merge($semP, $yearP);
 
         // ── Stats (filter by subject when selected) ──────────────
         if ($filterSubjId) {
@@ -1130,15 +1138,107 @@ function handleStudents(string $method, ?int $id, ?string $sub, array $body): vo
         );
 
         $srDue = DB::fetchOne('SELECT COUNT(*) AS n FROM spaced_repetition WHERE student_id=? AND next_review<=CURDATE()', [$uid])['n'] ?? 0;
+
+        // ── Test history (for progress chart) ─────────────────────
+        $testHistory = DB::fetchAll(
+            "SELECT a.submitted_at, t.title, t.semester, t.academic_year,
+                    ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),1) AS pct_score,
+                    IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0) AS passed,
+                    s.short_name AS subject_short
+             FROM attempts a JOIN tests t ON t.id=a.test_id
+             LEFT JOIN subjects s ON s.id=t.subject_id
+             WHERE a.student_id=? AND a.status IN ('submitted','marked') $sF $periodF
+             ORDER BY a.submitted_at ASC LIMIT 30",
+            array_merge([$uid], $sP, $periodP)
+        );
+
+        // ── Semester comparison ───────────────────────────────────
+        $semesterStats = DB::fetchAll(
+            "SELECT t.academic_year, t.semester,
+                    COUNT(DISTINCT a.id) AS tests_done,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0)) AS pass_count
+             FROM attempts a JOIN tests t ON t.id=a.test_id
+             WHERE a.student_id=? AND a.status IN ('submitted','marked') AND t.academic_year IS NOT NULL $sF
+             GROUP BY t.academic_year, t.semester ORDER BY t.academic_year DESC, t.semester DESC LIMIT 6",
+            array_merge([$uid], $sP)
+        );
+
+        // ── Rank in class ─────────────────────────────────────────
+        $studentClass = DB::fetchOne('SELECT class_name FROM users WHERE id=?', [$uid]);
+        $classRank    = null;
+        if ($studentClass && $studentClass['class_name']) {
+            $classmates = DB::fetchAll(
+                "SELECT a.student_id,
+                        AVG(ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2)) AS avg_pct
+                 FROM attempts a
+                 JOIN class_students cs ON cs.student_id=a.student_id
+                 JOIN classes c ON c.id=cs.class_id
+                 WHERE c.school_id=? AND c.name=? AND a.status IN ('submitted','marked') $sF
+                 GROUP BY a.student_id ORDER BY avg_pct DESC",
+                array_merge([$auth['school_id'], $studentClass['class_name']], $sP)
+            );
+            $total = count($classmates);
+            $pos   = array_search($uid, array_column($classmates,'student_id'));
+            if ($pos !== false && $total > 0) {
+                $classRank = ['rank' => $pos+1, 'total' => $total,
+                              'percentile' => round((1 - $pos/$total)*100)];
+            }
+        }
+
+        // ── Question type stats (MCQ vs essay etc) ────────────────
+        $typeStats = DB::fetchAll(
+            "SELECT q.type,
+                    COUNT(*) AS total_answers,
+                    SUM(IF(an.is_correct=1,1,0)) AS correct,
+                    ROUND(AVG(IF(an.is_correct=1,100,0)),1) AS accuracy_pct
+             FROM answers an JOIN questions q ON q.id=an.question_id
+             JOIN attempts a ON a.id=an.attempt_id JOIN tests t ON t.id=a.test_id
+             WHERE a.student_id=? AND an.is_correct IS NOT NULL $sF $periodF
+             GROUP BY q.type",
+            array_merge([$uid], $sP, $periodP)
+        );
+
+        // ── Bloom's level accuracy ────────────────────────────────
+        $bloomStats = DB::fetchAll(
+            "SELECT q.bloom_level,
+                    ROUND(AVG(IF(an.is_correct=1,100,0)),1) AS avg_pct,
+                    COUNT(*) AS total
+             FROM answers an JOIN questions q ON q.id=an.question_id
+             JOIN attempts a ON a.id=an.attempt_id JOIN tests t ON t.id=a.test_id
+             WHERE a.student_id=? AND an.is_correct IS NOT NULL AND q.bloom_level IS NOT NULL $sF
+             GROUP BY q.bloom_level",
+            array_merge([$uid], $sP)
+        );
+
+        // ── Completion rate ───────────────────────────────────────
+        $assigned = DB::fetchOne(
+            "SELECT COUNT(DISTINCT t.id) AS assigned
+             FROM tests t JOIN test_assignments ta ON ta.test_id=t.id
+             JOIN class_students cs ON cs.class_id=ta.class_id AND cs.student_id=?
+             WHERE t.status='published' $sF",
+            array_merge([$uid], $sP)
+        );
+        $completedCount = $stats['tests_done'] ?? 0;
+        $assignedCount  = max((int)($assigned['assigned'] ?? 0), $completedCount);
+        $completionRate = $assignedCount > 0 ? round($completedCount/$assignedCount*100) : 0;
+
         respond([
-            'stats'          => $stats,
-            'streak'         => $streak,
-            'substrand_avg'  => $subAvg,
-            'subject_avg'    => $subjectAvg ?? [],
-            'due'            => $due,
-            'recent'         => $recent,
-            'sr_due'         => (int)$srDue,
+            'stats'           => $stats,
+            'streak'          => $streak,
+            'substrand_avg'   => $subAvg,
+            'subject_avg'     => $subjectAvg ?? [],
+            'due'             => $due,
+            'recent'          => $recent,
+            'sr_due'          => (int)$srDue,
             'filtered_subject_id' => $filterSubjId ?: null,
+            'test_history'    => $testHistory,
+            'semester_stats'  => $semesterStats,
+            'class_rank'      => $classRank,
+            'type_stats'      => $typeStats,
+            'bloom_stats'     => $bloomStats,
+            'completion_rate' => $completionRate,
+            'assigned_count'  => $assignedCount,
         ]);
     }
 
@@ -1528,10 +1628,18 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
     $isTeacher  = ($auth['role'] === 'teacher');
 
     if ($sub === 'school') {
-        // Optional subject filter from query param (teacher context bar)
-        $filterSubjId = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
+        // Optional filters
+        $filterSubjId = isset($_GET['subject_id'])    ? (int)$_GET['subject_id']    : 0;
+        $filterSem    = isset($_GET['semester'])       ? (int)$_GET['semester']      : 0;
+        $filterAcYear = isset($_GET['academic_year'])  ? trim($_GET['academic_year']) : '';
         $subjF  = $filterSubjId ? 'AND t.subject_id = ?' : '';
         $subjP  = $filterSubjId ? [$filterSubjId] : [];
+        $semF   = $filterSem    ? 'AND t.semester=?'      : '';
+        $semP   = $filterSem    ? [$filterSem]    : [];
+        $yearF  = $filterAcYear ? 'AND t.academic_year=?' : '';
+        $yearP  = $filterAcYear ? [$filterAcYear] : [];
+        $periodF = $semF . ' ' . $yearF;
+        $periodP = array_merge($semP, $yearP);
 
         if ($isTeacher) {
             $tClassFilter = '(c.teacher_id=? OR EXISTS (SELECT 1 FROM class_teachers ct WHERE ct.class_id=c.id AND ct.teacher_id=?))';
@@ -1553,21 +1661,21 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
                 array_merge($tcParams, [$sid, $uid, $uid])
             );
 
-            // Sub-strand breakdown — join tests table for subject filter
+            // Sub-strand breakdown
             $by_substrand = DB::fetchAll(
                 "SELECT q.sub_strand, AVG(an.marks_awarded/q.marks*100) AS avg_pct
                  FROM answers an
-                 JOIN questions q  ON q.id  = an.question_id
-                 JOIN attempts  a  ON a.id  = an.attempt_id
-                 JOIN tests     t  ON t.id  = a.test_id
+                 JOIN questions q ON q.id=an.question_id
+                 JOIN attempts  a ON a.id=an.attempt_id
+                 JOIN tests     t ON t.id=a.test_id
                  JOIN class_students cs ON cs.student_id=a.student_id
                  JOIN classes c ON c.id=cs.class_id
-                 WHERE c.school_id=? AND $tClassFilter AND an.marks_awarded IS NOT NULL $subjF
+                 WHERE c.school_id=? AND $tClassFilter AND an.marks_awarded IS NOT NULL $subjF $periodF
                  GROUP BY q.sub_strand ORDER BY avg_pct ASC",
-                array_merge([$sid, $uid, $uid], $subjP)
+                array_merge([$sid, $uid, $uid], $subjP, $periodP)
             );
 
-            // At-risk — join tests for subject filter
+            // At-risk
             $at_risk = DB::fetchAll(
                 "SELECT DISTINCT u.id, u.first_name, u.last_name, u.class_name,
                         AVG(ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2)) AS avg_pct
@@ -1576,12 +1684,57 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
                  JOIN classes c ON c.id=cs.class_id
                  JOIN attempts a ON a.student_id=u.id
                  JOIN tests    t ON t.id=a.test_id
-                 WHERE c.school_id=? AND $tClassFilter AND a.status IN ('submitted','marked') $subjF
+                 WHERE c.school_id=? AND $tClassFilter AND a.status IN ('submitted','marked') $subjF $periodF
                  GROUP BY u.id HAVING avg_pct<50 ORDER BY avg_pct ASC LIMIT 20",
-                array_merge([$sid, $uid, $uid], $subjP)
+                array_merge([$sid, $uid, $uid], $subjP, $periodP)
             );
+
+            // Per-class performance
+            $per_class = DB::fetchAll(
+                "SELECT c.id AS class_id, c.name AS class_name, c.year_group,
+                        COUNT(DISTINCT cs.student_id) AS student_count,
+                        ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS class_avg,
+                        SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0)) AS pass_count,
+                        COUNT(DISTINCT a.id) AS attempts_done
+                 FROM classes c
+                 JOIN class_students cs ON cs.class_id=c.id
+                 LEFT JOIN attempts a ON a.student_id=cs.student_id AND a.status IN ('submitted','marked')
+                 LEFT JOIN tests t ON t.id=a.test_id
+                 WHERE c.school_id=? AND ($tClassFilter) $subjF $periodF
+                 GROUP BY c.id, c.name, c.year_group ORDER BY c.year_group, c.name",
+                array_merge([$sid, $uid, $uid], $subjP, $periodP)
+            );
+
+            // Per-test stats
+            $test_stats = DB::fetchAll(
+                "SELECT t.id, t.title, t.type, t.semester, t.academic_year,
+                        COUNT(DISTINCT a.student_id) AS attempts,
+                        ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                        SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0)) AS pass_count
+                 FROM tests t JOIN attempts a ON a.test_id=t.id AND a.status IN ('submitted','marked')
+                 WHERE t.creator_id=? $subjF $periodF
+                 GROUP BY t.id, t.title, t.type, t.semester, t.academic_year
+                 ORDER BY t.created_at DESC LIMIT 15",
+                array_merge([$uid], $subjP, $periodP)
+            );
+
+            // Per-subject performance summary
+            $by_subject = DB::fetchAll(
+                "SELECT s.id AS subject_id, s.name AS subject_name, s.short_name AS subject_short,
+                        ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                        COUNT(DISTINCT a.student_id) AS student_count,
+                        COUNT(DISTINCT t.id) AS test_count
+                 FROM tests t JOIN attempts a ON a.test_id=t.id AND a.status IN ('submitted','marked')
+                 JOIN subjects s ON s.id=t.subject_id
+                 JOIN class_students cs ON cs.student_id=a.student_id
+                 JOIN classes c ON c.id=cs.class_id
+                 WHERE c.school_id=? AND ($tClassFilter) $periodF
+                 GROUP BY s.id, s.name, s.short_name ORDER BY avg_pct DESC",
+                array_merge([$sid, $uid, $uid], $periodP)
+            );
+
         } else {
-            // Admin: whole school, optional subject filter
+            // Admin: whole school
             $overview = DB::fetchOne(
                 'SELECT COUNT(DISTINCT u.id) AS student_count,
                         (SELECT AVG(ROUND(IF(max_score>0,(score_auto+score_manual)/max_score*100,0),2))
@@ -1598,21 +1751,52 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
                  JOIN attempts a ON a.id=an.attempt_id
                  JOIN tests t ON t.id=a.test_id
                  JOIN users u ON u.id=a.student_id
-                 WHERE u.school_id=? AND an.marks_awarded IS NOT NULL $subjF
+                 WHERE u.school_id=? AND an.marks_awarded IS NOT NULL $subjF $periodF
                  GROUP BY q.sub_strand ORDER BY avg_pct ASC",
-                array_merge([$sid], $subjP)
+                array_merge([$sid], $subjP, $periodP)
             );
             $at_risk = DB::fetchAll(
                 "SELECT u.id, u.first_name, u.last_name, u.class_name,
                         AVG(ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2)) AS avg_pct
                  FROM users u JOIN attempts a ON a.student_id=u.id
                  JOIN tests t ON t.id=a.test_id
-                 WHERE u.school_id=? AND a.status IN ('submitted','marked') $subjF
+                 WHERE u.school_id=? AND a.status IN ('submitted','marked') $subjF $periodF
                  GROUP BY u.id HAVING avg_pct<50 ORDER BY avg_pct ASC LIMIT 20",
-                array_merge([$sid], $subjP)
+                array_merge([$sid], $subjP, $periodP)
             );
+
+            // Per-class for admin
+            $per_class = DB::fetchAll(
+                "SELECT c.id AS class_id, c.name AS class_name, c.year_group,
+                        COUNT(DISTINCT cs.student_id) AS student_count,
+                        ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS class_avg,
+                        SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0)) AS pass_count
+                 FROM classes c
+                 JOIN class_students cs ON cs.class_id=c.id
+                 LEFT JOIN attempts a ON a.student_id=cs.student_id AND a.status IN ('submitted','marked')
+                 LEFT JOIN tests t ON t.id=a.test_id
+                 WHERE c.school_id=? $subjF $periodF
+                 GROUP BY c.id, c.name, c.year_group ORDER BY c.year_group, c.name",
+                array_merge([$sid], $subjP, $periodP)
+            );
+
+            // Per-subject
+            $by_subject = DB::fetchAll(
+                "SELECT s.id AS subject_id, s.name AS subject_name, s.short_name AS subject_short,
+                        ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                        COUNT(DISTINCT a.student_id) AS student_count,
+                        COUNT(DISTINCT t.id) AS test_count
+                 FROM tests t JOIN attempts a ON a.test_id=t.id AND a.status IN ('submitted','marked')
+                 JOIN subjects s ON s.id=t.subject_id
+                 JOIN users u ON u.id=a.student_id
+                 WHERE u.school_id=? $periodF
+                 GROUP BY s.id, s.name, s.short_name ORDER BY avg_pct DESC",
+                array_merge([$sid], $periodP)
+            );
+
+            $test_stats = [];
         }
-        respond(compact('overview','by_substrand','at_risk'));
+        respond(compact('overview','by_substrand','at_risk','per_class','by_subject','test_stats'));
     }
 
     if ($sub === 'marking-queue') {
@@ -1666,6 +1850,79 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
             $scopeParams
         );
         respond($queue);
+    }
+
+    // GET /analytics/teachers — admin: per-teacher performance stats
+    if ($sub === 'teachers') {
+        require_role($auth, 'admin');
+        $filterSemT  = isset($_GET['semester'])      ? (int)$_GET['semester']    : 0;
+        $filterYearT = isset($_GET['academic_year']) ? trim($_GET['academic_year']) : '';
+        $semFT  = $filterSemT  ? 'AND t.semester=?'      : '';
+        $semPT  = $filterSemT  ? [$filterSemT]  : [];
+        $yearFT = $filterYearT ? 'AND t.academic_year=?' : '';
+        $yearPT = $filterYearT ? [$filterYearT] : [];
+        $pFT = $semFT . ' ' . $yearFT;
+        $pPT = array_merge($semPT, $yearPT);
+
+        $teachers = DB::fetchAll(
+            "SELECT u.id AS teacher_id,
+                    CONCAT(u.first_name,' ',u.last_name) AS teacher_name,
+                    u.avatar_color, u.department_id, d.name AS department_name,
+                    COUNT(DISTINCT t.id) AS test_count,
+                    COUNT(DISTINCT a.student_id) AS students_tested,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0)) AS pass_count,
+                    COUNT(DISTINCT a.id) AS total_attempts,
+                    COUNT(DISTINCT tq.question_id) AS question_count
+             FROM users u
+             LEFT JOIN departments d ON d.id=u.department_id
+             LEFT JOIN tests t ON t.creator_id=u.id AND t.school_id=? $pFT
+             LEFT JOIN attempts a ON a.test_id=t.id AND a.status IN ('submitted','marked')
+             LEFT JOIN test_questions tq ON tq.test_id=t.id
+             WHERE u.school_id=? AND u.role='teacher' AND u.is_active=1
+             GROUP BY u.id, u.first_name, u.last_name, u.avatar_color, u.department_id, d.name
+             ORDER BY avg_pct DESC, test_count DESC",
+            array_merge([$sid], $pPT, [$sid])
+        );
+
+        // School-wide averages for comparison
+        $schoolAvg = DB::fetchOne(
+            "SELECT ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0)) AS pass_count,
+                    COUNT(DISTINCT a.id) AS total_attempts
+             FROM attempts a JOIN tests t ON t.id=a.test_id
+             JOIN users u ON u.id=a.student_id
+             WHERE u.school_id=? AND a.status IN ('submitted','marked') $pFT",
+            array_merge([$sid], $pPT)
+        );
+
+        // Per-subject breakdown
+        $bySubject = DB::fetchAll(
+            "SELECT s.name AS subject_name, s.short_name AS subject_short,
+                    COUNT(DISTINCT t.id) AS test_count,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    COUNT(DISTINCT a.student_id) AS students_tested
+             FROM tests t JOIN subjects s ON s.id=t.subject_id
+             LEFT JOIN attempts a ON a.test_id=t.id AND a.status IN ('submitted','marked')
+             WHERE t.school_id=? $pFT
+             GROUP BY s.id, s.name, s.short_name ORDER BY avg_pct DESC",
+            array_merge([$sid], $pPT)
+        );
+
+        // Semester trend
+        $semTrend = DB::fetchAll(
+            "SELECT t.academic_year, t.semester,
+                    COUNT(DISTINCT a.id) AS total_attempts,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0)) AS pass_count
+             FROM attempts a JOIN tests t ON t.id=a.test_id
+             JOIN users u ON u.id=a.student_id
+             WHERE u.school_id=? AND a.status IN ('submitted','marked') AND t.academic_year IS NOT NULL
+             GROUP BY t.academic_year, t.semester ORDER BY t.academic_year DESC, t.semester DESC LIMIT 6",
+            [$sid]
+        );
+
+        respond(compact('teachers', 'schoolAvg', 'bySubject', 'semTrend'));
     }
 
     // GET /analytics/question-stats — admin question bank overview
