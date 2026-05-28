@@ -135,7 +135,7 @@ button{font-family:inherit;cursor:pointer;border:none;}input,select,textarea{fon
 .gen-opt{font-size:12px;padding:3px 10px;border-radius:5px;background:var(--bg);border:1px solid var(--border);color:var(--text-2);}
 .gen-opt.correct-opt{background:var(--green-lt);border-color:var(--green-mid);color:var(--green-dk);font-weight:700;}
 .qb-type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;}
-.qb-type-card{border:2px solid var(--border);border-radius:var(--radius-sm);padding:12px;cursor:pointer;transition:all .15s;text-align:center;}.qb-type-card:hover{border-color:var(--green-mid);background:var(--green-lt);}.qb-type-card.selected{border-color:var(--green);background:var(--green-lt);box-shadow:0 0 0 3px rgba(26,122,74,.2);}.qb-type-card.selected .qb-type-name{color:var(--green-dk);font-weight:800;}.qb-type-card.selected .qb-type-icon{filter:none;}
+.qb-type-card{border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:12px;cursor:pointer;transition:all .15s;text-align:center;}.qb-type-card:hover{border-color:var(--green-mid);}.qb-type-card.selected{border-color:var(--green);background:var(--green-lt);}
 .wb-card:hover{border-color:var(--green-mid)!important;background:var(--green-lt)!important;transform:translateY(-1px);}
 .qb-type-icon{font-size:22px;margin-bottom:6px;}.qb-type-name{font-size:12px;font-weight:700;}
 .opt-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
@@ -318,12 +318,6 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
           <option value="overdue">Overdue</option>
           <option value="open">No due date</option>
         </select>
-        <span style="color:rgba(255,255,255,.4)">›</span>
-        <select id="s-ctx-period" style="background:rgba(255,255,255,.92);border:none;
-                color:var(--green-dk);font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;outline:none;min-width:170px;cursor:pointer"
-                title="Academic year / semester">
-          <option value="">Current period</option>
-        </select>
         <span id="s-ctx-label" style="font-size:11px;color:rgba(255,255,255,.5);margin-left:4px;flex:1"></span>
         <button onclick="sCtxReset()" style="background:rgba(255,255,255,.15);border:none;color:rgba(255,255,255,.7);font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;cursor:pointer;white-space:nowrap">Clear filters</button>
       </div>
@@ -346,7 +340,8 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
       <div class="sidebar-section">
         <div class="sidebar-section-label">Teaching</div>
         <div class="nav-item active" onclick="tNav('dashboard',this)"><div class="ni-icon">📊</div>Dashboard</div>
-        <div class="nav-item" onclick="tNav('tests',this)"><div class="ni-icon">📋</div>Tests</div>
+        <div class="nav-item" onclick="tNav('create',this)"><div class="ni-icon">➕</div>Create test</div>
+        <div class="nav-item" onclick="tNav('questions',this)"><div class="ni-icon">📚</div>Question bank</div>
         <div class="nav-item" onclick="tNav('live',this)"><div class="ni-icon">⚡</div>Live quiz</div>
       </div>
       <div class="sidebar-section">
@@ -378,12 +373,6 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <select id="t-ctx-class" style="background:rgba(255,255,255,.92);border:none;
                 color:var(--green-dk);font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;outline:none;min-width:140px;cursor:pointer">
           <option value="">All my classes</option>
-        </select>
-        <span style="color:rgba(255,255,255,.4)">›</span>
-        <select id="t-ctx-period" style="background:rgba(255,255,255,.92);border:none;
-                color:var(--green-dk);font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;outline:none;min-width:170px;cursor:pointer"
-                title="Filter by academic year / semester">
-          <option value="">All periods</option>
         </select>
         <span id="t-ctx-label" style="font-size:11px;color:rgba(255,255,255,.5);margin-left:4px"></span>
       </div>
@@ -586,22 +575,16 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 
 <div class="modal-bg" id="qbuilder-modal">
   <div class="modal modal-lg">
-    <div class="modal-header">
-      <div>
-        <div class="modal-title">New question</div>
-        <div id="qb-type-label-bar" style="font-size:11px;font-weight:700;color:var(--green-dk);margin-top:2px;text-transform:uppercase;letter-spacing:.05em">Type: Multiple choice</div>
-      </div>
-      <button class="modal-close" onclick="closeModal('qbuilder-modal')">&#x2715;</button>
-    </div>
+    <div class="modal-header"><div class="modal-title">New question</div><button class="modal-close" onclick="closeModal('qbuilder-modal')">&#x2715;</button></div>
     <div class="modal-body">
       <div class="form-group">
-        <label class="form-label">Question type <span style="font-weight:400;color:var(--coral);font-size:11px">— click to select before filling in details</span></label>
+        <label class="form-label">Question type</label>
         <div class="qb-type-grid">
           <div class="qb-type-card selected" onclick="selectQType(this,'mcq')"><div class="qb-type-icon">&#x25EF;</div><div class="qb-type-name">Multiple choice</div></div>
           <div class="qb-type-card" onclick="selectQType(this,'multi')"><div class="qb-type-icon">&#x2611;</div><div class="qb-type-name">Multi-select</div></div>
           <div class="qb-type-card" onclick="selectQType(this,'short')"><div class="qb-type-icon">&#x270E;</div><div class="qb-type-name">Short answer</div></div>
           <div class="qb-type-card" onclick="selectQType(this,'essay')"><div class="qb-type-icon">&#x2261;</div><div class="qb-type-name">Essay</div></div>
-          <div class="qb-type-card" onclick="selectQType(this,'fill-in')"><div class="qb-type-icon">_</div><div class="qb-type-name">Fill in</div></div>
+          <div class="qb-type-card" onclick="selectQType(this,'blank')"><div class="qb-type-icon">_</div><div class="qb-type-name">Fill in blank</div></div>
           <div class="qb-type-card" onclick="selectQType(this,'tf')"><div class="qb-type-icon">T/F</div><div class="qb-type-name">True / False</div></div>
         </div>
       </div>
@@ -630,7 +613,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         </div>
       </div>
       <div id="qb-blank-hint" style="display:none;margin-bottom:8px">
-        <div class="info-box blue" style="font-size:12px">Use <code>____</code> in the question text to mark where the blank goes. (fill-in type) e.g. <em>"The process of converting data into unreadable format is called ____."</em></div>
+        <div class="info-box blue" style="font-size:12px">Use <code>____</code> in the question text to mark where the blank goes. e.g. <em>"The process of converting data into unreadable format is called ____."</em></div>
       </div>
       <div class="grid-2" style="margin-top:8px">
         <div class="form-group">
@@ -1858,9 +1841,7 @@ function buildRecentResults(apiRecent) {
 // ── My Tests ───────────────────────────────────────────────────
 async function loadMyTests(m) {
   let tests = null;
-  const periodParams = {};
-  if (SCTX.academic_year) { periodParams.academic_year = SCTX.academic_year; if (SCTX.semester) periodParams.semester = SCTX.semester; }
-  try { tests = await GET('/tests', periodParams); } catch(e){}
+  try { tests = await GET('/tests'); } catch(e){}
 
   const semTests     = (tests||[]).filter(t => !window._semFilter || t.semester == window._semFilter);
   const allDue       = semTests.filter(t=> +t.my_attempts === 0 && t.status==='published');
@@ -2317,7 +2298,7 @@ async function saveCurrentAnswer() {
   if(!q)return;
   const payload={attempt_id:currentAttemptId,question_id:q.id,is_flagged:flags[cQ]?1:0};
   if(q.type==='essay') payload.text_response=essayAns[cQ]||'';
-  else if(q.type==='short'||q.type==='fill-in') payload.text_response=ans[cQ]||'';
+  else if(q.type==='short'||q.type==='blank') payload.text_response=ans[cQ]||'';
   else if(q.type==='multi') {
     if(!Array.isArray(ans[cQ])||!ans[cQ].length) return;
     payload.selected_opts=ans[cQ].map(i=>String.fromCharCode(65+i));
@@ -2334,7 +2315,7 @@ function autoSaveAnswer(idx) {
   const q=qSet[idx];
   if(!q)return;
   // Only save text-based answers here; MCQ is saved on navigation
-  if(q.type!=='essay'&&q.type!=='short'&&q.type!=='fill-in')return;
+  if(q.type!=='essay'&&q.type!=='short'&&q.type!=='blank')return;
   const payload={attempt_id:currentAttemptId,question_id:q.id,is_flagged:flags[idx]?1:0};
   if(q.type==='essay') payload.text_response=essayAns[idx]||'';
   else payload.text_response=ans[idx]||'';
@@ -2484,7 +2465,7 @@ function showResults(){
   // For real tests use max_score (marks); for practice use question count
   const maxVal  = isPractice ? qSet.length : (r.max_score || qSet.length);
   const grade=pct>=80?'Excellent!':pct>=65?'Good work!':pct>=50?'Pass':'Needs improvement';
-  const hasEssay = !isPractice && qSet.some(q=>['essay','short','fill-in'].includes(q.type));
+  const hasEssay = !isPractice && qSet.some(q=>['essay','short','blank'].includes(q.type));
 
   const g=id=>document.getElementById(id);
   if(g('rGrade')){g('rGrade').textContent=hasEssay?'Submitted!':grade;g('rGrade').style.color=hasEssay?'var(--green)':col(pct);}
@@ -2571,7 +2552,6 @@ function tRender(v){
   const m=document.getElementById('t-main');if(!m)return;
   m.innerHTML=panelLoader();
   if(v==='dashboard')  loadTDash(m);
-  else if(v==='tests')     loadTTests(m);
   else if(v==='create')    loadTCreate(m);
   else if(v==='questions') loadTBank(m);
   else if(v==='live')      loadTLive(m);
@@ -2583,8 +2563,7 @@ function tRender(v){
 }
 
 // ── Teacher context (subject + class selector) ────────────────
-window.TCTX = { subject_id: null, subject_name: '', class_id: null, class_name: '', subjects: [], classes: [],
-                academic_year: null, semester: null, period_label: 'All periods', available_periods: [] };
+window.TCTX = { subject_id: null, subject_name: '', class_id: null, class_name: '', subjects: [], classes: [] };
 
 async function initTeacherContext() {
   const bar = document.getElementById('t-ctx-bar');
@@ -2654,36 +2633,6 @@ async function initTeacherContext() {
     };
   }
 
-  // Load available periods and populate period selector
-  try {
-    const apData = await GET('/academic-periods');
-    const available = apData?.available || [];
-    TCTX.available_periods = available;
-    const periodSel = document.getElementById('t-ctx-period');
-    if (periodSel) {
-      const cur = (apData?.current || []);
-      const opts = [
-        '<option value="">All periods</option>',
-        ...available.map(p => {
-          const isCur = cur.some(c => c.academic_year===p.academic_year && c.semester==p.semester);
-          const label = `${p.academic_year} · Sem ${p.semester}${isCur?' ★ (current)':''}`;
-          const val   = `${p.academic_year}|${p.semester}`;
-          const sel   = TCTX.academic_year===p.academic_year && TCTX.semester==p.semester ? 'selected' : '';
-          return `<option value="${val}" ${sel}>${label}</option>`;
-        })
-      ].join('');
-      periodSel.innerHTML = opts;
-      periodSel.onchange = () => {
-        const [ay, sem] = (periodSel.value || '|').split('|');
-        TCTX.academic_year  = ay  || null;
-        TCTX.semester       = sem ? parseInt(sem) : null;
-        TCTX.period_label   = periodSel.options[periodSel.selectedIndex]?.text || 'All periods';
-        updateCtxLabel();
-        tCtxReload();
-      };
-    }
-  } catch(e) {}
-
   // Show bar
   bar.style.display = 'flex';
   updateCtxLabel();
@@ -2693,9 +2642,8 @@ function updateCtxLabel() {
   const lbl = document.getElementById('t-ctx-label');
   if (!lbl) return;
   const parts = [];
-  if (TCTX.subject_name)   parts.push(TCTX.subject_name);
-  if (TCTX.class_name)     parts.push(TCTX.class_name);
-  if (TCTX.academic_year)  parts.push(`${TCTX.academic_year} S${TCTX.semester||''}`);
+  if (TCTX.subject_name) parts.push(TCTX.subject_name);
+  if (TCTX.class_name)   parts.push(TCTX.class_name);
   lbl.textContent = parts.length ? '— ' + parts.join(' › ') : '';
 }
 
@@ -2706,8 +2654,7 @@ function tCtxReload() {
 // ════════════════════════════════════════════════════════════
 // STUDENT CONTEXT BAR (subject + due-date filter)
 // ════════════════════════════════════════════════════════════
-window.SCTX = { subject_id: null, subject_name: '', due_filter: 'all',
-                academic_year: null, semester: null, period_label: 'Current period', available_periods: [] };
+window.SCTX = { subject_id: null, subject_name: '', due_filter: 'all' };
 let _sCurrentView = 'dashboard';
 
 async function initStudentContext() {
@@ -2756,46 +2703,6 @@ async function initStudentContext() {
     };
   }
 
-  // Load available periods for student's year group
-  try {
-    const apData = await GET('/academic-periods');
-    const available = apData?.available || [];
-    SCTX.available_periods = available;
-    const cur = apData?.current || [];
-    const periodSel = document.getElementById('s-ctx-period');
-    if (periodSel) {
-      // Default: auto-detect current period from student's year group via first matching period
-      // Students see "Current period" by default (empty value = no filter = current data)
-      const opts = [
-        '<option value="">Current period</option>',
-        '<option value="all">All periods</option>',
-        ...available.map(p => {
-          const isCur = cur.some(c => c.academic_year===p.academic_year && c.semester==p.semester);
-          const label = `${p.academic_year} · Sem ${p.semester}${isCur?' (current)':''}`;
-          const val   = `${p.academic_year}|${p.semester}`;
-          const sel   = SCTX.academic_year===p.academic_year && SCTX.semester==p.semester ? 'selected':'';
-          return `<option value="${val}" ${sel}>${label}</option>`;
-        })
-      ].join('');
-      periodSel.innerHTML = opts;
-      periodSel.onchange = () => {
-        if (periodSel.value === 'all') {
-          SCTX.academic_year = null; SCTX.semester = null; SCTX.period_label = 'All periods';
-        } else if (periodSel.value) {
-          const [ay, sem] = periodSel.value.split('|');
-          SCTX.academic_year = ay || null;
-          SCTX.semester      = sem ? parseInt(sem) : null;
-          SCTX.period_label  = periodSel.options[periodSel.selectedIndex]?.text || '';
-        } else {
-          // "Current period" — use live data (no static year filter)
-          SCTX.academic_year = null; SCTX.semester = null; SCTX.period_label = 'Current period';
-        }
-        updateSCtxLabel();
-        sCtxReload();
-      };
-    }
-  } catch(e) {}
-
   // Mark initialized and show bar
   bar.dataset.initialized = '1';
   bar.style.display = 'flex';
@@ -2808,7 +2715,6 @@ function updateSCtxLabel() {
   const parts = [];
   if (SCTX.subject_name) parts.push(SCTX.subject_name);
   if (SCTX.due_filter && SCTX.due_filter !== 'all') parts.push(DUE_LABELS[SCTX.due_filter] || SCTX.due_filter);
-  if (SCTX.academic_year) parts.push(SCTX.period_label || `${SCTX.academic_year} S${SCTX.semester||''}`);
   lbl.textContent = parts.length ? `Showing: ${parts.join(' · ')}` : '';
 }
 
@@ -3295,96 +3201,17 @@ function sdRenderQuestions(questions) {
     </table>`;
 }
 
-// ── Combined Tests view (list + create + bank in one panel) ──
-async function loadTTests(m) {
-  m.innerHTML = panelLoader();
-  const periodParams = {};
-  if (TCTX.academic_year) { periodParams.academic_year = TCTX.academic_year; if (TCTX.semester) periodParams.semester = TCTX.semester; }
-  let tests = [];
-  try { tests = await GET('/tests', periodParams) || []; } catch(e) {}
-
-  const subjName   = TCTX.subject_name || '';
-  const filtered   = tests.filter(t =>
-    (!TCTX.subject_id || t.subject_id == TCTX.subject_id) &&
-    (!window._semFilter || t.semester == window._semFilter)
-  );
-
-  m.innerHTML = `
-<div class="topbar">
-  <div>
-    <div class="topbar-title">Tests${subjName?` · <span class="badge badge-green" style="font-size:11px;vertical-align:middle">${subjName}</span>`:''}</div>
-    <div class="topbar-sub">${filtered.length} test${filtered.length!==1?'s':''} · ${filtered.filter(t=>t.status==='published').length} published</div>
-    <div style="display:flex;gap:6px;margin-top:8px">
-      <span class="tag${!window._semFilter?' active':''}" onclick="window._semFilter=null;tRender('tests')" style="cursor:pointer">All semesters</span>
-      <span class="tag${window._semFilter==1?' active':''}" onclick="window._semFilter=1;tRender('tests')" style="cursor:pointer">Semester 1</span>
-      <span class="tag${window._semFilter==2?' active':''}" onclick="window._semFilter=2;tRender('tests')" style="cursor:pointer">Semester 2</span>
-    </div>
-  </div>
-  <div class="topbar-actions">
-    <button class="btn btn-secondary" onclick="tNav('questions',document.querySelector('#t-sidebar .nav-item[onclick*=questions]'))">📚 Question bank</button>
-    <button class="btn btn-primary" onclick="tNav('create',document.querySelector('#t-sidebar .nav-item[onclick*=create]'))">➕ Create test</button>
-  </div>
-</div>
-<div class="page">
-  <!-- Status filter tabs -->
-  <div class="tab-bar" style="margin-bottom:16px">
-    <button class="tab-btn active" onclick="tTestsTab(this,'all')">All (${filtered.length})</button>
-    <button class="tab-btn" onclick="tTestsTab(this,'published')">Published (${filtered.filter(t=>t.status==='published').length})</button>
-    <button class="tab-btn" onclick="tTestsTab(this,'draft')">Drafts (${filtered.filter(t=>t.status==='draft').length})</button>
-  </div>
-  <div id="t-tests-list">
-    ${filtered.length ? `
-    <table class="data-table">
-      <thead><tr><th>Title</th><th>Type</th><th>Period</th><th>Status</th><th>Due</th><th>Results</th><th style="width:220px">Actions</th></tr></thead>
-      <tbody id="t-tests-tbody">
-        ${filtered.map(t=>`<tr data-status="${t.status}">
-          <td><b>${t.title}</b>${t.subject_name?`<div style="font-size:10px;color:var(--text-3)">${t.subject_name}</div>`:''}</td>
-          <td>${testTypeBadge(t.type)}</td>
-          <td style="font-size:11px;color:var(--text-3)">${t.academic_year?`${t.academic_year} S${t.semester||'—'}`:'—'}</td>
-          <td><span class="badge badge-${t.status==='published'?'green':t.status==='draft'?'amber':'gray'}">${t.status}</span></td>
-          <td style="color:var(--text-3)">${t.due_at?fmtDate(t.due_at):'—'}</td>
-          <td><button class="btn btn-ghost btn-sm" onclick="viewTestResults(${t.id})">📊 Results</button></td>
-          <td>
-            <div style="display:flex;gap:4px;flex-wrap:wrap">
-              <button class="btn btn-ghost btn-sm" onclick="previewTest(${t.id},true)">Preview</button>
-              <button class="btn btn-ghost btn-sm" onclick="editExistingTest(${t.id})">Edit</button>
-              <button class="btn btn-ghost btn-sm" onclick="duplicateTest(${t.id})">Copy</button>
-              <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="deleteTest(${t.id},'${(t.title||'').replace(/'/g,"\\'")}')">Delete</button>
-            </div>
-          </td>
-        </tr>`).join('')}
-      </tbody>
-    </table>` :
-    `<div class="empty-state"><div class="empty-icon">📋</div>
-      <div class="empty-title">No tests yet${subjName?' for '+subjName:''}</div>
-      <div class="empty-desc">Create your first test to get started.</div>
-      <button class="btn btn-primary" style="margin-top:16px" onclick="tNav('create',null)">➕ Create test</button>
-    </div>`}
-  </div>
-</div>`;
-}
-
-function tTestsTab(btn, status) {
-  btn.closest('.tab-bar').querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('#t-tests-tbody tr[data-status]').forEach(row => {
-    row.style.display = (status === 'all' || row.dataset.status === status) ? '' : 'none';
-  });
-}
-
 async function loadTDash(m){
-  const subjParams   = TCTX.subject_id ? { subject_id: TCTX.subject_id } : {};
-  const subjName     = TCTX.subject_name || '';
-  const periodParams = {};
-  if (TCTX.academic_year) { periodParams.academic_year = TCTX.academic_year; if (TCTX.semester) periodParams.semester = TCTX.semester; }
+  const subjParams = TCTX.subject_id ? { subject_id: TCTX.subject_id } : {};
+  const subjName   = TCTX.subject_name || '';
 
   let tests=null,students=null,analytics=null,marking=null;
   try{
     [tests,students,analytics,marking]=await Promise.all([
-      GET('/tests', periodParams),
+      GET('/tests'),
       GET('/students'),
-      GET('/analytics/school', {...subjParams, ...periodParams}),
-      GET('/analytics/marking-queue', {...subjParams, ...periodParams})
+      GET('/analytics/school', subjParams),
+      GET('/analytics/marking-queue', subjParams)
     ]);
   }catch(e){
     console.error('loadTDash error:',e);
@@ -3460,7 +3287,7 @@ async function loadTDash(m){
     </div>
     ${filteredTests.length?`<table class="data-table"><thead><tr><th>Test</th><th>Type</th><th>Status</th><th>Due</th><th>Actions</th></tr></thead><tbody>
     ${filteredTests.slice(0,6).map(t=>`<tr>
-      <td><b>${t.title}</b>${t.academic_year?`<div style="font-size:10px;color:var(--text-3);margin-top:1px">${t.academic_year} · Sem ${t.semester||'—'}</div>`:''}</td>
+      <td><b>${t.title}</b></td>
       <td>${testTypeBadge(t.type)}</td>
       <td><span class="badge badge-${t.status==='published'?'green':t.status==='draft'?'amber':'gray'}">${t.status}</span></td>
       <td style="color:var(--text-3)">${t.due_at?fmtDate(t.due_at):'—'}</td>
@@ -3520,7 +3347,7 @@ async function loadTBank(m){
         <option value="multi" ${bankFilter.type==='multi' ?'selected':''}>Multi-select</option>
         <option value="short" ${bankFilter.type==='short' ?'selected':''}>Short answer</option>
         <option value="essay" ${bankFilter.type==='essay' ?'selected':''}>Essay</option>
-        <option value="fill-in" ${bankFilter.type==='fill-in' ?'selected':''}>Fill in</option>
+        <option value="blank" ${bankFilter.type==='blank' ?'selected':''}>Fill in blank</option>
         <option value="tf"    ${bankFilter.type==='tf'    ?'selected':''}>True / False</option>
       </select>
     </div>
@@ -3758,7 +3585,7 @@ async function mkMarkStudent(attemptId, testId) {
   // Filter to markable questions (essay, short, blank) that came from this attempt
   const markableAnswers = (attempt.answers || []).filter(a => {
     const type = a.question_type || qMap[a.question_id]?.type;
-    return type === 'essay' || type === 'short' || type === 'fill-in';
+    return type === 'essay' || type === 'short' || type === 'blank';
   });
   // Store in state so mkSaveAll can read without passing through onclick JSON
   _mkState.currentAnswers = markableAnswers.map(a => ({
@@ -3783,7 +3610,7 @@ async function mkMarkStudent(attemptId, testId) {
   const prevA = curIdx > 0 ? allAttempts[curIdx-1] : null;
   const nextA  = curIdx < allAttempts.length-1 ? allAttempts[curIdx+1] : null;
 
-  const TYPE_LABEL = { essay:'Essay', short:'Short answer', blank:'Fill in' };
+  const TYPE_LABEL = { essay:'Essay', short:'Short answer', blank:'Fill-in-blank' };
 
   const cards = markableAnswers.map((a, i) => {
     const q        = qMap[a.question_id] || {};
@@ -4226,7 +4053,7 @@ async function loadTCreate(m, prefill) {
               <option value="multi">Multi-select</option>
               <option value="short">Short answer</option>
               <option value="essay">Essay</option>
-              <option value="fill-in">Fill in</option>
+              <option value="blank">Fill in blank</option>
               <option value="tf">True / False</option>
             </select>
             <select class="form-select" id="create-bank-sub" style="width:auto" onchange="loadBankForCreate()">
@@ -4330,18 +4157,9 @@ async function loadTCreate(m, prefill) {
               style="margin-top:6px;display:${isCustom?'block':'none'}">`;
           })()}
         </div>
-        <div class="form-group">
-          <label class="form-label">Academic year <span style="font-weight:400;color:var(--text-3);font-size:11px">(set by admin)</span></label>
-          <div class="form-input" style="background:var(--bg);color:var(--text-2);cursor:default;user-select:none"
-               id="new-test-academic-year-display"
-               title="Academic year is set by your administrator">
-            ${t.academic_year || TCTX.academic_year || '— auto-detected —'}
-          </div>
-          <input type="hidden" id="new-test-academic-year" value="${t.academic_year || TCTX.academic_year || ''}">
-        </div>
         <div class="form-group"><label class="form-label">Semester</label>
           <select class="form-select" id="new-test-semester">
-            <option value="" ${!t.semester?'selected':''}>— Auto-detect —</option>
+            <option value="" ${!t.semester?'selected':''}>— Not specified —</option>
             <option value="1" ${t.semester==1?'selected':''}>Semester 1</option>
             <option value="2" ${t.semester==2?'selected':''}>Semester 2</option>
           </select>
@@ -4834,9 +4652,8 @@ function aRender(v){
   else if(v==='teachers')    loadATeachers(m);
   else if(v==='students')    loadAStudents(m);
   else if(v==='settings')    loadASettings(m);
-  else if(v==='analytics')        loadAAnalytics(m);
-  else if(v==='academic-periods') loadAAcademicPeriods(m);
-  else if(v==='questions')        loadAQuestions(m);
+  else if(v==='analytics')   loadAAnalytics(m);
+  else if(v==='questions')   loadAQuestions(m);
   else if(v==='marking')     loadTMarking(m);
   else if(v==='messages')    loadAMessages(m);
   else if(v==='chat')        loadGroupChat(m,'a');
@@ -4852,7 +4669,7 @@ async function loadAQuestions(m) {
   try { stats = await GET('/analytics/question-stats'); } catch(e) {}
 
   const DIFF_COLOR = { Easy:'green', Medium:'amber', Hard:'coral' };
-  const TYPE_SHORT = { mcq:'MCQ', multi:'Multi', short:'Short', essay:'Essay', blank:'Fill in', tf:'T/F' };
+  const TYPE_SHORT = { mcq:'MCQ', multi:'Multi', short:'Short', essay:'Essay', blank:'Fill', tf:'T/F' };
 
   // Build teacher options for filter
   const teachers = stats?.by_teacher || [];
@@ -4960,7 +4777,7 @@ async function loadAQuestions(m) {
         <option value="multi">Multi-select</option>
         <option value="short">Short answer</option>
         <option value="essay">Essay</option>
-        <option value="fill-in">Fill in</option>
+        <option value="blank">Fill in blank</option>
         <option value="tf">True / False</option>
       </select>
       <button class="btn btn-ghost btn-sm" onclick="aqReset()">Clear</button>
@@ -5019,7 +4836,7 @@ async function aqLoad() {
   const total = res?.total || 0;
   const pages = Math.ceil(total / 30);
   const DIFF_COLOR = { Easy:'green', Medium:'amber', Hard:'coral' };
-  const TYPE_SHORT = { mcq:'MCQ', multi:'Multi', short:'Short', essay:'Essay', blank:'Fill in', tf:'T/F' };
+  const TYPE_SHORT = { mcq:'MCQ', multi:'Multi', short:'Short', essay:'Essay', blank:'Fill', tf:'T/F' };
 
   if (!items.length) {
     listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">❓</div><div class="empty-title">No questions found</div><div class="empty-desc">Try adjusting your filters.</div></div>';
@@ -5089,140 +4906,6 @@ async function aDeleteQuestion(qid, preview) {
     notify('Question deleted', 'success');
     aqLoad();
   } catch(e) { notify('Could not delete: ' + e.message, 'error'); }
-}
-
-// ── Admin: Academic year & semester management ────────────────
-async function loadAAcademicPeriods(m) {
-  m.innerHTML = panelLoader();
-  let data = null;
-  try { data = await GET('/academic-periods'); } catch(e) {}
-  const current  = data?.current  || [];  // active periods per year_group
-  const history  = data?.history  || [];
-  const ygroups  = [1, 2, 3];
-  const curMap   = {};
-  current.forEach(p => { curMap[p.year_group] = p; });
-
-  const fmtPeriod = p => p ? `${p.academic_year} · Semester ${p.semester}` : '— Not set —';
-  const fmtDate   = ts => ts ? new Date(ts).toLocaleDateString('en-GH',{day:'numeric',month:'short',year:'numeric'}) : '';
-
-  m.innerHTML = `
-<div class="topbar">
-  <div><div class="topbar-title">Academic Year Management</div>
-  <div class="topbar-sub">Set the current academic year and semester for each year group independently</div></div>
-</div>
-<div class="page">
-
-  <!-- Current periods (3 cards) -->
-  <div class="grid-3" style="margin-bottom:28px">
-    ${ygroups.map(yg => {
-      const p = curMap[yg];
-      return `
-      <div class="card" style="padding:20px">
-        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Year Group ${yg}</div>
-        <div style="font-size:18px;font-weight:800;color:var(--green-dk);margin-bottom:4px">${p ? p.academic_year : '—'}</div>
-        <div style="font-size:14px;font-weight:600;color:var(--text-2);margin-bottom:16px">${p ? `Semester ${p.semester}` : 'No period set'}</div>
-        ${p ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Active since ${fmtDate(p.started_at)}</div>` : ''}
-        <button class="btn btn-primary btn-sm" onclick="apOpenSetModal(${yg},'${p?.academic_year||''}',${p?.semester||1})">
-          ${p ? 'Update period' : 'Set period'}
-        </button>
-      </div>`;
-    }).join('')}
-  </div>
-
-  <!-- History -->
-  <div class="card">
-    <div class="card-header"><div class="card-title">Period history</div></div>
-    ${history.length ? `
-    <table class="data-table">
-      <thead><tr><th>Year Group</th><th>Academic Year</th><th>Semester</th><th>Started</th><th>Ended</th><th>Set by</th><th>Status</th></tr></thead>
-      <tbody>
-        ${history.map(p => `<tr>
-          <td>Year ${p.year_group}</td>
-          <td><b>${p.academic_year}</b></td>
-          <td>Semester ${p.semester}</td>
-          <td style="color:var(--text-3)">${fmtDate(p.started_at)}</td>
-          <td style="color:var(--text-3)">${p.ended_at ? fmtDate(p.ended_at) : '—'}</td>
-          <td style="color:var(--text-3)">${p.set_by_name || '—'}</td>
-          <td><span class="badge badge-${p.is_active?'green':'gray'}">${p.is_active?'Active':'Closed'}</span></td>
-        </tr>`).join('')}
-      </tbody>
-    </table>` : '<div style="padding:20px;color:var(--text-3)">No history yet — set the first period above.</div>'}
-  </div>
-
-  <!-- Set period modal (inline) -->
-  <div id="ap-set-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:600;display:none;align-items:center;justify-content:center">
-    <div style="background:#fff;border-radius:12px;padding:28px;width:100%;max-width:420px;box-shadow:0 8px 40px rgba(0,0,0,.18)">
-      <div style="font-size:17px;font-weight:800;margin-bottom:20px" id="ap-modal-title">Set period — Year 1</div>
-      <input type="hidden" id="ap-yg">
-      <div class="form-group">
-        <label class="form-label">Academic year <span style="font-weight:400;color:var(--text-3)">(e.g. 2024/2025)</span></label>
-        <input class="form-input" id="ap-year" placeholder="2024/2025" pattern="\\d{4}/\\d{4}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Semester</label>
-        <select class="form-select" id="ap-sem">
-          <option value="1">Semester 1 (Sep – Jan)</option>
-          <option value="2">Semester 2 (Feb – Jul)</option>
-        </select>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="form-group">
-          <label class="form-label">Start date</label>
-          <input class="form-input" id="ap-start" type="date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">End date</label>
-          <input class="form-input" id="ap-end" type="date">
-        </div>
-      </div>
-      <div class="info-box blue" style="font-size:12px;margin-bottom:16px">
-        All new tests and student submissions for <b>Year Group <span id="ap-yg-label">1</span></b> will be tagged with this period going forward.
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="btn btn-secondary" onclick="document.getElementById('ap-set-modal').style.display='none'">Cancel</button>
-        <button class="btn btn-primary" onclick="apSavePeriod()">Save period →</button>
-      </div>
-    </div>
-  </div>
-</div>`;
-}
-
-function apOpenSetModal(yg, currentYear, currentSem) {
-  const modal = document.getElementById('ap-set-modal');
-  if (!modal) return;
-  document.getElementById('ap-yg').value        = yg;
-  document.getElementById('ap-yg-label').textContent = yg;
-  document.getElementById('ap-modal-title').textContent = `Set period — Year Group ${yg}`;
-  // Suggest next period if current is known
-  if (currentYear) {
-    document.getElementById('ap-year').value = currentYear;
-    document.getElementById('ap-sem').value  = currentSem;
-  } else {
-    // Suggest current date-based period
-    const m = new Date().getMonth() + 1;
-    const y = new Date().getFullYear();
-    document.getElementById('ap-year').value = (m >= 8 ? y : y-1) + '/' + (m >= 8 ? y+1 : y);
-    document.getElementById('ap-sem').value  = [8,9,10,11,12,1].includes(m) ? '1' : '2';
-  }
-  modal.style.display = 'flex';
-}
-
-async function apSavePeriod() {
-  const yg    = parseInt(document.getElementById('ap-yg').value);
-  const year  = document.getElementById('ap-year').value.trim();
-  const sem   = parseInt(document.getElementById('ap-sem').value);
-  const start = document.getElementById('ap-start')?.value || null;
-  const end   = document.getElementById('ap-end')?.value   || null;
-  if (!year || !/^\d{4}\/\d{4}$/.test(year)) { notify('Enter academic year as YYYY/YYYY (e.g. 2024/2025)', 'error'); return; }
-  try {
-    await POST('/academic-periods', { year_group: yg, academic_year: year, semester: sem, start_date: start, end_date: end });
-    document.getElementById('ap-set-modal').style.display = 'none';
-    notify(`Year ${yg} period updated: ${year} Semester ${sem}`, 'success');
-    // Refresh whichever settings tab is open
-    const tab = document.getElementById('st-academic-content');
-    if (tab) loadAcademicTab();
-    else loadAAcademicPeriods(document.getElementById('a-main'));
-  } catch(e) { notify(e.message, 'error'); }
 }
 
 async function loadAAnalytics(m) {
@@ -6275,13 +5958,9 @@ async function enableAllInCategory(category, enable) {
   } catch(e) { notify(e.message, 'error'); }
 }
 
-async function aOpenSubjectModal(subject) {
+function aOpenSubjectModal(subject) {
   const isEdit = !!subject;
   const categories = Object.keys(CATEGORY_ICONS);
-  // Fetch latest departments so newly created ones appear in the category list
-  let depts = [];
-  try { depts = await GET('/departments') || []; } catch(e) {}
-  const deptOpts = depts.map(d => `<option value="${d.name}" ${subject?.category===d.name?'selected':''}>${d.name}</option>`).join('');
   adminModal(
     isEdit ? `Edit — ${subject.name}` : 'Add custom subject',
     `<div class="form-group"><label class="form-label">Subject name</label>
@@ -6290,10 +5969,9 @@ async function aOpenSubjectModal(subject) {
      <div class="form-group"><label class="form-label">Short name / abbreviation</label>
        <input class="form-input" id="asj-short" placeholder="e.g. ICT, Biol." value="${isEdit?(subject.short_name||''):''}">
      </div>
-     <div class="form-group"><label class="form-label">Category / Department</label>
+     <div class="form-group"><label class="form-label">Category</label>
        <select class="form-select" id="asj-cat">
          ${categories.map(c=>`<option value="${c}" ${subject?.category===c?'selected':''}>${c}</option>`).join('')}
-         ${deptOpts}
          <option value="General" ${(!subject||subject.category==='General')?'selected':''}>General</option>
        </select>
      </div>`,
@@ -7361,8 +7039,6 @@ function loadASettings(m) {
   <div class="tab-bar" style="margin-bottom:20px">
     <button class="tab-btn active" onclick="settingsTab(this,'st-general')">General</button>
     <button class="tab-btn" onclick="settingsTab(this,'st-subjects')">Subjects</button>
-    <button class="tab-btn" onclick="settingsTab(this,'st-academic');loadAcademicTab()">Academic year</button>
-    <button class="tab-btn" onclick="settingsTab(this,'st-chat');loadChatGroupsTab()">Class chats</button>
     <button class="tab-btn" onclick="settingsTab(this,'st-notifications')">Notifications</button>
     <button class="tab-btn" onclick="settingsTab(this,'st-security')">Security</button>
   </div>
@@ -7404,16 +7080,6 @@ function loadASettings(m) {
     </div>
   </div>
 
-  <!-- Academic Year tab -->
-  <div id="st-academic" class="tab-pane" style="display:none">
-    <div id="st-academic-content"><div style="padding:20px;color:var(--text-3)">Loading…</div></div>
-  </div>
-
-  <!-- Class chats tab -->
-  <div id="st-chat" class="tab-pane" style="display:none">
-    <div id="st-chat-content"><div style="padding:20px;color:var(--text-3)">Loading…</div></div>
-  </div>
-
   <!-- Security tab -->
   <div id="st-security" class="tab-pane" style="display:none">
     <div class="card" style="max-width:520px">
@@ -7429,105 +7095,11 @@ function settingsTab(btn, tabId) {
   switchTab(btn, tabId);
   if (tabId === 'st-subjects') {
     const pane = document.getElementById('st-subjects');
-    if (pane && !pane.dataset.loaded) { pane.dataset.loaded = '1'; loadASubjects(pane, true); }
+    if (pane && !pane.dataset.loaded) {
+      pane.dataset.loaded = '1';
+      loadASubjects(pane, true);
+    }
   }
-}
-
-async function loadAcademicTab() {
-  const el = document.getElementById('st-academic-content');
-  if (!el) return;
-  el.innerHTML = '<div style="padding:20px;color:var(--text-3)">Loading…</div>';
-  let data = null;
-  try { data = await GET('/academic-periods'); } catch(e) {}
-  const current  = data?.current  || [];
-  const history  = data?.history  || [];
-  const curMap   = {};
-  current.forEach(p => { curMap[p.year_group] = p; });
-  const fmtD = ts => ts ? new Date(ts).toLocaleDateString('en-GH',{day:'numeric',month:'short',year:'numeric'}) : '';
-  el.innerHTML = `
-  <div class="grid-3" style="margin-bottom:24px">
-    ${[1,2,3].map(yg => {
-      const p = curMap[yg];
-      return `<div class="card" style="padding:20px">
-        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Year Group ${yg}</div>
-        <div style="font-size:18px;font-weight:800;color:var(--green-dk)">${p?p.academic_year:'—'}</div>
-        <div style="font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:4px">${p?`Semester ${p.semester}`:'-'}</div>
-        ${p&&p.start_date?`<div style="font-size:11px;color:var(--text-3)">${fmtD(p.start_date)} – ${fmtD(p.end_date)||'ongoing'}</div>`:''}
-        <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="apOpenSetModal(${yg},'${p?.academic_year||''}',${p?.semester||1})">
-          ${p?'Update':'Set period'}
-        </button>
-      </div>`;
-    }).join('')}
-  </div>
-  <div class="card">
-    <div class="card-header"><div class="card-title">Period history</div></div>
-    ${history.length ? `<table class="data-table">
-      <thead><tr><th>Year Group</th><th>Academic Year</th><th>Semester</th><th>Start</th><th>End</th><th>Set by</th><th>Status</th></tr></thead>
-      <tbody>${history.map(p=>`<tr>
-        <td>Year ${p.year_group}</td><td><b>${p.academic_year}</b></td><td>Semester ${p.semester}</td>
-        <td>${fmtD(p.start_date)||fmtD(p.started_at)}</td><td>${fmtD(p.end_date)||fmtD(p.ended_at)||'—'}</td>
-        <td style="color:var(--text-3)">${p.set_by_name||'—'}</td>
-        <td><span class="badge badge-${p.is_active?'green':'gray'}">${p.is_active?'Active':'Closed'}</span></td>
-      </tr>`).join('')}</tbody></table>` : '<div style="padding:16px;color:var(--text-3)">No history yet.</div>'}
-  </div>`;
-}
-
-async function loadChatGroupsTab() {
-  const el = document.getElementById('st-chat-content');
-  if (!el) return;
-  el.innerHTML = '<div style="padding:20px;color:var(--text-3)">Loading…</div>';
-  let groups = [], classes = [];
-  try { [groups, classes] = await Promise.all([GET('/chat'), GET('/classes')]); } catch(e) {}
-  const classGroups = (groups||[]).filter(g => g.type === 'class');
-  const classGroupMap = {};
-  classGroups.forEach(g => { if (g.class_id) classGroupMap[g.class_id] = g; });
-  el.innerHTML = `
-  <div class="card" style="margin-bottom:20px">
-    <div class="card-header">
-      <div><div class="card-title">Default class chat groups</div><div class="card-sub">One chat group per class — auto-populated with students and teachers</div></div>
-      <button class="btn btn-primary btn-sm" onclick="setupClassGroups()">⚡ Create all class groups</button>
-    </div>
-    ${(classes||[]).length ? `<table class="data-table"><thead><tr><th>Class</th><th>Year</th><th>Chat group</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-    ${(classes||[]).map(c => {
-      const g = classGroupMap[c.id];
-      return `<tr>
-        <td><b>${c.name}</b></td>
-        <td>Year ${c.year_group}</td>
-        <td>${g?g.name:'<span style="color:var(--text-3)">Not created</span>'}</td>
-        <td>${g?`<span class="badge badge-${parseInt(g.is_active)===1?'green':'gray'}">${parseInt(g.is_active)===1?'Active':'Inactive'}</span>`:'<span class="badge badge-gray">—</span>'}</td>
-        <td>
-          ${g?`
-            <button class="btn btn-ghost btn-sm" onclick="chatGroupToggle(${g.id},${parseInt(g.is_active)===1?0:1})">${parseInt(g.is_active)===1?'Deactivate':'Activate'}</button>
-            <button class="btn btn-ghost btn-sm" onclick="openChatGroupSettings(${g.id})">Members</button>
-          `:`<button class="btn btn-secondary btn-sm" onclick="createClassGroupSingle(${c.id},'${c.name.replace(/'/g,"\\'")}')">Create</button>`}
-        </td>
-      </tr>`;
-    }).join('')}</tbody></table>` : '<div style="padding:16px;color:var(--text-3)">No classes found. Add classes first.</div>'}
-  </div>`;
-}
-
-async function setupClassGroups() {
-  try {
-    const res = await POST('/chat/setup-class-groups', {});
-    notify(res.message || 'Class groups created', 'success');
-    loadChatGroupsTab();
-  } catch(e) { notify(e.message, 'error'); }
-}
-
-async function createClassGroupSingle(classId, className) {
-  try {
-    await POST('/chat', { name: className + ' Chat', type: 'class', class_id: classId });
-    notify(`Group created: ${className} Chat`, 'success');
-    loadChatGroupsTab();
-  } catch(e) { notify(e.message, 'error'); }
-}
-
-async function chatGroupToggle(groupId, active) {
-  try {
-    await PATCH(`/chat/${groupId}`, { is_active: active });
-    notify(active === 1 ? 'Group activated' : 'Group deactivated', 'success');
-    await loadChatGroupsTab();
-  } catch(e) { notify(e.message || 'Could not update group', 'error'); }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -7748,7 +7320,6 @@ function selectQType(el, type) {
   el.classList.add('selected');
   const prevType  = currentQType;
   currentQType    = type;
-  _updateQbTypeLabel();
 
   const optSection   = document.getElementById('qb-options-section');
   const essaySection = document.getElementById('qb-essay-section');
@@ -7760,11 +7331,11 @@ function selectQType(el, type) {
 
   // Show/hide sections
   const showOpts  = ['mcq', 'multi', 'tf'].includes(type);
-  const showShort = ['short', 'fill-in'].includes(type);
+  const showShort = ['short', 'blank'].includes(type);
   optSection.style.display   = showOpts  ? '' : 'none';
   essaySection.style.display = type === 'essay' ? '' : 'none';
   shortSection.style.display = showShort ? '' : 'none';
-  if (blankHint) blankHint.style.display = type === 'fill-in' ? '' : 'none';
+  if (blankHint) blankHint.style.display = type === 'blank' ? '' : 'none';
 
   if (list) {
     // Switch radio ↔ checkbox for multi-select
@@ -7808,8 +7379,8 @@ function selectQType(el, type) {
   // Update accepted-answers label and placeholder for blank vs short
   const acceptedLabel = document.getElementById('qb-accepted-label');
   const acceptedArea  = document.getElementById('qb-accepted');
-  if (type === 'fill-in') {
-    if (acceptedLabel) acceptedLabel.innerHTML = 'Correct answers for fill-in <span style="font-size:11px;color:var(--text-3);font-weight:400">(one per line — any will be accepted)</span>';
+  if (type === 'blank') {
+    if (acceptedLabel) acceptedLabel.innerHTML = 'Correct answers for blank <span style="font-size:11px;color:var(--text-3);font-weight:400">(one per line — any will be accepted)</span>';
     if (acceptedArea)  acceptedArea.placeholder = 'Networking\nNetwork\nComputer network';
   } else {
     if (acceptedLabel) acceptedLabel.innerHTML = 'Accepted answers <span style="font-size:11px;color:var(--text-3);font-weight:400">(one per line — any will be accepted)</span>';
@@ -7860,7 +7431,7 @@ async function editQuestion(qid) {
           + `<button class="opt-remove" onclick="removeOpt(this)" ${q.type==='tf'?'style="visibility:hidden"':''}>×</button>`;
         list.appendChild(row);
       });
-    } else if (['short','fill-in'].includes(q.type)) {
+    } else if (['short','blank'].includes(q.type)) {
       // Restore accepted answers from options (all are correct=1)
       const accepted = opts.map(o => o.text).join('\n');
       if (get('qb-accepted')) get('qb-accepted').value = accepted;
@@ -7906,17 +7477,15 @@ function openNewQBuilder() {
     <div class="opt-row"><input type="radio" name="correct" class="opt-correct-radio"><input class="form-input opt-input" placeholder="Option C"><button class="opt-remove" onclick="removeOpt(this)">&#xD7;</button></div>
     <div class="opt-row"><input type="radio" name="correct" class="opt-correct-radio"><input class="form-input opt-input" placeholder="Option D"><button class="opt-remove" onclick="removeOpt(this)">&#xD7;</button></div>`;
 
-  // Reset type selector to MCQ (with full section visibility reset)
+  // Reset type selector to MCQ
   const mcqCard = document.querySelector(".qb-type-card[onclick*=\"'mcq'\"]");
   if (mcqCard) selectQType(mcqCard, 'mcq');
-  else currentQType = 'mcq';
 
   // Clear text fields
   ['qb-text','qb-rubric','qb-accepted','qb-explanation'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
-  const marksEl = document.getElementById('qb-marks');
-  if (marksEl) marksEl.value = '1';
+  document.getElementById('qb-marks').value = '1';
 
   const title = document.querySelector('#qbuilder-modal .modal-title');
   if (title) title.textContent = 'New question';
@@ -7925,28 +7494,9 @@ function openNewQBuilder() {
   populateSubjectDropdowns(TCTX.subject_id || null);
 }
 
-// Update the modal title to show currently selected type
-function _updateQbTypeLabel() {
-  const TYPE_NAMES = { mcq:'Multiple choice', multi:'Multi-select', short:'Short answer', essay:'Essay', blank:'Fill in', tf:'True/False' };
-  const bar = document.getElementById('qb-type-label-bar');
-  if (bar) bar.textContent = 'Type: ' + (TYPE_NAMES[currentQType] || currentQType);
-}
-
 async function saveQuestion(){
   const text = document.getElementById('qb-text')?.value?.trim();
   if (!text) { notify('Please enter question text','error'); return; }
-
-  // Auto-detect type from which section is visible, in case currentQType is out of sync
-  const optSec   = document.getElementById('qb-options-section');
-  const shortSec = document.getElementById('qb-short-section');
-  const essaySec = document.getElementById('qb-essay-section');
-  const optVisible   = optSec   && optSec.style.display   !== 'none';
-  const shortVisible = shortSec && shortSec.style.display !== 'none';
-  const essayVisible = essaySec && essaySec.style.display !== 'none';
-
-  if (essayVisible && !['essay'].includes(currentQType)) currentQType = 'essay';
-  else if (shortVisible && !['short','fill-in'].includes(currentQType)) currentQType = 'fill-in';
-  else if (optVisible && !['mcq','multi','tf'].includes(currentQType)) currentQType = 'mcq';
 
   let opts = [];
   let rubric = null;
@@ -7968,7 +7518,7 @@ async function saveQuestion(){
   } else if (currentQType === 'essay') {
     rubric = document.getElementById('qb-rubric')?.value?.trim() || null;
     // No options for essay — teacher marks manually
-  } else if (['short','fill-in'].includes(currentQType)) {
+  } else if (['short','blank'].includes(currentQType)) {
     const raw = document.getElementById('qb-accepted')?.value?.trim() || '';
     const lines = raw.split('\n').map(s=>s.trim()).filter(Boolean);
     if (!lines.length) { notify('Enter at least one accepted answer','error'); return; }
@@ -8070,7 +7620,7 @@ function renderTestQList() {
     const diff = q.difficulty  || q.diff || 'Medium';
     const type = q.type || 'mcq';
     const text = (q.question_text || q.q || '').substring(0, 90) + ((q.question_text || q.q || '').length > 90 ? '…' : '');
-    const TYPE_SHORT = {mcq:'MCQ',multi:'Multi',short:'Short',essay:'Essay',blank:'Fill in',tf:'T/F'};
+    const TYPE_SHORT = {mcq:'MCQ',multi:'Multi',short:'Short',essay:'Essay',blank:'Fill',tf:'T/F'};
     return `<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:5px;background:var(--surface)">
       <div style="font-size:11px;font-weight:700;color:var(--text-3);width:18px;padding-top:2px;flex-shrink:0">${num}</div>
       <div style="flex:1;min-width:0">
@@ -8576,7 +8126,7 @@ async function openAttemptReview(attemptId, testTitle, showFeedback) { // testTi
     selOpts = selOpts || [];
 
     const isEssay  = q.type === 'essay';
-    const isText   = q.type === 'short' || q.type === 'fill-in';
+    const isText   = q.type === 'short' || q.type === 'blank';
     const isPending = q.is_correct === null || q.is_correct === undefined;
     const isCorrect = !isPending && (q.is_correct == 1);
     const maxMarks  = parseFloat(q.marks) || 1;
@@ -8876,85 +8426,6 @@ let _chatState = { groupId: null, lastMsgAt: null, pollTimer: null, role: 's' };
 let _cgType    = null;
 let _cgAllUsers = [];
 
-// ── Admin: group members / settings panel ────────────────────
-async function openChatGroupSettings(groupId) {
-  let members = [], teachers = [], students = [];
-  try {
-    [members, teachers, students] = await Promise.all([
-      GET(`/chat/${groupId}/members`),
-      GET('/teachers').catch(()=>[]),
-      GET('/students').catch(()=>[])
-    ]);
-  } catch(e) {}
-  const allUsers = [
-    ...(teachers||[]).map(u=>({...u, role:'teacher'})),
-    ...(students||[]).map(u=>({...u, role:'student'}))
-  ];
-
-  const memberIds = new Set((members||[]).map(m=>m.id));
-  const nonMembers = (allUsers||[]).filter(u => !memberIds.has(u.id));
-
-  const html = `
-  <div style="padding:20px;max-height:70vh;overflow-y:auto">
-    <div style="font-size:15px;font-weight:800;margin-bottom:16px">Group members (${members.length})</div>
-    <table class="data-table" style="margin-bottom:20px">
-      <thead><tr><th>Name</th><th>Role</th><th>Group role</th><th>Can send</th><th>Actions</th></tr></thead>
-      <tbody>
-      ${(members||[]).map(m=>`<tr>
-        <td><b>${m.first_name} ${m.last_name}</b><div style="font-size:11px;color:var(--text-3)">${m.class_name||m.role}</div></td>
-        <td><span class="badge badge-gray" style="font-size:10px">${m.role}</span></td>
-        <td><span class="badge badge-${m.group_role==='admin'?'blue':'gray'}" style="font-size:10px">${m.group_role||'member'}</span></td>
-        <td><span style="color:${parseInt(m.can_send)===1?'var(--green)':'var(--coral)'}">${parseInt(m.can_send)===1?'✓':'Muted'}</span></td>
-        <td style="display:flex;gap:4px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick="cgMemberRole(${groupId},${m.id},'${m.group_role==='admin'?'member':'admin'}')">${m.group_role==='admin'?'Remove admin':'Make admin'}</button>
-          <button class="btn btn-ghost btn-sm" onclick="cgMemberMute(${groupId},${m.id},${parseInt(m.can_send)===1?0:1})">${parseInt(m.can_send)===1?'Mute':'Unmute'}</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="cgRemoveMember(${groupId},${m.id})">Remove</button>
-        </td>
-      </tr>`).join('')}
-      </tbody>
-    </table>
-    ${nonMembers.length?`
-    <div style="font-size:13px;font-weight:700;margin-bottom:10px">Add members</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px">
-      ${nonMembers.slice(0,20).map(u=>`
-        <button class="btn btn-secondary btn-sm" onclick="cgAddMember(${groupId},${u.id},'${(u.first_name||'')+' '+(u.last_name||'')}')">
-          + ${u.first_name} ${u.last_name}
-        </button>`).join('')}
-    </div>`:''}
-  </div>`;
-
-  // Show in a simple overlay div
-  let overlay = document.getElementById('chat-settings-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'chat-settings-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:600;display:flex;align-items:center;justify-content:center;padding:20px';
-    document.body.appendChild(overlay);
-  }
-  overlay.innerHTML = `<div style="background:#fff;border-radius:12px;width:100%;max-width:680px;max-height:80vh;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.2)">
-    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:16px;font-weight:800">Group settings</div>
-      <button onclick="document.getElementById('chat-settings-overlay').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-3)">✕</button>
-    </div>
-    ${html}
-  </div>`;
-  overlay.style.display = 'flex';
-}
-
-async function cgMemberRole(groupId, userId, role) {
-  try { await PATCH(`/chat/${groupId}/members/${userId}`, { role }); openChatGroupSettings(groupId); } catch(e) { notify(e.message,'error'); }
-}
-async function cgMemberMute(groupId, userId, canSend) {
-  try { await PATCH(`/chat/${groupId}/members/${userId}`, { can_send: canSend }); openChatGroupSettings(groupId); } catch(e) { notify(e.message,'error'); }
-}
-async function cgRemoveMember(groupId, userId) {
-  if (!confirm('Remove this member?')) return;
-  try { await DELETE(`/chat/${groupId}/members/${userId}`); openChatGroupSettings(groupId); } catch(e) { notify(e.message,'error'); }
-}
-async function cgAddMember(groupId, userId, name) {
-  try { await POST(`/chat/${groupId}/members`, { user_id: userId }); notify(`${name} added`,'success'); openChatGroupSettings(groupId); } catch(e) { notify(e.message,'error'); }
-}
-
 // ── Admin: open create-group modal ───────────────────────────
 async function openCreateGroupModal() {
   _cgType = null;
@@ -9140,14 +8611,6 @@ async function openChatGroup(groupId) {
   const isAdmin = _chatState.role === 'a';
   const TYPE_ICON = { teachers:'✏️', students:'🎓', class:'🗂️', custom:'👥' };
 
-  // Fetch my role in this group
-  try {
-    const members = await GET(`/chat/${groupId}/members`);
-    const me = (members||[]).find(mb => mb.id == CURRENT_USER?.id);
-    _chatState.myGroupRole = me?.group_role || 'member';
-    _chatState.myCanSend   = me ? !!me.can_send : true;
-  } catch(e) { _chatState.myGroupRole = 'member'; _chatState.myCanSend = true; }
-
   panel.style.display = 'flex';
   panel.style.flexDirection = 'column';
   panel.innerHTML = `
@@ -9159,23 +8622,15 @@ async function openChatGroup(groupId) {
           <div style="font-size:11px;color:var(--text-3)">${group.member_count} members</div>
         </div>
       </div>
-      <div style="display:flex;gap:6px">
-        ${isAdmin||_chatState.myGroupRole==='admin'?`<button class="btn btn-ghost btn-sm" onclick="openChatGroupSettings(${groupId})">👥 Members</button>`:''}
-        ${isAdmin?`<button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="deleteGroupChat(${groupId},'${group.name.replace(/'/g,"\\'")}')">Delete</button>`:''}
-      </div>
+      ${isAdmin?`<button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="deleteGroupChat(${groupId},'${group.name.replace(/'/g,"\\'")}')">Delete group</button>`:''}
     </div>
-    <div id="chat-messages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;background:#F0F2F5">
+    <div id="chat-messages" style="flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:10px">
       ${renderChatMessages(msgs)}
     </div>
-    <!-- Reply bar -->
-    <div id="chat-reply-bar" style="display:none;padding:8px 20px;background:var(--green-lt);border-top:1px solid var(--green-mid);align-items:center;gap:8px">
-      <div id="chat-reply-preview" style="flex:1;font-size:12px;color:var(--green-dk);overflow:hidden;white-space:nowrap;text-overflow:ellipsis"></div>
-      <button onclick="chatCancelReply()" style="background:none;border:none;color:var(--green-dk);font-size:16px;cursor:pointer;padding:0 4px">✕</button>
-    </div>
-    <div style="padding:10px 16px;border-top:1px solid var(--border);background:#fff;flex-shrink:0;display:flex;gap:8px;align-items:center">
-      <input class="form-input" id="chat-input" placeholder="Type a message…" style="flex:1;border-radius:20px"
+    <div style="padding:12px 20px;border-top:1px solid var(--border);background:#fff;flex-shrink:0;display:flex;gap:10px">
+      <input class="form-input" id="chat-input" placeholder="Type a message…" style="flex:1"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMsg();}">
-      <button class="btn btn-primary" onclick="sendChatMsg()" style="border-radius:50%;width:40px;height:40px;padding:0;flex-shrink:0;display:flex;align-items:center;justify-content:center">➤</button>
+      <button class="btn btn-primary" onclick="sendChatMsg()">Send</button>
     </div>`;
 
   // Mark as read + update last seen
@@ -9188,201 +8643,68 @@ async function openChatGroup(groupId) {
   startChatPoll(groupId);
 }
 
-let _chatReplyTo = null; // { id, sender, body }
-
-function _chatDateLabel(dateStr) {
-  const d = new Date(dateStr);
-  const today = new Date(); today.setHours(0,0,0,0);
-  const yest  = new Date(today); yest.setDate(yest.getDate()-1);
-  const msgDay = new Date(d); msgDay.setHours(0,0,0,0);
-  if (msgDay.getTime() === today.getTime()) return 'Today';
-  if (msgDay.getTime() === yest.getTime())  return 'Yesterday';
-  return d.toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-}
-
-const CHAT_EMOJIS = ['👍','❤️','😂','😮','😢','😡'];
-
 function renderChatMessages(msgs) {
-  if (!msgs.length) return `<div style="text-align:center;color:var(--text-3);font-size:13px;padding:40px">No messages yet — say hello! 👋</div>`;
-  const myId    = CURRENT_USER?.id;
-  const isAdmin = _chatState.role === 'a' || _chatState.myGroupRole === 'admin';
-  const esc     = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-  let lastDay = '';
-  let html = '';
-
-  msgs.forEach((msg, i) => {
-    // Day separator
-    const day = msg.sent_at ? _chatDateLabel(msg.sent_at) : '';
-    if (day !== lastDay) {
-      lastDay = day;
-      html += `<div style="text-align:center;margin:10px 0"><span style="background:rgba(0,0,0,.06);border-radius:12px;padding:3px 12px;font-size:11px;font-weight:600;color:var(--text-3)">${day}</span></div>`;
-    }
-
-    const isMine   = msg.sender_id == myId;
-    const showName = !isMine && (i===0 || msgs[i-1].sender_id !== msg.sender_id || msgs[i-1].sent_at?.slice(0,10) !== msg.sent_at?.slice(0,10));
-    const ini      = (msg.sender_name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    const time     = msg.sent_at ? new Date(msg.sent_at).toLocaleTimeString('en-GH',{hour:'2-digit',minute:'2-digit'}) : '';
-    const isPinned = msg.is_pinned === 1;
-
-    // Parse reactions
-    let reactions = [];
-    try { if (msg.reactions_raw) reactions = JSON.parse(msg.reactions_raw).filter(Boolean); } catch(e){}
-    const reactionMap = {};
-    reactions.forEach(r => { if (r.emoji) { reactionMap[r.emoji] = (reactionMap[r.emoji]||[]).concat(r.user_id); } });
-
-    // Reaction pills
-    const reactionPills = Object.entries(reactionMap).map(([emoji, users]) =>
-      `<button onclick="chatReact(${_chatState.groupId},${msg.id},'${emoji}')"
-               style="background:${users.includes(myId)?'var(--green-lt)':'rgba(0,0,0,.06)'};border:1px solid ${users.includes(myId)?'var(--green)':'transparent'};
-                      border-radius:12px;padding:2px 7px;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:3px">
-        ${emoji}<span style="font-size:11px;font-weight:600">${users.length}</span>
-      </button>`
-    ).join('');
-
-    if (msg.is_deleted === 1) {
-      html += `
-      <div style="display:flex;justify-content:${isMine?'flex-end':'flex-start'};margin:2px 0">
-        <div style="max-width:65%;padding:8px 13px;border-radius:12px;background:#f1f1f1;font-size:12px;font-style:italic;color:var(--text-3)">
-          🚫 This message was deleted${msg.deleted_by_name ? ' by ' + msg.deleted_by_name : ''}
-        </div>
-      </div>`;
-      return;
-    }
-
-    // Reply preview
-    const replyHtml = msg.reply_to_id && msg.reply_body ? `
-      <div style="border-left:3px solid ${isMine?'rgba(255,255,255,.5)':'var(--green)'};
-                  padding:5px 10px;margin-bottom:6px;border-radius:4px;
-                  background:${isMine?'rgba(255,255,255,.12)':'var(--green-lt)'};
-                  font-size:11px;line-height:1.4">
-        <div style="font-weight:700;color:${isMine?'rgba(255,255,255,.8)':'var(--green-dk)'};margin-bottom:2px">${msg.reply_sender||'Someone'}</div>
-        <div style="opacity:.85">${esc((msg.reply_body||'').substring(0,100))}${(msg.reply_body||'').length>100?'…':''}</div>
-      </div>` : '';
-
-    // Context menu (click message to show; click outside to close)
-    const ctxMenu = `
-      <div class="chat-ctx-menu" style="display:none;position:absolute;${isMine?'right:0':'left:0'};top:-44px;
-           background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.18);
-           align-items:center;gap:4px;padding:4px 8px;z-index:100">
-        ${CHAT_EMOJIS.map(e=>`<button onclick="chatReact(${_chatState.groupId},${msg.id},'${e}')" style="background:none;border:none;font-size:16px;cursor:pointer;padding:2px">${e}</button>`).join('')}
-        <div style="width:1px;height:20px;background:var(--border);margin:0 2px"></div>
-        <button onclick="chatSetReply(${msg.id},'${(msg.sender_name||'').replace(/'/g,"\\'")}','${(msg.body||'').replace(/'/g,"\\'").replace(/\n/g,' ').substring(0,80)}')" style="background:none;border:none;font-size:12px;cursor:pointer;padding:3px 6px;white-space:nowrap">↩ Reply</button>
-        ${isAdmin||isMine?`<button onclick="chatDeleteMsg(${_chatState.groupId},${msg.id})" style="background:none;border:none;font-size:12px;color:var(--coral);cursor:pointer;padding:3px 6px;white-space:nowrap">🗑 Delete</button>`:''}
-        ${isAdmin?`<button onclick="chatPinMsg(${_chatState.groupId},${msg.id})" style="background:none;border:none;font-size:12px;cursor:pointer;padding:3px 6px">${isPinned?'Unpin':'📌 Pin'}</button>`:''}
-      </div>`;
-
-    html += `
-    <div style="display:flex;gap:8px;justify-content:${isMine?'flex-end':'flex-start'};align-items:flex-end;margin:1px 0;position:relative"
-         onclick="chatToggleMenu(event,this)">
-      ${!isMine?`<div style="width:28px;height:28px;border-radius:50%;background:${msg.sender_color||'var(--green-dk)'};flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;align-self:flex-end;margin-bottom:4px">${ini}</div>`:''}
-      <div style="max-width:65%;position:relative">
-        ${isPinned?`<div style="font-size:10px;color:var(--amber);margin-bottom:2px;padding:0 4px">📌 Pinned</div>`:''}
-        ${showName?`<div style="font-size:10px;font-weight:700;color:var(--green-dk);margin-bottom:3px;padding-left:4px">${msg.sender_name}</div>`:''}
+  if (!msgs.length) return `<div style="text-align:center;color:var(--text-3);font-size:13px;padding:20px">No messages yet — say hello! 👋</div>`;
+  const myId = CURRENT_USER?.id;
+  return msgs.map((msg, i) => {
+    const isMine = msg.sender_id == myId;
+    const showName = !isMine && (i===0 || msgs[i-1].sender_id !== msg.sender_id);
+    const ini = (msg.sender_name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const time = msg.sent_at ? new Date(msg.sent_at).toLocaleTimeString('en-GH',{hour:'2-digit',minute:'2-digit'}) : '';
+    return `
+    <div style="display:flex;gap:8px;justify-content:${isMine?'flex-end':'flex-start'};align-items:flex-end">
+      ${!isMine?`<div style="width:28px;height:28px;border-radius:50%;background:${msg.sender_color||'var(--green-dk)'};
+                               flex-shrink:0;display:flex;align-items:center;justify-content:center;
+                               font-size:10px;font-weight:700;color:#fff;margin-bottom:2px">${ini}</div>`:''}
+      <div style="max-width:65%">
+        ${showName?`<div style="font-size:10px;font-weight:600;color:var(--text-3);margin-bottom:3px;padding-left:4px">${msg.sender_name}</div>`:''}
         <div style="padding:9px 13px;border-radius:${isMine?'14px 14px 4px 14px':'14px 14px 14px 4px'};
                     background:${isMine?'var(--green-dk)':'#fff'};
                     color:${isMine?'#fff':'var(--text-1)'};
                     font-size:13px;line-height:1.5;
-                    box-shadow:0 1px 3px rgba(0,0,0,.1);
+                    box-shadow:0 1px 2px rgba(0,0,0,.08);
                     word-break:break-word">
-          ${replyHtml}
-          ${esc(msg.body)}
+          ${(msg.body||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}
         </div>
-        ${reactionPills?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:3px;justify-content:${isMine?'flex-end':'flex-start'}">${reactionPills}</div>`:''}
-        <div style="font-size:10px;color:var(--text-3);margin-top:2px;text-align:${isMine?'right':'left'};padding:0 4px">${time}</div>
-        ${ctxMenu}
+        <div style="font-size:10px;color:var(--text-3);margin-top:3px;text-align:${isMine?'right':'left'};padding:0 4px">${time}</div>
       </div>
     </div>`;
-  });
-  return html;
-}
-
-async function chatReact(groupId, msgId, emoji) {
-  try {
-    await POST(`/chat/${groupId}/react`, { message_id: msgId, emoji });
-    await pollChat();
-  } catch(e) { notify('Could not react', 'error'); }
-}
-
-function chatSetReply(msgId, sender, body) {
-  _chatReplyTo = { id: msgId, sender, body };
-  const bar = document.getElementById('chat-reply-bar');
-  if (bar) {
-    bar.style.display = 'flex';
-    document.getElementById('chat-reply-preview').innerHTML =
-      `<b>↩ ${sender}</b><span style="opacity:.7;margin-left:6px">${body.substring(0,80)}${body.length>80?'…':''}</span>`;
-  }
-  document.getElementById('chat-input')?.focus();
-}
-
-function chatCancelReply() {
-  _chatReplyTo = null;
-  const bar = document.getElementById('chat-reply-bar');
-  if (bar) bar.style.display = 'none';
-}
-
-async function chatDeleteMsg(groupId, msgId) {
-  if (!confirm('Delete this message?')) return;
-  try {
-    await DELETE(`/chat/${groupId}/messages/${msgId}`);
-    await pollChat();
-  } catch(e) { notify(e.message || 'Could not delete', 'error'); }
-}
-
-async function chatPinMsg(groupId, msgId) {
-  try {
-    await PATCH(`/chat/${groupId}/pin/${msgId}`, {});
-    await pollChat();
-  } catch(e) { notify(e.message || 'Could not pin', 'error'); }
-}
-
-function chatToggleMenu(event, wrapper) {
-  if (event.target.closest('.chat-ctx-menu')) return;
-  const menu = wrapper.querySelector('.chat-ctx-menu');
-  if (!menu) return;
-  const isOpen = menu.style.display === 'flex';
-  document.querySelectorAll('.chat-ctx-menu').forEach(m => { m.style.display = 'none'; });
-  if (!isOpen) {
-    menu.style.display = 'flex';
-    setTimeout(() => {
-      const close = (e) => { if (!menu.contains(e.target) && !wrapper.contains(e.target)) { menu.style.display = 'none'; document.removeEventListener('click', close, true); } };
-      document.addEventListener('click', close, true);
-    }, 10);
-  }
+  }).join('');
 }
 
 async function sendChatMsg() {
-  if (_chatState.myCanSend === false) { notify('You have been muted in this group', 'warn'); return; }
   const input = document.getElementById('chat-input');
   const text  = input?.value?.trim();
   if (!text || !_chatState.groupId) return;
   input.value = '';
   input.focus();
-  const payload = { body: text };
-  if (_chatReplyTo?.id) payload.reply_to_id = _chatReplyTo.id;
-  chatCancelReply();
   try {
-    await POST(`/chat/${_chatState.groupId}/messages`, payload);
+    await POST(`/chat/${_chatState.groupId}/messages`, { body: text });
+    // Immediately append own message then poll
     await pollChat();
   } catch(e) { notify('Could not send message', 'error'); input.value = text; }
 }
 
 async function pollChat() {
   if (!_chatState.groupId) return;
+  const params = { limit: 30 };
+  if (_chatState.lastMsgAt) params.since = _chatState.lastMsgAt;
   try {
-    // Full refresh — fetches up to 100 messages and re-renders
-    // This handles reactions, deletions, and date separators correctly
-    const allMsgs = await GET(`/chat/${_chatState.groupId}/messages`, { limit: 100 });
-    if (!allMsgs) return;
+    const newMsgs = await GET(`/chat/${_chatState.groupId}/messages`, params);
+    if (!newMsgs?.length) return;
     const container = document.getElementById('chat-messages');
     if (!container) return;
-    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
-    const lastBefore = _chatState.lastMsgAt;
-    const newHtml = renderChatMessages(allMsgs);
-    if (container.innerHTML !== newHtml) { // only update DOM if content changed
-      container.innerHTML = newHtml;
-      if (allMsgs.length) _chatState.lastMsgAt = allMsgs[allMsgs.length-1].sent_at;
-      if (atBottom || lastBefore !== _chatState.lastMsgAt) scrollChatBottom();
-    }
+    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
+    // Remove placeholder if present
+    const placeholder = container.querySelector('[style*="No messages yet"]');
+    if (placeholder) placeholder.remove();
+    // Append new messages
+    const div = document.createElement('div');
+    div.style.display = 'contents';
+    div.innerHTML = renderChatMessages(newMsgs);
+    container.appendChild(div);
+    _chatState.lastMsgAt = newMsgs[newMsgs.length-1].sent_at;
+    if (atBottom) scrollChatBottom();
   } catch(e) {}
 }
 
@@ -10689,7 +10011,6 @@ function readTestForm() {
     }),
     subject_id:     rawSubject || null,
     semester:       parseInt(document.getElementById('new-test-semester')?.value || '0') || null,
-    academic_year:  document.getElementById('new-test-academic-year')?.value?.trim() || TCTX.academic_year || null,
   };
 }
 
@@ -11587,7 +10908,7 @@ function downloadBulkTemplate() {
 // TEST PREVIEW — shown to students (and teachers) before starting
 // ════════════════════════════════════════════════════════════
 
-const Q_TYPE_LABELS = { mcq:'Multiple choice', multi:'Multi-select', short:'Short answer', essay:'Essay', blank:'Fill in', tf:'True/False' };
+const Q_TYPE_LABELS = { mcq:'Multiple choice', multi:'Multi-select', short:'Short answer', essay:'Essay', blank:'Fill in blank', tf:'True/False' };
 const Q_TYPE_ICONS  = { mcq:'◉', multi:'☑', short:'✏', essay:'≡', blank:'_', tf:'T/F' };
 
 function qTypeSummary(questions) {
@@ -11909,9 +11230,9 @@ async function loadBankQuestions(loadMore = false) {
     if (loadMore) {
       const oldBtn = document.getElementById('bank-load-more');
       if (oldBtn) oldBtn.remove();
-      renderBankList(listEl, questions, true);
+      renderBankList(listEl, questions, true); // append mode
     } else {
-      renderBankList(listEl, questions, false);
+      renderBankList(listEl, questions, false); // replace mode
     }
 
     _bankPage++;
@@ -11937,7 +11258,7 @@ function renderBankList(listEl, questions, append = false) {
     return;
   }
   if (!questions.length) return;
-  const TYPE_LABELS = { mcq:'MCQ', multi:'Multi-select', short:'Short answer', essay:'Essay', blank:'Fill in', tf:'True/False' };
+  const TYPE_LABELS = { mcq:'MCQ', multi:'Multi-select', short:'Short answer', essay:'Essay', blank:'Fill blank', tf:'True/False' };
   const TYPE_COLORS = { mcq:'blue', multi:'purple', short:'teal', essay:'amber', blank:'teal', tf:'gray' };
 
   const html = questions.map(q => {

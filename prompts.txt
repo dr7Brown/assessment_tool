@@ -238,3 +238,372 @@ Teachers CANNOT:
 access questions for subjects they are not assigned to
 modify restricted or locked assessments
 access administrative controls unless permitted
+
+
+When saving questions to question bank, the bank 
+should have these classifications so that the 
+question types dont mix up. each question type is saved 
+in its category
+so that the teacher or any user can use dropdown to select 
+or view questions in the bank in that category in addition 
+to the existing categories
+the question types: Multiple choice, Multi-select, Short answer, Essay,
+Fill in blank and True / False 
+
+Server error: resolveStudentClass(): Argument #2 ($schoolId) must be of type int, string given, called in /home/royayfxh/expresslabgh.com/apps/aceict/api/index.php on line 888
+
+add another  menu item on the sidebar with the name "Subjects" 
+when clicked, should display all registered subjects in the schoo. 
+should have dropdown to help filter them into categories like year, 
+classes, and or department. i wanted you to do it under admin page, not the teacher page
+The focus is that, when a subject is clicked, it should show all 
+students registered for that subject, and the admin can click on 
+each student to see their performance in that subject, including 
+their scores on tests and quizzes, and which topics they are 
+struggling with.
+Also, the subject should have a way of showing all the questions, tests and quizzes 
+under that subject,
+
+
+
+all the questions under that subject, and the teacher 
+can select which question to assign to a test or quiz.
+
+Lets go to the teacher dashboard, Teacher should only work 
+about the subjects and classes assigned to them, not the whole school.
+teacher should not get access to questions or students outside of their subjects and classes.
+so before he sets questions, he should be able 
+to select the subject and class he wants to set questions for, and then only see the students in that class when he wants to assign the test.
+except the quiz where students can join with a code, then the teacher can see all students who joined that quiz regardless of class.
+
+Work on the marking queue on the teacher dashboard, 
+so that when a teacher clicks on the marking queue, 
+they can only see the tests and quizzes that are assigned to 
+their subjects and classes, and not the whole school.
+
+also complete the marking queue so that when a teacher 
+clicks on a test or quiz in the queue, they can see all 
+the students who took that test or quiz, and their scores, 
+and then click on each student to see their answers and 
+assign marks for any open-ended questions.
+
+there is a button under create test on teacher 
+dashboard that allow the teacher to create different 
+type of test. the following seems not completed on 
+the pop up that allow you to create test: Multi-select, 
+Essay, Fill in blank. Complete the ones i have listed above, 
+the rest seem to be working. 
+unless you want to add some more functionalities.
+
+allow student to see their past attempts on a test, and their scores, 
+and also allow them to review their answers after 
+they have completed a test, so that they can learn
+
+students should also have the context menu bar with 
+dropdown to filter their entire dashboard content
+including tests by subject, 
+and due date, so they can easily find the tests 
+they need to take or review.
+
+my test always show the number 3 on student dashboard,
+ even when i have no tests created, or when i have 
+ created more than 3 tests. it should show the 
+ correct number of tests that are assigned and due to 
+ the students. student due test too only show on the student 
+ dashboard, but should also show under student dashboard under the due menu
+
+add a footer to the student, instructor 
+and admin dashboard with the text 
+"Powered by Expresslab" and a link 
+to the Expresslab website "https://www.expresslabgh.com".
+
+Template for WASSCE Paper 1- Objectives: Section A: Answer ALL 40  
+multiple choice questions (40 marks). Paper 2— Theory Section B: 
+Answer ANY 3 of the 5 questions (60 marks). 
+Time allowed: 2 hours.
+
+
+Add more question type under the "test settings"
+ie. Exercise , Quiz, Assignment, Mid-sem,
+ End of Semester, Mock Exam,
+and also add the option to set a custom name for the test instead of just "Test 1", "Test 2" etc.
+
+subject dropdown on students context menu bar
+should show all subjects the student does in his class
+9339
+
+admin: 
+email: admin@demo.aceict.app
+password: demo1234
+
+Teacher: 
+email: samuel@gmail.com
+password: asdf1234
+
+Student: 
+email: akotoi@school.edu.gh
+password: asdf1234
+
+Add feature to enable admin to promote learners 
+they should be promoted to the next year class.
+such that if learner is in 1 science 1, he is promoted
+to 2 science 1, those in 1 GA 3 moves to 2 GA 3 in that order
+Student in Year 3, ie. 3  GA * should be Graduated on promotion. 
+Past students matter for:
+transcripts
+result checking
+WAEC records
+
+should have these options: 
+✅ Promote all
+✅ Promote selected
+✅ Repeat class
+✅ Transfer class
+✅ Graduate
+NB: Promotions create new enrollment records
+History is never overwritten
+Reports remain accurate forever
+
+
+
+
+
+# Admin portal to have access to all questions
+
+Administrators should access:
+question bank by subjects
+all subjects
+all questions
+all tests
+all assessments
+all teachers
+all classes
+
+Including:
+who created each question
+subject ownership
+
+What Admin Should Be Able To Do
+Question Management
+
+Admin can:
+view all questions
+search all subjects
+filter by teacher
+edit questions
+delete questions
+Monitoring
+
+Admin should see:
+
+total questions per teacher
+total questions per subject
+question difficulty distribution
+
+
+
+i want us to implement video conferencing with jitsi:
+features:
+live online classes
+staff meetings
+oral assessments
+student consultations
+screen sharing
+recorded lessons
+
+
+
+in addition to the existing test features, i want teacher to see tests given to learners, when a test in clicked, he should see all students who did the test and could be export as csv, and anyother feature.
+Teachers and admin should not only create tests, but also:
+monitor participation
+analyze performance
+track submissions
+export results
+manage test history
+identify weak learners
+review answer statistics
+
+Submission time
+Time spent
+Attempt status
+completed students
+absent students
+
+generated csv for tests should contain the 
+teacher name, class, test name, add sn as the first column too
+
+SN	Test Name	Subject	Teacher	Student	Class	Score %	Score	Max Score	Pass/Fail	Status	Submitted At	Time Spent (min)	Attempt #	Essays Pending
+
+
+
+working fine but this header data should be in merged column A and B instead
+"Test Name:
+Teacher:
+Date Exported:
+Submitted:
+Average Score:"
+
+then the corresponding results should be in merged
+column c to f.
+
+then the below data should also be in merged column G to H
+"Subject:				
+Class:				
+Total Students:				
+Absent:				
+Pass Rate:				
+"
+then their corresponding results should be in merged
+column i to k.
+
+
+1.
+when student submits an essay question, 
+the feedback contains " Needs improvement
+Review the highlighted topics and try the practice quiz."
+ it should be something like "Work submitted, you will get your score
+ when teacher marks"
+
+2. 
+the system submits responses for each input entered for essay 
+response student enters, it should not be so. just one final
+response, when the student has entered all the texts for the 
+answer. meaning i want just one response per question
+
+3. the marking queue also shows static 5 on the 
+sidebar. want the number to dinamically reflect the number 
+of essay tests unmarked. not the questions.
+
+4. the marking queue data should be filtered by the class dropdown on the
+context bar.
+
+5. administrator should have access to marking queue 
+of all teachers for all subjects
+
+
+next: all done
+1. Questions in question bank should not be ordered as appear in the db
+it should be randomised and mixed. so i dont always see the same sets 
+of questions: done
+2. when i create and add the "Fill in" test to question bank, 
+it saves in db but does not show in our list of questions: not fixed
+3. Lock the all popup modals so that clicking outside does not close it 
+   until the close button is pressed: fixed
+4. students cannot multi select for "multi select" types of questions. 
+they can only single select. fix it: done
+5. multi select questions should be auto marked ones student submit: done
+6. When students submit "Short answers" type of questions
+teacher do not see their responses when he clicks on "mark" Teacher
+must see so that he marks them, as he does for the essay type of questions.:fixed
+7. Analytics data on the teacher dashboard should reflect
+the subject on the context bar.:not fixed
+Analytics should also show on admin dashboard.
+8. "Save and Next Student" to show spinner when click until next item loads: done
+
+
+
+upnext: all done
+1. "Save and Next Student" only saves last students marks: not fixed
+2. Teacher be given a feature to auto mark all 
+"Fill in" questions and also allow him to self mark
+just as he does for the "essay" type of questions.
+3.  when student go to previous question when answering test questions, 
+additional marks are awarded. fix that:done
+4. Teacher should be able to republish an existing test as a new test: done
+
+upnext:all done
+1. Tests should be filtered by semesters (for all users of
+the system). 
+we have 2 semesters in an academic year.
+ (semester 1 and semester 2)
+2. Not all bank questions in db are loaded when "Question Bank"
+tab is pressed. Maximum about 60 questions are loaded at a time, 
+add a button below named "Load more" that loads more when end of list is reached
+3. when i create and add the "Fill in" test to question bank, 
+it does not show under "fill in" drop down under question type. but when "All type"
+is selected, it shows. fix it.
+4. when "All diff, Easy, Medium, Hard" item are click on the question bank, 
+it works but the selected item does not recieve focus. the focus will still 
+be on the first item selected.
+5. "Save and Next Student" only saves last students marks. "save and done" does
+not save students work, unless i press "save all marks"
+6. by default, "Assign to classes" drop down should check "All Classes" when creating a test
+7. Marking queue should sort students responses by Classes dropdown on the context bar.
+currently, if you select "All classes" it works, but selecting Individual classes shows empty queue.
+
+next: major upgrade: done
+1. i want admin to set the academic year and semester, 
+such that all test and records entered by users 
+"admin, teachers, students" goes into the 
+current year and semester selected. 
+Students and teachers should be able to 
+view past data, they select year and semester to 
+view tests, exercises done in the past.
+Admin to set semester unique for each of the 3 year group
+since they all dont run the same semester at the same time.
+Therefore any assessment record entered by teacher or student goes 
+to the current year and semeter set by admin. 
+add all nessary functionalities needed for the above to function
+properly. update the codebase and db so that the existing data
+would be upgraded to match these major upgrade
+
+next: done
+0. move Academic year from sidebar and put it in settings.
+when setting academic year and semester,  allow admin to
+choose start date and end date for the semester. 
+
+1. Remove "Create Test" and "Question Bank" from the side bar
+Fix "Tests" on the side bar instead.
+When Tests is clicked, the dashbord to show "Create Test" and "Question Bank" 
+buttons or tabs at the top, then below are the test filters then 
+below are the tests. 
+2. on group chats: default group chat for each of the Classes
+ admin can activate or disactivate any of the classes under his settings
+ allow admin to add or remove teachers to groups created for "specific class"
+ 3. only admin be allowed to delete messages in group chat, when message is 
+ deleted, message body should show as deleted by admin in the chat whilst keeping
+ the sender's name.
+ 4. categorize the chat messages under day dates like it appears in whatsapp application
+ 5. Allow reply to a message in a chat, as done in whatsapp application.
+ 6. add features of whatsapp application that you can and would make the chat feature rubost.
+ 7. admin can select group admins for each group, they can also delete messages.
+ 8. admin can edit each group settings to disable someone or group of people
+  from sending message
+
+
+next: All done
+1. all messages come as "This message was deleted by admin"
+it should come only when admin deletes that particular message.
+2. allow admin to delete a message in a chat, after he deletes 
+before that particular message be replaced by "This message was deleted by admin_name"
+3. Create all class groups button does not work, it shows this notification
+when clicked "Group name is required"
+Activate button too does not work.
+4. Activate button does not work
+5. Mute function does not work
+6. fix other chat functions that are not completed
+
+1. next fixes: all done
+1. the emoji batch shows on all messages on the fly, fix: should show
+only when the message is clicked: done
+2. when i create a new department,  and i want to add subjects to this
+new department, i dont see the newly created department in the list, under 
+admin settings >subjects.:done
+3. dont allow teacher to change year when setting test.
+4. when teacher sets "Fill in" questions, they only show under "All types" question type, they dont
+show under "Fill in" in question bank.: done
+
+
+
+2. next: 
+1. Add more robust Analytics data to the students analytics. Analytics on the teacher dashboard should reflect
+the subject on the context bar as well as semester based or overall based.
+2. Create teacher analytics too on admin dashboard, should be semester, year or overall analytics
+
+
+
+
+
+
+
+

@@ -91,9 +91,8 @@ try {
         case 'analytics': handleAnalytics($method, $parts[1] ?? null, $body); break;
         case 'notifications': handleNotifications($method, $id, $body); break;
         case 'messages':      handleMessages($method, $id, $id ? ($parts[2] ?? null) : ($parts[1] ?? null), $body); break;
-        case 'chat':          handleChat($method, $id, $parts[1] ?? null, $parts[2] ?? null, $parts[3] ?? null, $body); break;
-        case 'promotion':         handlePromotion($method, $parts[1] ?? null, $body); break;
-        case 'academic-periods':  handleAcademicPeriods($method, $id, $body); break;
+        case 'chat':          handleChat($method, $id, $parts[1] ?? null, $parts[2] ?? null, $body); break;
+        case 'promotion':     handlePromotion($method, $parts[1] ?? null, $body); break;
         case 'ai-generate':  handleAIGenerate($method, $body); break;
         case 'questions-bulk': handleBulkQuestions($method, $body); break;
         case 'live':        handleLive($method, $parts, $body); break;
@@ -209,7 +208,6 @@ function handleAuth(string $method, array $parts, array $body): void {
 function handleQuestions(string $method, ?int $id, ?string $sub, array $body): void {
     $auth = require_auth();
     ensureTeacherSubjectSchema(); // teacher_subjects + subject_id/updated_by columns
-    ensureQuestionTypeSchema();   // migrate blank→fill-in, widen type column to VARCHAR
 
     if ($method === 'GET' && !$id) {
         $where  = ['(q.school_id IS NULL OR q.school_id = ?)'];
@@ -361,17 +359,8 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
     $auth = require_auth();
     ensureTeacherSubjectSchema(); // teacher_subjects + subject_id/updated_by columns
     ensureClassSubjectSchema();   // class_subjects + student_class_groups
-    ensureAcademicPeriodsSchema(); // academic_periods + tests.academic_year
 
     if ($method === 'GET' && !$id) {
-        // Shared period filter params
-        $filterAcYear = !empty($_GET['academic_year']) ? trim($_GET['academic_year']) : null;
-        $filterSemQ   = isset($_GET['semester']) && in_array((int)$_GET['semester'],[1,2]) ? (int)$_GET['semester'] : null;
-        $periodFilter = '';
-        $periodParams = [];
-        if ($filterAcYear) { $periodFilter .= ' AND t.academic_year=?'; $periodParams[] = $filterAcYear; }
-        if ($filterSemQ)   { $periodFilter .= ' AND t.semester=?';      $periodParams[] = $filterSemQ; }
-
         if ($auth['role'] === 'student') {
             $uid = $auth['user_id'];
 
@@ -423,9 +412,13 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
                  LEFT JOIN subjects s ON s.id=t.subject_id
                  WHERE t.status='published'
                    AND (t.available_from IS NULL OR t.available_from<=NOW())
-                   $subjFilter $periodFilter
+                   $subjFilter
+                   AND (? IS NULL OR t.semester=?)
                  ORDER BY t.due_at IS NULL, t.due_at ASC",
-                array_merge([$uid, $uid], $subjParams, $periodParams)
+                array_merge([$uid, $uid], $subjParams, [
+                    !empty($_GET['semester']) ? (int)$_GET['semester'] : null,
+                    !empty($_GET['semester']) ? (int)$_GET['semester'] : null,
+                ])
             );
             respond($tests);
         } else {
@@ -445,9 +438,10 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
                      LEFT JOIN users u ON u.id=t.creator_id
                      LEFT JOIN subjects s ON s.id=t.subject_id
                      WHERE t.school_id=? AND (t.subject_id IN ($ph) OR t.creator_id=?)
-                       $periodFilter
+                       AND (? IS NULL OR t.semester=?)
                      ORDER BY t.created_at DESC",
-                    array_merge([$auth['school_id']], $teacherSubjectIds, [$uid], $periodParams)
+                    array_merge([$auth['school_id']], $teacherSubjectIds, [$uid],
+                        [!empty($_GET['semester'])?(int)$_GET['semester']:null, !empty($_GET['semester'])?(int)$_GET['semester']:null])
                 );
             } else {
                 // No subjects assigned: fall back to own tests only
@@ -458,9 +452,11 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
                      FROM tests t
                      LEFT JOIN users u ON u.id=t.creator_id
                      WHERE t.school_id=? AND t.creator_id=?
-                       $periodFilter
+                       AND (? IS NULL OR t.semester=?)
                      ORDER BY t.created_at DESC",
-                    array_merge([$auth['school_id'], $uid], $periodParams)
+                    [$auth['school_id'], $uid,
+                     !empty($_GET['semester'])?(int)$_GET['semester']:null,
+                     !empty($_GET['semester'])?(int)$_GET['semester']:null]
                 );
             }
             // Admin: show all school tests with creator + subject info
@@ -474,9 +470,11 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
                      LEFT JOIN users u ON u.id=t.creator_id
                      LEFT JOIN subjects s ON s.id=t.subject_id
                      WHERE t.school_id=?
-                       $periodFilter
+                       AND (? IS NULL OR t.semester=?)
                      ORDER BY t.created_at DESC",
-                    array_merge([$auth['school_id']], $periodParams)
+                    [$auth['school_id'],
+                     !empty($_GET['semester'])?(int)$_GET['semester']:null,
+                     !empty($_GET['semester'])?(int)$_GET['semester']:null]
                 );
             }
             respond($rows);
@@ -526,8 +524,8 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
                     u.first_name, u.last_name, u.class_name, u.avatar_color,
                     a.score_auto + COALESCE(a.score_manual,0) AS total_score,
                     a.max_score, a.status, a.submitted_at,
-                    SUM(CASE WHEN q.type IN ('essay','short','fill-in','blank') AND an.is_correct IS NULL THEN 1 ELSE 0 END) AS essays_pending,
-                    SUM(CASE WHEN q.type IN ('essay','short','fill-in','blank') THEN 1 ELSE 0 END) AS essays_total,
+                    SUM(CASE WHEN q.type IN ('essay','short','blank') AND an.is_correct IS NULL THEN 1 ELSE 0 END) AS essays_pending,
+                    SUM(CASE WHEN q.type IN ('essay','short','blank') THEN 1 ELSE 0 END) AS essays_total,
                     a.time_taken_s,
                     ROUND(IF(a.max_score>0,(a.score_auto+COALESCE(a.score_manual,0))/a.max_score*100,0),1) AS pct_score
              FROM attempts a
@@ -654,30 +652,14 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
         $d = need($body, 'title');
         $subjectId = isset($body['subject_id']) ? (int)$body['subject_id'] : null;
         $desc      = isset($body['description']) ? trim($body['description']) : null;
-        // Determine academic period from the first assigned class (or fallback)
-        $semFromBody = isset($body['semester']) && in_array((int)$body['semester'],[1,2]) ? (int)$body['semester'] : null;
-        $acYear      = isset($body['academic_year']) ? trim($body['academic_year']) : null;
-        $semester    = $semFromBody;
-
-        if (!$acYear || !$semester) {
-            $firstCid  = !empty($body['class_ids']) ? (int)$body['class_ids'][0] : null;
-            $yearGroup = null;
-            if ($firstCid) {
-                $clsRow = DB::fetchOne('SELECT year_group FROM classes WHERE id=?', [$firstCid]);
-                $yearGroup = $clsRow ? (int)$clsRow['year_group'] : null;
-            }
-            $period = $yearGroup ? _currentPeriod($auth['school_id'], $yearGroup) : _currentPeriod($auth['school_id'], 1);
-            if (!$acYear)    $acYear   = $period['academic_year'];
-            if (!$semester)  $semester = (int)$period['semester'];
-        }
-
+        $semester = isset($body['semester']) && in_array((int)$body['semester'],[1,2]) ? (int)$body['semester'] : null;
         $tid = DB::insert(
-            'INSERT INTO tests (school_id,creator_id,title,description,type,time_limit_min,max_attempts,randomise_qs,randomise_opts,show_feedback,available_from,due_at,subject_id,semester,academic_year)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+            'INSERT INTO tests (school_id,creator_id,title,description,type,time_limit_min,max_attempts,randomise_qs,randomise_opts,show_feedback,available_from,due_at,subject_id,semester)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             [$auth['school_id'],$auth['user_id'],trim($d['title']),$desc,$body['type']??'quiz',
              (int)($body['time_limit_min']??0),(int)($body['max_attempts']??1),
              (int)($body['randomise_qs']??1),(int)($body['randomise_opts']??1),
-             (int)($body['show_feedback']??1),$body['available_from']??null,$body['due_at']??null,$subjectId,$semester,$acYear]
+             (int)($body['show_feedback']??1),$body['available_from']??null,$body['due_at']??null,$subjectId,$semester]
         );
         // question_ids accepts [{id,section}] objects or plain integers
         if (!empty($body['question_ids'])) {
@@ -830,19 +812,6 @@ function handleAttempts(string $method, ?int $id, ?string $sub, array $body): vo
         if ($a['status']!=='in_progress') err('Already submitted');
         $timeTaken = (int)($body['time_taken_s'] ?? (time()-strtotime($a['started_at'])));
         DB::execute('UPDATE attempts SET status="submitted",submitted_at=NOW(),time_taken_s=? WHERE id=?', [$timeTaken,$id]);
-        // Tag attempt with current academic period for this student's year group
-        try {
-            $testSchool = DB::fetchOne('SELECT school_id FROM tests WHERE id=?', [$a['test_id']]);
-            $stuClass   = DB::fetchOne('SELECT class_name FROM users WHERE id=?',  [$a['student_id']]);
-            if ($testSchool && $stuClass && $stuClass['class_name']) {
-                $clsInfo = DB::fetchOne('SELECT year_group FROM classes WHERE school_id=? AND name=?',
-                    [(int)$testSchool['school_id'], $stuClass['class_name']]);
-                $yg = $clsInfo ? (int)$clsInfo['year_group'] : 1;
-                $ap = _currentPeriod((int)$testSchool['school_id'], $yg);
-                DB::execute('UPDATE attempts SET academic_year=?, attempt_semester=? WHERE id=?',
-                    [$ap['academic_year'], $ap['semester'], $id]);
-            }
-        } catch (Throwable $e) {}
         // Auto-mark MCQ answers
         $mcqAnswers = DB::fetchAll(
             'SELECT an.id,an.question_id,an.selected_opts FROM answers an
@@ -864,7 +833,7 @@ function handleAttempts(string $method, ?int $id, ?string $sub, array $body): vo
         $blankAnswers = DB::fetchAll(
             'SELECT an.id, an.question_id, an.text_response FROM answers an
              JOIN questions q ON q.id=an.question_id
-             WHERE an.attempt_id=? AND q.type IN ("fill-in","blank") AND an.is_correct IS NULL', [$id]
+             WHERE an.attempt_id=? AND q.type="blank" AND an.is_correct IS NULL', [$id]
         );
         foreach ($blankAnswers as $ba) {
             $accepted = DB::fetchAll(
@@ -1651,13 +1620,13 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
             "SELECT t.id AS test_id, t.title, t.type, t.subject_id,
                     s.name AS subject_name, s.short_name AS subject_short,
                     COUNT(DISTINCT a.student_id) AS students_attempted,
-                    SUM(CASE WHEN q.type IN ('essay','short','fill-in','blank') AND an.is_correct IS NULL THEN 1 ELSE 0 END) AS essays_pending,
-                    SUM(CASE WHEN q.type IN ('essay','short','fill-in','blank') THEN 1 ELSE 0 END) AS essays_total,
+                    SUM(CASE WHEN q.type IN ('essay','short','blank') AND an.is_correct IS NULL THEN 1 ELSE 0 END) AS essays_pending,
+                    SUM(CASE WHEN q.type IN ('essay','short','blank') THEN 1 ELSE 0 END) AS essays_total,
                     MIN(a.submitted_at) AS first_submission
              FROM tests t
              JOIN attempts a ON a.test_id=t.id AND a.status='submitted'
              JOIN answers an ON an.attempt_id=a.id
-             JOIN questions q ON q.id=an.question_id AND q.type IN ('essay','short','fill-in','blank')
+             JOIN questions q ON q.id=an.question_id AND q.type IN ('essay','short','blank')
              LEFT JOIN subjects s ON s.id=t.subject_id
              WHERE 1=1 $scopeFilter
              GROUP BY t.id, t.title, t.type, t.subject_id, s.name, s.short_name
@@ -1954,7 +1923,6 @@ function handlePromotion(string $method, ?string $sub, array $body): void {
 // GROUP CHAT
 // ══════════════════════════════════════════════════════════════
 function ensureChatSchema(): void {
-    static $done = false; if ($done) return; $done = true;
     DB::execute("CREATE TABLE IF NOT EXISTS chat_groups (
         id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         school_id   INT UNSIGNED NOT NULL,
@@ -1983,58 +1951,34 @@ function ensureChatSchema(): void {
         INDEX idx_group  (group_id, sent_at),
         INDEX idx_sender (sender_id)
     ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    // v9 additions
-    try {
-        DB::execute("ALTER TABLE academic_periods ADD COLUMN IF NOT EXISTS start_date DATE NULL");
-        DB::execute("ALTER TABLE academic_periods ADD COLUMN IF NOT EXISTS end_date   DATE NULL");
-        DB::execute("ALTER TABLE chat_groups          ADD COLUMN IF NOT EXISTS is_active  TINYINT(1) NOT NULL DEFAULT 1");
-        DB::execute("ALTER TABLE chat_group_members   ADD COLUMN IF NOT EXISTS role       ENUM('member','admin') NOT NULL DEFAULT 'member'");
-        DB::execute("ALTER TABLE chat_group_members   ADD COLUMN IF NOT EXISTS can_send   TINYINT(1) NOT NULL DEFAULT 1");
-        DB::execute("ALTER TABLE chat_messages        ADD COLUMN IF NOT EXISTS reply_to_id BIGINT UNSIGNED NULL");
-        DB::execute("ALTER TABLE chat_messages        ADD COLUMN IF NOT EXISTS is_deleted  TINYINT(1) NOT NULL DEFAULT 0");
-        DB::execute("ALTER TABLE chat_messages        ADD COLUMN IF NOT EXISTS deleted_by  INT UNSIGNED NULL");
-        DB::execute("ALTER TABLE chat_messages        ADD COLUMN IF NOT EXISTS deleted_at  TIMESTAMP NULL");
-        DB::execute("ALTER TABLE chat_messages        ADD COLUMN IF NOT EXISTS is_pinned   TINYINT(1) NOT NULL DEFAULT 0");
-        DB::execute("CREATE TABLE IF NOT EXISTS message_reactions (
-            message_id BIGINT UNSIGNED NOT NULL,
-            user_id    INT UNSIGNED    NOT NULL,
-            emoji      VARCHAR(10)     NOT NULL,
-            reacted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (message_id, user_id),
-            INDEX idx_message (message_id)
-        ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    } catch (Throwable $e) {}
 }
 
-function handleChat(string $method, ?int $id, ?string $part1, ?string $part2, ?string $part3, array $body): void {
+function handleChat(string $method, ?int $id, ?string $part1, ?string $part2, array $body): void {
     $auth = require_auth();
     ensureChatSchema();
     $sid = $auth['school_id'];
     $uid = (int)$auth['user_id'];
 
-    // Resolve sub from parts:
-    //   /chat/{id}/messages        → sub='messages', part3=null
-    //   /chat/{id}/messages/{msgId} → sub='messages', part3=msgId
-    //   /chat/{id}/members/{userId} → sub='members',  part3=userId
-    $sub = $id ? $part2 : $part1;
+    // Resolve sub from parts: /chat/{id}/messages or /chat/groups
+    // part1 is numeric-string id or 'groups'; part2 is sub-action
+    $sub = $id ? $part2 : $part1; // e.g. 'messages', 'read', 'members'
 
     // ── GET /chat/groups — list all groups I belong to ────────
     if ($method === 'GET' && !$id && $sub === 'groups') {
         $rows = DB::fetchAll(
             "SELECT g.id, g.name, g.description, g.type, g.class_id, g.created_at,
-                    IF(g.is_active,1,0) AS is_active,
                     CONCAT(u.first_name,' ',u.last_name) AS created_by_name,
                     (SELECT COUNT(*) FROM chat_group_members WHERE group_id=g.id) AS member_count,
                     (SELECT body FROM chat_messages WHERE group_id=g.id ORDER BY sent_at DESC LIMIT 1) AS last_message,
                     (SELECT sent_at FROM chat_messages WHERE group_id=g.id ORDER BY sent_at DESC LIMIT 1) AS last_message_at,
-                    (SELECT COUNT(*) FROM chat_messages cm WHERE cm.group_id=g.id AND cm.is_deleted=0
+                    (SELECT COUNT(*) FROM chat_messages cm WHERE cm.group_id=g.id
                      AND cm.sent_at > COALESCE(
                          (SELECT last_read_at FROM chat_group_members WHERE group_id=g.id AND user_id=?),
                          '2000-01-01')) AS unread_count
              FROM chat_groups g
              JOIN chat_group_members m ON m.group_id=g.id AND m.user_id=?
              JOIN users u ON u.id=g.created_by
-             WHERE g.school_id=? AND g.is_active=1
+             WHERE g.school_id=?
              ORDER BY last_message_at DESC, g.created_at DESC",
             [$uid, $uid, $sid]
         );
@@ -2046,7 +1990,6 @@ function handleChat(string $method, ?int $id, ?string $part1, ?string $part2, ?s
         if ($auth['role'] === 'admin') {
             $rows = DB::fetchAll(
                 "SELECT g.id, g.name, g.description, g.type, g.class_id, g.created_at,
-                        IF(g.is_active,1,0) AS is_active,
                         CONCAT(u.first_name,' ',u.last_name) AS created_by_name,
                         (SELECT COUNT(*) FROM chat_group_members WHERE group_id=g.id) AS member_count,
                         (SELECT body FROM chat_messages WHERE group_id=g.id ORDER BY sent_at DESC LIMIT 1) AS last_message,
@@ -2057,18 +2000,17 @@ function handleChat(string $method, ?int $id, ?string $part1, ?string $part2, ?s
             );
         } else {
             $rows = DB::fetchAll(
-                "SELECT g.id, g.name, g.description, g.type, g.class_id, g.created_at,
-                        IF(g.is_active,1,0) AS is_active,
+                "SELECT g.id, g.name, g.description, g.type, g.created_at,
                         (SELECT COUNT(*) FROM chat_group_members WHERE group_id=g.id) AS member_count,
                         (SELECT body FROM chat_messages WHERE group_id=g.id ORDER BY sent_at DESC LIMIT 1) AS last_message,
                         (SELECT sent_at FROM chat_messages WHERE group_id=g.id ORDER BY sent_at DESC LIMIT 1) AS last_message_at,
-                        (SELECT COUNT(*) FROM chat_messages cm WHERE cm.group_id=g.id AND cm.is_deleted=0
+                        (SELECT COUNT(*) FROM chat_messages cm WHERE cm.group_id=g.id
                          AND cm.sent_at > COALESCE(
                              (SELECT last_read_at FROM chat_group_members cgm WHERE cgm.group_id=g.id AND cgm.user_id=?),
                              '2000-01-01')) AS unread_count
                  FROM chat_groups g
                  JOIN chat_group_members m ON m.group_id=g.id AND m.user_id=?
-                 WHERE g.school_id=? AND g.is_active=1
+                 WHERE g.school_id=?
                  ORDER BY last_message_at DESC, g.created_at DESC",
                 [$uid, $uid, $sid]
             );
@@ -2077,7 +2019,7 @@ function handleChat(string $method, ?int $id, ?string $part1, ?string $part2, ?s
     }
 
     // ── POST /chat — admin creates a group ────────────────────
-    if ($method === 'POST' && !$id && !$sub) {
+    if ($method === 'POST' && !$id) {
         require_role($auth, 'admin');
         $name = trim($body['name'] ?? '');
         $type = trim($body['type'] ?? 'custom');
@@ -2140,45 +2082,29 @@ function handleChat(string $method, ?int $id, ?string $part1, ?string $part2, ?s
         $sinceCond = '';
         if ($since) { $sinceCond = 'AND cm.sent_at > ?'; $params[] = $since; }
 
-        $rawMsgs = DB::fetchAll(
+        $msgs = DB::fetchAll(
             "SELECT cm.id, cm.group_id, cm.sender_id, cm.body, cm.sent_at,
-                    cm.reply_to_id, cm.is_pinned,
-                    IF(cm.is_deleted=1, 1, 0) AS is_deleted,
-                    cm.deleted_by,
-                    (SELECT CONCAT(ud.first_name,' ',ud.last_name) FROM users ud WHERE ud.id=cm.deleted_by LIMIT 1) AS deleted_by_name,
                     CONCAT(u.first_name,' ',u.last_name) AS sender_name,
-                    u.avatar_color AS sender_color, u.role AS sender_role,
-                    (SELECT cm2.body FROM chat_messages cm2 WHERE cm2.id=cm.reply_to_id LIMIT 1) AS reply_body,
-                    (SELECT CONCAT(u2.first_name,' ',u2.last_name) FROM chat_messages cm2 JOIN users u2 ON u2.id=cm2.sender_id WHERE cm2.id=cm.reply_to_id LIMIT 1) AS reply_sender,
-                    (SELECT CONCAT('[',GROUP_CONCAT(JSON_OBJECT('emoji',emoji,'user_id',user_id)),']') FROM message_reactions WHERE message_id=cm.id) AS reactions_raw
+                    u.avatar_color AS sender_color, u.role AS sender_role
              FROM chat_messages cm
              JOIN users u ON u.id=cm.sender_id
              WHERE cm.group_id=? $sinceCond
              ORDER BY cm.sent_at DESC LIMIT $limit",
             $params
         );
-        // Cast numeric flags so JS truthy checks work correctly
-        $msgs = array_map(function($m) {
-            $m['is_deleted'] = (int)($m['is_deleted'] ?? 0);
-            $m['is_pinned']  = (int)($m['is_pinned']  ?? 0);
-            return $m;
-        }, $rawMsgs);
         // Return oldest-first for display
         respond(array_reverse($msgs));
     }
 
     // ── POST /chat/{id}/messages — send a message ─────────────
     if ($method === 'POST' && $id && $sub === 'messages') {
-        $member = DB::fetchOne('SELECT role, can_send FROM chat_group_members WHERE group_id=? AND user_id=?', [$id, $uid]);
+        $member = DB::fetchOne('SELECT 1 FROM chat_group_members WHERE group_id=? AND user_id=?', [$id, $uid]);
         if (!$member && $auth['role'] !== 'admin') err('Not a member of this group', 403);
-        // Check if messaging is restricted for this member
-        if ($member && !(int)$member['can_send'] && $auth['role'] !== 'admin') err('You have been muted in this group', 403);
         $body_text = trim($body['body'] ?? '');
         if (!$body_text) err('Message body is required');
-        $replyTo = isset($body['reply_to_id']) ? (int)$body['reply_to_id'] : null;
         $msgId = DB::insert(
-            'INSERT INTO chat_messages (group_id,sender_id,body,reply_to_id) VALUES (?,?,?,?)',
-            [$id, $uid, $body_text, $replyTo]
+            'INSERT INTO chat_messages (group_id,sender_id,body) VALUES (?,?,?)',
+            [$id, $uid, $body_text]
         );
         // Update caller's last_read to now
         DB::execute(
@@ -2199,134 +2125,14 @@ function handleChat(string $method, ?int $id, ?string $part1, ?string $part2, ?s
 
     // ── GET /chat/{id}/members ────────────────────────────────
     if ($method === 'GET' && $id && $sub === 'members') {
-        $chk = DB::fetchOne('SELECT role FROM chat_group_members WHERE group_id=? AND user_id=?', [$id, $uid]);
-        if (!$chk && $auth['role'] !== 'admin') err('Forbidden', 403);
-        $mbrs = DB::fetchAll(
+        require_role($auth, 'admin');
+        respond(DB::fetchAll(
             "SELECT u.id, u.first_name, u.last_name, u.role, u.class_name, u.avatar_color,
-                    m.joined_at, m.last_read_at, m.role AS group_role,
-                    IF(m.can_send,1,0) AS can_send
+                    m.joined_at, m.last_read_at
              FROM chat_group_members m JOIN users u ON u.id=m.user_id
-             WHERE m.group_id=? ORDER BY m.role DESC, u.role, u.last_name",
+             WHERE m.group_id=? ORDER BY u.role, u.last_name",
             [$id]
-        );
-        respond($mbrs);
-    }
-
-    // ── DELETE /chat/{id}/messages/{msgId} — delete a message ──
-    if ($method === 'DELETE' && $id && $sub === 'messages' && $part3) {
-        $msgId = (int)$part3;
-        // Allow admin or group admin
-        $myRole = DB::fetchOne('SELECT role FROM chat_group_members WHERE group_id=? AND user_id=?', [$id, $uid]);
-        $canDel = $auth['role'] === 'admin' || ($myRole && $myRole['role'] === 'admin');
-        if (!$canDel) err('Only admins can delete messages', 403);
-        $delName = DB::fetchOne("SELECT CONCAT(first_name,' ',last_name) AS n FROM users WHERE id=?", [$uid])['n'] ?? 'Admin';
-        DB::execute(
-            'UPDATE chat_messages SET is_deleted=1, deleted_by=?, deleted_at=NOW() WHERE id=? AND group_id=?',
-            [$uid, $msgId, $id]
-        );
-        respond(['message' => 'Deleted']);
-    }
-
-    // ── POST /chat/{id}/react — toggle reaction ─
-    if ($method === 'POST' && $id && $sub === 'react') {
-        // part2 is actually msgId here when path is /chat/{id}/messages/react (with msgId in body)
-        $msgId = (int)($body['message_id'] ?? 0);
-        $emoji = trim($body['emoji'] ?? '');
-        if (!$msgId || !$emoji) err('message_id and emoji required');
-        // Toggle: remove if same, add/replace if different
-        $existing = DB::fetchOne('SELECT emoji FROM message_reactions WHERE message_id=? AND user_id=?', [$msgId, $uid]);
-        if ($existing && $existing['emoji'] === $emoji) {
-            DB::execute('DELETE FROM message_reactions WHERE message_id=? AND user_id=?', [$msgId, $uid]);
-            respond(['toggled' => 'removed']);
-        } else {
-            DB::execute('INSERT INTO message_reactions (message_id,user_id,emoji) VALUES (?,?,?) ON DUPLICATE KEY UPDATE emoji=VALUES(emoji), reacted_at=NOW()', [$msgId, $uid, $emoji]);
-            respond(['toggled' => 'added']);
-        }
-    }
-
-    // ── PATCH /chat/{id} — update group settings ──────────────
-    if ($method === 'PATCH' && $id && !$sub) {
-        require_role($auth, 'admin');
-        $g = DB::fetchOne('SELECT id FROM chat_groups WHERE id=? AND school_id=?', [$id, $sid]);
-        if (!$g) err('Group not found', 404);
-        $sets = []; $params = [];
-        if (array_key_exists('is_active', $body)) { $sets[] = 'is_active=?'; $params[] = (int)$body['is_active']; }
-        if (array_key_exists('name', $body))       { $sets[] = 'name=?';      $params[] = trim($body['name']); }
-        if (array_key_exists('description', $body)){ $sets[] = 'description=?'; $params[] = trim($body['description']); }
-        if ($sets) {
-            $params[] = $id;
-            try { DB::execute('UPDATE chat_groups SET '.implode(',', $sets).' WHERE id=?', $params); }
-            catch (Throwable $e) { err('Update failed — run migration_v9.sql first: '.$e->getMessage()); }
-        }
-        respond(['message' => 'Updated', 'is_active' => (int)$body['is_active']]);
-    }
-
-    // ── PATCH /chat/{id}/members/{userId} — update member role/mute ─
-    if ($method === 'PATCH' && $id && $sub === 'members' && $part3) {
-        require_role($auth, 'admin');
-        $targetUid = (int)$part3;
-        if (!$targetUid) err('user_id required');
-        $sets = []; $params = [];
-        if (array_key_exists('role', $body))     { $sets[] = 'role=?';     $params[] = in_array($body['role'],['member','admin']) ? $body['role'] : 'member'; }
-        if (array_key_exists('can_send', $body)) { $sets[] = 'can_send=?'; $params[] = (int)$body['can_send']; }
-        if ($sets) {
-            $params[] = $id; $params[] = $targetUid;
-            try { DB::execute('UPDATE chat_group_members SET '.implode(',', $sets).' WHERE group_id=? AND user_id=?', $params); }
-            catch (Throwable $e) { err('Update failed — run migration_v9.sql: '.$e->getMessage()); }
-        }
-        respond(['message' => 'Member updated']);
-    }
-
-    // ── POST /chat/{id}/members — add member (admin) ──────────
-    if ($method === 'POST' && $id && $sub === 'members') {
-        require_role($auth, 'admin');
-        $newUid = (int)($body['user_id'] ?? 0);
-        if (!$newUid) err('user_id required');
-        DB::execute('INSERT IGNORE INTO chat_group_members (group_id,user_id) VALUES (?,?)', [$id, $newUid]);
-        respond(['message' => 'Member added']);
-    }
-
-    // ── DELETE /chat/{id}/members/{userId} — remove member ────
-    if ($method === 'DELETE' && $id && $sub === 'members' && $part3) {
-        require_role($auth, 'admin');
-        $targetUid = (int)$part3;
-        DB::execute('DELETE FROM chat_group_members WHERE group_id=? AND user_id=?', [$id, $targetUid]);
-        respond(['message' => 'Member removed']);
-    }
-
-    // ── POST /chat/setup-class-groups — create default class groups ─
-    if ($method === 'POST' && !$id && $part1 === 'setup-class-groups') {
-        require_role($auth, 'admin');
-        $classes = DB::fetchAll('SELECT id, name, year_group FROM classes WHERE school_id=?', [$sid]);
-        $created = 0;
-        foreach ($classes as $cls) {
-            // Check if class group already exists
-            $existing = DB::fetchOne('SELECT id FROM chat_groups WHERE school_id=? AND class_id=? AND type="class"', [$sid, (int)$cls['id']]);
-            if ($existing) continue;
-            $gid = DB::insert(
-                'INSERT INTO chat_groups (school_id,name,description,type,class_id,created_by) VALUES (?,?,?,?,?,?)',
-                [$sid, $cls['name'].' Chat', 'Default class group for '.$cls['name'], 'class', (int)$cls['id'], $uid]
-            );
-            // Add all students and teachers for this class
-            $students = DB::fetchAll('SELECT student_id AS id FROM class_students WHERE class_id=?', [(int)$cls['id']]);
-            $teachers = DB::fetchAll('SELECT DISTINCT teacher_id AS id FROM class_teachers WHERE class_id=?', [(int)$cls['id']]);
-            foreach (array_merge($students, $teachers, [['id'=>$uid]]) as $m) {
-                if ($m['id']) DB::execute('INSERT IGNORE INTO chat_group_members (group_id,user_id) VALUES (?,?)', [$gid, (int)$m['id']]);
-            }
-            $created++;
-        }
-        respond(['created' => $created, 'message' => "$created class group(s) created"]);
-    }
-
-    // ── PATCH /chat/{id}/pin/{msgId} — pin/unpin message ──────
-    if ($method === 'PATCH' && $id && $sub === 'pin' && $part3) {
-        $msgId = (int)$part3;
-        $myRole = DB::fetchOne('SELECT role FROM chat_group_members WHERE group_id=? AND user_id=?', [$id, $uid]);
-        if ($auth['role'] !== 'admin' && (!$myRole || $myRole['role'] !== 'admin')) err('Admins only', 403);
-        $msg = DB::fetchOne('SELECT is_pinned FROM chat_messages WHERE id=? AND group_id=?', [$msgId, $id]);
-        if (!$msg) err('Message not found', 404);
-        DB::execute('UPDATE chat_messages SET is_pinned=? WHERE id=?', [$msg['is_pinned'] ? 0 : 1, $msgId]);
-        respond(['is_pinned' => !$msg['is_pinned']]);
+        ));
     }
 
     // ── DELETE /chat/{id} — admin deletes group ───────────────
@@ -2334,7 +2140,6 @@ function handleChat(string $method, ?int $id, ?string $part1, ?string $part2, ?s
         require_role($auth, 'admin');
         $g = DB::fetchOne('SELECT id FROM chat_groups WHERE id=? AND school_id=?', [$id, $sid]);
         if (!$g) err('Group not found', 404);
-        DB::execute('DELETE FROM message_reactions  WHERE message_id IN (SELECT id FROM chat_messages WHERE group_id=?)', [$id]);
         DB::execute('DELETE FROM chat_messages       WHERE group_id=?', [$id]);
         DB::execute('DELETE FROM chat_group_members  WHERE group_id=?', [$id]);
         DB::execute('DELETE FROM chat_groups         WHERE id=?',       [$id]);
@@ -3644,117 +3449,6 @@ function resolveStudentClass(array $body, $schoolId): array {
         return [$cn, $cls ? (int)$cls['id'] : null];
     }
     return [null, null];
-}
-
-// ══════════════════════════════════════════════════════════════
-// ACADEMIC PERIODS
-// ══════════════════════════════════════════════════════════════
-function ensureAcademicPeriodsSchema(): void {
-    static $done = false;
-    if ($done) return;
-    $done = true;
-    try {
-        DB::execute("CREATE TABLE IF NOT EXISTS academic_periods (
-            id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            school_id     INT UNSIGNED NOT NULL,
-            year_group    TINYINT      NOT NULL,
-            academic_year VARCHAR(20)  NOT NULL,
-            semester      TINYINT      NOT NULL,
-            is_active     TINYINT(1)   NOT NULL DEFAULT 1,
-            started_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-            ended_at      TIMESTAMP    NULL,
-            set_by        INT UNSIGNED NOT NULL,
-            INDEX idx_school_active     (school_id, is_active),
-            INDEX idx_school_year_group (school_id, year_group, is_active)
-        ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-        DB::execute("ALTER TABLE tests     ADD COLUMN IF NOT EXISTS academic_year    VARCHAR(20)      NULL");
-        DB::execute("ALTER TABLE attempts  ADD COLUMN IF NOT EXISTS academic_year    VARCHAR(20)      NULL");
-        DB::execute("ALTER TABLE attempts  ADD COLUMN IF NOT EXISTS attempt_semester TINYINT UNSIGNED NULL");
-        // Backfill
-        DB::execute("UPDATE tests SET academic_year=CONCAT(IF(MONTH(created_at)>=8,YEAR(created_at),YEAR(created_at)-1),'/',IF(MONTH(created_at)>=8,YEAR(created_at)+1,YEAR(created_at))),semester=IF(MONTH(created_at) IN (8,9,10,11,12,1),1,2) WHERE academic_year IS NULL AND created_at IS NOT NULL");
-        DB::execute("UPDATE attempts SET academic_year=CONCAT(IF(MONTH(COALESCE(submitted_at,started_at))>=8,YEAR(COALESCE(submitted_at,started_at)),YEAR(COALESCE(submitted_at,started_at))-1),'/',IF(MONTH(COALESCE(submitted_at,started_at))>=8,YEAR(COALESCE(submitted_at,started_at))+1,YEAR(COALESCE(submitted_at,started_at)))),attempt_semester=IF(MONTH(COALESCE(submitted_at,started_at)) IN (8,9,10,11,12,1),1,2) WHERE academic_year IS NULL");
-    } catch (Throwable $e) {}
-}
-
-function _currentPeriod(int $schoolId, int $yearGroup): array {
-    ensureAcademicPeriodsSchema();
-    $p = DB::fetchOne(
-        'SELECT academic_year, semester FROM academic_periods WHERE school_id=? AND year_group=? AND is_active=1 ORDER BY started_at DESC LIMIT 1',
-        [$schoolId, $yearGroup]
-    );
-    if ($p) return $p;
-    // Derive from current date if none set
-    $m = (int)date('n');
-    return [
-        'academic_year' => ($m >= 8 ? date('Y') : date('Y')-1) . '/' . ($m >= 8 ? date('Y')+1 : date('Y')),
-        'semester'      => in_array($m, [8,9,10,11,12,1]) ? 1 : 2,
-    ];
-}
-
-function handleAcademicPeriods(string $method, ?int $id, array $body): void {
-    $auth = require_auth();
-    $sid  = $auth['school_id'];
-    ensureAcademicPeriodsSchema();
-
-    // GET /academic-periods — returns current periods + full history
-    if ($method === 'GET') {
-        $current = DB::fetchAll(
-            'SELECT * FROM academic_periods WHERE school_id=? AND is_active=1 ORDER BY year_group',
-            [$sid]
-        );
-        $history = DB::fetchAll(
-            'SELECT ap.*, CONCAT(u.first_name," ",u.last_name) AS set_by_name
-             FROM academic_periods ap LEFT JOIN users u ON u.id=ap.set_by
-             WHERE ap.school_id=? ORDER BY ap.year_group, ap.started_at DESC',
-            [$sid]
-        );
-        // Also return distinct academic years used across all tests/periods for selector
-        $allYears = DB::fetchAll(
-            'SELECT DISTINCT academic_year, semester FROM tests WHERE school_id=? AND academic_year IS NOT NULL
-             UNION SELECT DISTINCT academic_year, semester FROM academic_periods WHERE school_id=?
-             ORDER BY academic_year DESC, semester DESC',
-            [$sid, $sid]
-        );
-        respond(['current' => $current, 'history' => $history, 'available' => $allYears]);
-    }
-
-    // POST /academic-periods — admin sets period for a year group
-    if ($method === 'POST') {
-        require_role($auth, 'admin');
-        $yg   = (int)($body['year_group']    ?? 0);
-        $year = trim($body['academic_year']  ?? '');
-        $sem  = (int)($body['semester']      ?? 1);
-        if (!in_array($yg, [1,2,3]))      err('year_group must be 1, 2, or 3');
-        if (!$year)                        err('academic_year is required (e.g. 2024/2025)');
-        if (!in_array($sem, [1,2]))        err('semester must be 1 or 2');
-
-        // Close current active period for this year_group
-        DB::execute(
-            'UPDATE academic_periods SET is_active=0, ended_at=NOW() WHERE school_id=? AND year_group=? AND is_active=1',
-            [$sid, $yg]
-        );
-        $startDate = !empty($body['start_date']) ? $body['start_date'] : null;
-        $endDate   = !empty($body['end_date'])   ? $body['end_date']   : null;
-        $newId = DB::insert(
-            'INSERT INTO academic_periods (school_id, year_group, academic_year, semester, is_active, set_by, start_date, end_date) VALUES (?,?,?,?,1,?,?,?)',
-            [$sid, $yg, $year, $sem, $auth['user_id'], $startDate, $endDate]
-        );
-        respond(['id' => $newId, 'message' => "Year $yg period updated: $year Semester $sem"]);
-    }
-
-    err('Academic periods endpoint error', 404);
-}
-
-function ensureQuestionTypeSchema(): void {
-    static $done = false;
-    if ($done) return;
-    $done = true;
-    try {
-        // Widen type column so any string is valid (fixes ENUM rejection of 'fill-in')
-        DB::execute("ALTER TABLE questions MODIFY COLUMN type VARCHAR(20) NOT NULL DEFAULT 'mcq'");
-        // Migrate empty/blank/null → fill-in
-        DB::execute("UPDATE questions SET type='fill-in' WHERE type='' OR type IS NULL OR type='blank'");
-    } catch (Throwable $e) {}
 }
 
 function ensureTeacherSubjectSchema(): void {
