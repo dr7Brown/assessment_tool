@@ -3,7 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1A7A4A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="AceICT">
 <title>AceICT — Ghana SHS Assessment Platform</title>
+<link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -351,6 +356,8 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="nav-item" onclick="tNav('tests',this)"><div class="ni-icon">📋</div>Tests</div>
         <div class="nav-item" onclick="tNav('live',this)"><div class="ni-icon">⚡</div>Live quiz</div>
         <div class="nav-item" onclick="tNav('meetings',this)"><div class="ni-icon">📅</div>Meetings</div>
+        <div class="nav-item" onclick="tNav('report-cards',this)"><div class="ni-icon">🗒️</div>Report cards</div>
+        <div class="nav-item" onclick="tNav('at-risk',this)"><div class="ni-icon">🚨</div>At-risk students</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">Classes</div>
@@ -415,6 +422,8 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="nav-item" onclick="openSemesterResultSheet()"><div class="ni-icon">📄</div>Result sheets</div>
         <div class="nav-item" onclick="aNav('analytics',this)"><div class="ni-icon">📈</div>Analytics</div>
         <div class="nav-item" onclick="aNav('meetings',this)"><div class="ni-icon">📅</div>Meetings</div>
+        <div class="nav-item" onclick="aNav('report-cards',this)"><div class="ni-icon">🗒️</div>Report cards</div>
+        <div class="nav-item" onclick="aNav('at-risk',this)"><div class="ni-icon">🚨</div>At-risk students</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">Management</div>
@@ -833,6 +842,65 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 </div>
 
 <script>
+// ════════════════════════════════════════════════════════════
+// AceICT — Offline Database (IndexedDB)
+// Inlined to guarantee it is defined before any api() call.
+// ════════════════════════════════════════════════════════════
+const AceDB = (() => {
+  const DB_NAME = 'aceict-offline', DB_VERSION = 1;
+  const STORES  = {
+    api_cache:  { keyPath: 'key' },
+    sync_queue: { keyPath: 'qid', autoIncrement: true },
+    meta:       { keyPath: 'key' },
+  };
+  let _db = null;
+  function open() {
+    if (_db) return Promise.resolve(_db);
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = e => {
+        const d = e.target.result;
+        Object.entries(STORES).forEach(([name, opts]) => {
+          if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, opts);
+        });
+      };
+      req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+      req.onerror   = e => reject(e.target.error);
+    });
+  }
+  async function _put(store, item) {
+    const d = await open();
+    return new Promise((res, rej) => { const tx = d.transaction(store,'readwrite'); tx.objectStore(store).put(item); tx.oncomplete=()=>res(); tx.onerror=e=>rej(e.target.error); });
+  }
+  async function _get(store, key) {
+    const d = await open();
+    return new Promise((res, rej) => { const req = d.transaction(store,'readonly').objectStore(store).get(key); req.onsuccess=e=>res(e.target.result??null); req.onerror=e=>rej(e.target.error); });
+  }
+  async function _getAll(store) {
+    const d = await open();
+    return new Promise((res, rej) => { const req = d.transaction(store,'readonly').objectStore(store).getAll(); req.onsuccess=e=>res(e.target.result); req.onerror=e=>rej(e.target.error); });
+  }
+  async function _del(store, key) {
+    const d = await open();
+    return new Promise((res, rej) => { const tx = d.transaction(store,'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete=()=>res(); tx.onerror=e=>rej(e.target.error); });
+  }
+  async function _clear(store) {
+    const d = await open();
+    return new Promise((res, rej) => { const tx = d.transaction(store,'readwrite'); tx.objectStore(store).clear(); tx.oncomplete=res; tx.onerror=e=>rej(e.target.error); });
+  }
+  const cachePut   = (key, data)  => _put('api_cache',  { key, data, cached_at: Date.now() });
+  const cacheGet   = async key    => { const r = await _get('api_cache', key); return r ? { data: r.data, cached_at: r.cached_at } : null; };
+  const cacheDelete= key          => _del('api_cache', key);
+  const cacheClear = ()           => _clear('api_cache');
+  const enqueue    = entry        => _put('sync_queue', { ...entry, queued_at: Date.now() });
+  const getQueue   = ()           => _getAll('sync_queue');
+  const dequeue    = qid          => _del('sync_queue', qid);
+  const clearQueue = ()           => _clear('sync_queue');
+  const setMeta    = (key, value) => _put('meta', { key, value, updated_at: Date.now() });
+  const getMeta    = async key    => { const r = await _get('meta', key); return r?.value ?? null; };
+  const queueCount = async ()     => (await getQueue().catch(()=>[])).length;
+  return { open, cachePut, cacheGet, cacheDelete, cacheClear, enqueue, getQueue, dequeue, clearQueue, queueCount, setMeta, getMeta };
+})();
 
 // ════════════════════════════════════════════════════════════
 // AceICT v3 — Full Backend Integration
@@ -846,7 +914,11 @@ const USE_MOCK = false;             // Set true to use local data if backend is 
 let AUTH_TOKEN   = localStorage.getItem('aceict_token')  || null;
 let CURRENT_USER = JSON.parse(localStorage.getItem('aceict_user') || 'null');
 
-// ── API CLIENT ────────────────────────────────────────────────
+// ── API CLIENT (offline-aware) ────────────────────────────────
+//
+// GET  requests: try network → cache result; if offline → serve cache
+// POST/PATCH/DELETE: try network; if offline → add to sync queue
+//
 async function api(method, endpoint, data = null) {
   const headers = { 'Content-Type': 'application/json' };
   if (AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
@@ -863,17 +935,76 @@ async function api(method, endpoint, data = null) {
     opts.body = JSON.stringify(data);
   }
 
+  // Cache key = everything after the API base (path + query string)
+  const cacheKey = url.replace(API_BASE, '');
+
   try {
-    const res = await fetch(url, opts);
+    const res  = await fetch(url, opts);
     const json = await res.json().catch(() => ({ success: false, error: 'Invalid response' }));
     if (res.status === 401) { doLogout(); return null; }
     if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-    return json.data !== undefined ? json.data : json;
+    const result = json.data !== undefined ? json.data : json;
+
+    // Cache every successful GET in IndexedDB for offline use
+    if (method === 'GET' && result !== null) {
+      AceDB.cachePut(cacheKey, result).catch(() => {});
+    }
+
+    return result;
   } catch (e) {
-    // If backend unreachable AND mock mode enabled, return null silently
+    // Mock mode — return null silently if backend unreachable
     if (USE_MOCK && (e.message.includes('fetch') || e.message.includes('Failed'))) return null;
+
+    const isNetworkError = e.message.includes('fetch') || e.message.includes('Failed') ||
+                           e.message.includes('NetworkError') || !navigator.onLine;
+
+    // ── Offline GET: serve cached data ─────────────────────────
+    if (method === 'GET' && isNetworkError) {
+      const cached = await AceDB.cacheGet(cacheKey).catch(() => null);
+      if (cached?.data !== undefined) {
+        showOfflineCacheNotice();
+        return cached.data;
+      }
+    }
+
+    // ── Offline mutation: queue for later ──────────────────────
+    if (method !== 'GET' && isNetworkError) {
+      // Don't queue real-time or auth operations
+      // Never queue: auth, real-time, or creating a new attempt
+      // (new attempt needs a server-assigned ID — queuing it breaks the quiz)
+      const noQueue = ['/auth/', '/live', '/heartbeat'];
+      const isNewAttempt = method === 'POST' && endpoint === '/attempts';
+      const shouldQueue = !noQueue.some(p => endpoint.includes(p)) && !isNewAttempt;
+      if (shouldQueue) {
+        await AceDB.enqueue({
+          method, endpoint, data,
+          description: describeEndpoint(method, endpoint),
+        }).catch(() => {});
+        updateSyncBadge();
+        return { _queued: true, message: 'Saved offline — will upload when you reconnect.' };
+      }
+    }
+
     throw e;
   }
+}
+
+// Human-readable description of a queued mutation (shown in badge tooltip)
+function describeEndpoint(method, endpoint) {
+  if (endpoint.includes('/attempts') && method === 'POST') return 'Test submission';
+  if (endpoint.includes('/answers'))                        return 'Answer save';
+  if (endpoint.includes('/questions') && method === 'POST') return 'New question';
+  if (endpoint.includes('/questions') && method === 'PATCH')return 'Question edit';
+  if (endpoint.includes('/marking'))                        return 'Essay mark';
+  return `${method} ${endpoint}`;
+}
+
+// Subtle notice that data is from local cache (not intrusive)
+let _offlineNoticeShown = false;
+function showOfflineCacheNotice() {
+  if (_offlineNoticeShown || navigator.onLine) return;
+  _offlineNoticeShown = true;
+  setTimeout(() => { _offlineNoticeShown = false; }, 30000);
 }
 
 const GET    = (ep, p)  => api('GET',    ep, p);
@@ -920,16 +1051,56 @@ async function doLogin(email, password, role) {
 
     document.getElementById('login-modal-bg')?.remove();
     if (res.user.must_change_password) {
-      // Show app shell behind the modal so layout is ready
       showScreen(res.user.role + '-app');
       updateSidebarUser(res.user.role);
       showForcePasswordChange(res.user.role);
     } else {
       goApp(res.user.role);
     }
+
+    // Warm up the offline cache in the background after login
+    // Small delay so the UI renders first
+    setTimeout(() => warmupCache(res.user.role), 2500);
   } catch (e) {
     throw e;
   }
+}
+
+// Pre-fetch and cache the most-needed endpoints for each role.
+// Runs silently in the background — never blocks the UI.
+async function warmupCache(role) {
+  if (!navigator.onLine) return;
+  const WARMUP = {
+    student: [
+      '/students/dashboard',
+      '/tests',
+      '/students/subjects',
+      '/meetings',
+      '/meetings/history',
+    ],
+    teacher: [
+      '/tests',
+      '/questions',
+      '/classes',
+      '/subjects',
+      '/meetings',
+    ],
+    admin: [
+      '/classes',
+      '/subjects',
+      '/tests',
+      '/meetings',
+    ],
+  };
+  const endpoints = WARMUP[role] || [];
+  for (const ep of endpoints) {
+    try {
+      await GET(ep);  // api() caches every successful GET automatically
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 300)); // gentle pacing — don't hammer the server
+  }
+  await AceDB.setMeta('lastWarmup', Math.floor(Date.now() / 1000));
+  console.log('[AceICT] Offline cache warmed for role:', role);
 }
 
 function doLogout() {
@@ -937,6 +1108,11 @@ function doLogout() {
   CURRENT_USER = null;
   localStorage.removeItem('aceict_token');
   localStorage.removeItem('aceict_user');
+  // Clear all cached data so a new user doesn't see the previous user's data
+  AceDB.cacheClear().catch(() => {});
+  AceDB.clearQueue().catch(() => {});
+  AceDB.setMeta('lastSync',   0).catch(() => {});
+  AceDB.setMeta('lastWarmup', 0).catch(() => {});
   showLanding();
 }
 
@@ -1814,6 +1990,7 @@ async function loadDash(m) {
     <div class="stat-card"><div class="label">Study streak</div><div class="value" style="color:var(--purple)">${streak}</div><div class="trend">days 🔥</div></div>
   </div>
   <div id="s-dash-meetings-card" style="display:none;margin-bottom:20px"></div>
+  <div id="s-dash-badges" style="display:none;margin-bottom:20px"></div>
   <div class="grid-2" style="margin-bottom:20px">
     <div class="card">
       <div class="card-header">
@@ -1956,6 +2133,24 @@ async function loadMyTests(m) {
   </div>
 </div>`;
   // Async-inject upcoming live classes card (non-blocking)
+  // Async inject achievement badges
+  GET('/analytics/badges').then(res => {
+    const el = document.getElementById('s-dash-badges');
+    if (!el || !res?.badges?.length) return;
+    el.innerHTML = `<div class="card">
+      <div class="card-header">
+        <div><div class="card-title">🏅 Achievements</div><div class="card-sub">${res.total} badge${res.total!==1?'s':''} earned</div></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">
+        ${res.badges.map(b=>`<div title="${b.desc}" style="display:flex;align-items:center;gap:6px;background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:5px 12px;cursor:default">
+          <span style="font-size:16px">${b.icon}</span>
+          <span style="font-size:12px;font-weight:700;color:var(--green-dk)">${b.name}</span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+    el.style.display = '';
+  }).catch(()=>{});
+
   GET('/meetings', SCTX.subject_id ? { subject_id: SCTX.subject_id } : {}).then(meets => {
     const el = document.getElementById('s-dash-meetings-card');
     if (!el || !meets?.length) return;
@@ -2605,6 +2800,7 @@ function resultsHTML(){
   </div>
   ${quizResult?.unmarked_essays ? `<div class="info-box amber" style="margin-bottom:12px">${quizResult.unmarked_essays} essay question(s) are awaiting your teacher's marking. Your final score will update once marked.</div>` : ''}
   ${!quizResult?.show_feedback ? `<div class="info-box blue">Your full answer review will be available once your teacher enables feedback for this test.</div>` : ''}`}
+  <div id="rRemediation"></div>
   <div style="display:flex;gap:10px;margin-top:20px;justify-content:center">
     <button class="btn btn-primary" onclick="startPractice()">Practice again →</button>
     <button class="btn btn-secondary" onclick="sNav('dashboard',null)">Back to dashboard</button>
@@ -2647,6 +2843,14 @@ function showResults(){
     const numEl=g('rNum');
     if(numEl){let c=0;const ct=setInterval(()=>{c=Math.min(c+1,correct);numEl.textContent=c;if(c>=correct)clearInterval(ct);},80);}
   },200);
+
+  // Remediation panel for real (non-practice) tests
+  if (!isPractice && pct < 75) {
+    const remEl = document.getElementById('rRemediation');
+    if (remEl) {
+      loadStudentRemediation(null, null).then(html => { if (html) remEl.innerHTML = html; });
+    }
+  }
 
   // Heatmap (practice only)
   if(isPractice){
@@ -2714,7 +2918,9 @@ function tRender(v){
   else if(v==='classes')   loadTClasses(m);
   else if(v==='marking')   loadTMarking(m);
   else if(v==='analytics') loadTAnalytics(m);
-  else if(v==='meetings')  loadTMeetings(m);
+  else if(v==='meetings')    loadTMeetings(m);
+  else if(v==='at-risk')     loadAAtRisk(m);
+  else if(v==='report-cards')loadAReportCards(m);
   else if(v==='messages')  loadTMessages(m);
   else if(v==='chat')      loadGroupChat(m,'t');
 }
@@ -5041,7 +5247,9 @@ function aRender(v){
   else if(v==='messages')    loadAMessages(m);
   else if(v==='chat')        loadGroupChat(m,'a');
   else if(v==='promotion')   loadAPromotion(m);
-  else if(v==='meetings')    loadAMeetings(m);
+  else if(v==='meetings')      loadAMeetings(m);
+  else if(v==='report-cards')  loadAReportCards(m);
+  else if(v==='at-risk')       loadAAtRisk(m);
 }
 
 // ── Admin Question Bank ────────────────────────────────────────
@@ -5444,6 +5652,7 @@ async function loadAAnalytics(m) {
     <button class="tab-btn active" onclick="switchTab(this,'aa-school')">School overview</button>
     <button class="tab-btn" onclick="switchTab(this,'aa-teachers')">Teacher analytics</button>
     <button class="tab-btn" onclick="switchTab(this,'aa-subjects')">By subject</button>
+    <button class="tab-btn" onclick="switchTab(this,'aa-wassce');loadWASSCEDashboard()">WASSCE readiness</button>
   </div>
 
   <!-- School overview tab -->
@@ -5461,6 +5670,14 @@ async function loadAAnalytics(m) {
   <div id="aa-subjects" class="tab-pane" style="display:none">
     ${renderSubjectAnalytics(analytics?.by_subject || [])}
   </div>
+
+  <!-- WASSCE tab -->
+  <div id="aa-wassce" class="tab-pane" style="display:none">
+    <div id="wassce-content"><div class="info-box blue">Click "WASSCE readiness" tab to load predictions.</div></div>
+  </div>
+</div>
+<div style="margin-top:16px;text-align:right">
+  <button class="btn btn-secondary" onclick="exportGESReport()">⬇ GES District Report (CSV)</button>
 </div>`;
 
   await taRender(null, classes || [], analytics);
@@ -12710,6 +12927,12 @@ async function beginTest(testId) {
     notify('Invalid test ID', 'error');
     return;
   }
+  // Starting a test requires the server to create an attempt record.
+  // Resuming an in-progress attempt is fine offline (attempt ID already exists).
+  if (!navigator.onLine) {
+    notify('You need to be online to start a new test. Your device is currently offline.', 'error');
+    return;
+  }
   showLoader('Loading test...');
   try {
     // Step 1: Start or resume an attempt
@@ -14123,6 +14346,789 @@ async function joinMeeting(id) {
   } catch(e) {
     alert('Could not join meeting: ' + e.message);
   }
+}
+</script>
+
+<!-- ═══ OFFLINE / SYNC UI ═══ -->
+<div id="offline-bar" style="
+  display:none;position:fixed;top:0;left:0;right:0;z-index:99999;
+  background:#B84022;color:#fff;text-align:center;
+  padding:9px 16px;font-size:13px;font-weight:600;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);letter-spacing:.01em">
+  ⚡ Offline — the app keeps working. Changes will sync when you reconnect.
+</div>
+<div id="online-toast" style="
+  display:none;position:fixed;top:0;left:0;right:0;z-index:99999;
+  background:#1A7A4A;color:#fff;text-align:center;
+  padding:9px 16px;font-size:13px;font-weight:600;
+  box-shadow:0 2px 8px rgba(0,0,0,.2)">
+  ✓ Back online — syncing…
+</div>
+
+<!-- Sync queue badge — bottom-right corner -->
+<div id="sync-badge" style="
+  display:none;position:fixed;bottom:20px;right:20px;z-index:99990;
+  background:#C47D0E;color:#fff;border-radius:20px;
+  padding:8px 14px;font-size:12px;font-weight:700;
+  box-shadow:0 2px 12px rgba(0,0,0,.25);cursor:pointer;
+  display:none;align-items:center;gap:6px" onclick="showSyncDetails()">
+  <span style="font-size:14px">⬆</span>
+  <span id="sync-badge-text">0 pending</span>
+</div>
+
+<!-- PWA install prompt -->
+<div id="pwa-install-bar" style="
+  display:none;position:fixed;bottom:20px;left:20px;z-index:99990;
+  background:#1A4F8A;color:#fff;border-radius:12px;
+  padding:12px 16px;font-size:13px;font-weight:600;
+  box-shadow:0 4px 20px rgba(0,0,0,.25);max-width:300px">
+  <div style="margin-bottom:8px">📱 Install AceICT on this device for full offline access</div>
+  <div style="display:flex;gap:8px">
+    <button onclick="installPWA()" style="background:#fff;color:#1A4F8A;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">Install</button>
+    <button onclick="document.getElementById('pwa-install-bar').style.display='none'" style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer">Not now</button>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// AceICT — Offline Engine (Phases 2-6)
+// ════════════════════════════════════════════════════════════
+
+// ── Service Worker registration ───────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => {
+        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        reg.addEventListener('updatefound', () => {
+          const sw = reg.installing;
+          sw.addEventListener('statechange', () => {
+            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+              sw.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+      })
+      .catch(err => console.warn('[AceICT] SW registration failed:', err));
+
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      // Show a non-intrusive "update ready" banner instead of hard reloading
+      const bar = document.createElement('div');
+      bar.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#1A4F8A;color:#fff;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:12px';
+      bar.innerHTML = '🔄 New version available <button onclick="window.location.reload()" style="background:#fff;color:#1A4F8A;border:none;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">Reload</button>';
+      document.body.appendChild(bar);
+    });
+  });
+}
+
+// ── Online / offline status ───────────────────────────────────
+(function () {
+  const offlineBar  = document.getElementById('offline-bar');
+  const onlineToast = document.getElementById('online-toast');
+  let toastTimer    = null;
+
+  window._setOnlineStatus = function(isOnline) {
+    if (!offlineBar || !onlineToast) return;
+    if (isOnline) {
+      offlineBar.style.display  = 'none';
+      onlineToast.style.display = 'block';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { onlineToast.style.display = 'none'; }, 3500);
+      // Drain any queued mutations and pull fresh data
+      drainSyncQueue();
+      runIncrementalSync();
+    } else {
+      onlineToast.style.display = 'none';
+      offlineBar.style.display  = 'block';
+    }
+  };
+
+  window.addEventListener('online',  () => window._setOnlineStatus(true));
+  window.addEventListener('offline', () => window._setOnlineStatus(false));
+  if (!navigator.onLine) window._setOnlineStatus(false);
+})();
+
+// ── Sync badge ────────────────────────────────────────────────
+async function updateSyncBadge() {
+  const badge = document.getElementById('sync-badge');
+  const text  = document.getElementById('sync-badge-text');
+  if (!badge || !text) return;
+  const count = await AceDB.queueCount().catch(() => 0);
+  if (count > 0) {
+    text.textContent  = count + ' pending';
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function showSyncDetails() {
+  const queue = await AceDB.getQueue().catch(() => []);
+  if (!queue.length) { updateSyncBadge(); return; }
+  const list = queue.map(q => `• ${q.description || q.method + ' ' + q.endpoint}`).join('\n');
+  alert(`${queue.length} item(s) waiting to sync:\n\n${list}\n\nThey will upload automatically when you go online.`);
+}
+
+// ── Drain sync queue (runs on reconnect) ─────────────────────
+let _draining = false;
+async function drainSyncQueue() {
+  if (_draining) return;
+  _draining = true;
+  const queue = await AceDB.getQueue().catch(() => []);
+  if (!queue.length) { _draining = false; return; }
+
+  let synced = 0, failed = 0;
+  for (const item of queue) {
+    try {
+      const res = await fetch(API_BASE + item.endpoint, {
+        method:  item.method,
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': AUTH_TOKEN ? 'Bearer ' + AUTH_TOKEN : '',
+        },
+        body: item.data ? JSON.stringify(item.data) : undefined,
+      });
+      if (res.ok || res.status === 409) {
+        // 409 = conflict (e.g. duplicate submit) — still remove from queue
+        await AceDB.dequeue(item.qid);
+        synced++;
+      } else {
+        failed++;
+      }
+    } catch {
+      failed++;
+    }
+  }
+
+  _draining = false;
+  await updateSyncBadge();
+
+  if (synced > 0) {
+    const toast = document.getElementById('online-toast');
+    if (toast) {
+      toast.textContent = `✓ Synced ${synced} item${synced > 1 ? 's' : ''} — you're up to date.`;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 4000);
+    }
+  }
+}
+
+// ── Incremental sync (Phase 5): pull fresh data from server ──
+let _syncRunning = false;
+async function runIncrementalSync() {
+  if (_syncRunning || !navigator.onLine || !AUTH_TOKEN) return;
+  _syncRunning = true;
+  try {
+    const lastSync = await AceDB.getMeta('lastSync') || 0;
+    const data = await fetch(`${API_BASE}/sync?since=${lastSync}`, {
+      headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN }
+    }).then(r => r.ok ? r.json() : null).catch(() => null);
+
+    if (!data?.data) { _syncRunning = false; return; }
+    const payload = data.data;
+
+    // Update caches for each resource type returned
+    const resources = ['tests', 'questions', 'meetings', 'attempts'];
+    for (const res of resources) {
+      if (Array.isArray(payload[res]) && payload[res].length) {
+        // Invalidate the old cached list so next request fetches fresh
+        await AceDB.cacheDelete('/' + res).catch(() => {});
+      }
+    }
+
+    await AceDB.setMeta('lastSync', payload.synced_at || Math.floor(Date.now() / 1000));
+    console.log('[AceICT] Incremental sync complete');
+  } catch (e) {
+    console.warn('[AceICT] Sync failed:', e.message);
+  }
+  _syncRunning = false;
+}
+
+// Run a sync shortly after the page loads (if online)
+setTimeout(() => { if (navigator.onLine && AUTH_TOKEN) runIncrementalSync(); }, 3000);
+
+// ── PWA install prompt (Phase 6) ─────────────────────────────
+let _deferredInstall = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredInstall = e;
+  // Only show if user has been on the app for at least 30 s
+  setTimeout(() => {
+    const bar = document.getElementById('pwa-install-bar');
+    if (bar && _deferredInstall) bar.style.display = 'block';
+  }, 30000);
+});
+
+function installPWA() {
+  if (!_deferredInstall) return;
+  _deferredInstall.prompt();
+  _deferredInstall.userChoice.then(result => {
+    if (result.outcome === 'accepted') {
+      const bar = document.getElementById('pwa-install-bar');
+      if (bar) bar.style.display = 'none';
+      notify('AceICT installed — you can now use it offline from your home screen', 'success');
+    }
+    _deferredInstall = null;
+  });
+}
+
+window.addEventListener('appinstalled', () => {
+  const bar = document.getElementById('pwa-install-bar');
+  if (bar) bar.style.display = 'none';
+  _deferredInstall = null;
+});
+
+// ── Init: show badge if there are queued items from last session
+window.addEventListener('DOMContentLoaded', () => {
+  updateSyncBadge();
+});
+</script>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// WASSCE READINESS DASHBOARD
+// ════════════════════════════════════════════════════════════
+
+async function loadWASSCEDashboard() {
+  const el = document.getElementById('wassce-content');
+  if (!el) return;
+  el.innerHTML = panelLoader();
+
+  let classes = [];
+  try { classes = await GET('/classes') || []; } catch(e) {}
+
+  const byYear = {};
+  classes.forEach(c => { (byYear[c.year_group]=byYear[c.year_group]||[]).push(c); });
+  const clsOpts = `<option value="">All classes</option>` + Object.entries(byYear).sort(([a],[b])=>+a-+b).map(([yr,list]) =>
+    `<optgroup label="Year ${yr}">${list.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</optgroup>`
+  ).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+      <div class="form-group" style="margin:0;min-width:200px">
+        <label class="form-label">Filter by class</label>
+        <select id="wc-class" class="form-select">${clsOpts}</select>
+      </div>
+      <button class="btn btn-primary" onclick="renderWASSCEGrid()">Analyse →</button>
+    </div>
+    <div id="wassce-grid"></div>`;
+}
+
+async function renderWASSCEGrid() {
+  const classId = document.getElementById('wc-class')?.value;
+  const grid = document.getElementById('wassce-grid');
+  if (!grid) return;
+  grid.innerHTML = panelLoader();
+
+  let data = null;
+  try { data = await GET('/analytics/wassce', classId ? { class_id: classId } : {}); }
+  catch(e) { grid.innerHTML = `<div class="info-box coral">Error: ${e.message}</div>`; return; }
+
+  const { students, subjects, summary } = data;
+  if (!students.length) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No data yet</div><div class="empty-desc">Students need to complete tests in multiple subjects</div></div>`;
+    return;
+  }
+
+  const GRADE_BG = {
+    A1:'#dcfce7', B2:'#d1fae5', B3:'#bbf7d0',
+    C4:'#fef9c3', C5:'#fef3c7', C6:'#fde68a',
+    D7:'#fee2e2', E8:'#fecaca', F9:'#fca5a5'
+  };
+  const GRADE_TXT = {
+    A1:'#166534',B2:'#15803d',B3:'#16a34a',
+    C4:'#854d0e',C5:'#a16207',C6:'#b45309',
+    D7:'#991b1b',E8:'#b91c1c',F9:'#dc2626'
+  };
+
+  const readinessColor = pct => pct>=80?'var(--green)':pct>=50?'var(--amber)':'var(--coral)';
+
+  // Group students by class
+  const byClass = {};
+  students.forEach(s => { (byClass[s.class_name]=byClass[s.class_name]||[]).push(s); });
+
+  const subjectHeaders = subjects.map(s =>
+    `<th style="padding:6px 8px;font-size:10px;font-weight:700;text-align:center;white-space:nowrap;background:#1A4F8A;color:#fff">${s.short||s.name}</th>`
+  ).join('');
+
+  const classBlocks = Object.entries(byClass).map(([className, studs]) => {
+    const rows = studs.map(s => {
+      const cells = subjects.map(subj => {
+        const sd = s.subjects[subj.id];
+        if (!sd) return `<td style="padding:4px 6px;text-align:center;background:#f5f5f5;color:#ccc;font-size:11px">—</td>`;
+        return `<td title="${Math.round(sd.avg_pct)}% · ${sd.test_count} test${sd.test_count!==1?'s':''}"
+          style="padding:4px 6px;text-align:center;background:${GRADE_BG[sd.grade]||'#fff'};color:${GRADE_TXT[sd.grade]||'#333'};font-size:12px;font-weight:800;cursor:default">${sd.grade}</td>`;
+      }).join('');
+      const initials = ((s.first_name||'?')[0]+(s.last_name||'?')[0]).toUpperCase();
+      return `<tr>
+        <td style="padding:4px 8px;white-space:nowrap;font-size:12px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <div style="width:24px;height:24px;border-radius:50%;background:${s.avatar_color||'var(--teal)'};color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${initials}</div>
+            ${s.first_name} ${s.last_name}
+          </div>
+        </td>
+        ${cells}
+        <td style="padding:4px 8px;text-align:center">
+          <div style="font-size:12px;font-weight:800;color:${readinessColor(s.wassce_readiness)}">${s.wassce_readiness}%</div>
+        </td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="card" style="margin-bottom:20px">
+      <div class="card-header"><div class="card-title">${className}</div><div style="font-size:12px;color:var(--text-3)">${studs.length} students</div></div>
+      <div style="overflow-x:auto">
+        <table style="border-collapse:collapse;min-width:100%">
+          <thead><tr style="background:#1A4F8A">
+            <th style="padding:6px 8px;font-size:10px;font-weight:700;text-align:left;color:#fff;min-width:140px">Student</th>
+            ${subjectHeaders}
+            <th style="padding:6px 8px;font-size:10px;font-weight:700;text-align:center;background:#0D5C35;color:#fff">Readiness</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  grid.innerHTML = `
+    <div class="stats-row" style="margin-bottom:20px">
+      <div class="stat-card"><div class="label">WASSCE ready</div><div class="value" style="color:var(--green)">${summary.ready}</div><div class="trend">≥80% credits</div></div>
+      <div class="stat-card"><div class="label">Borderline</div><div class="value" style="color:var(--amber)">${summary.borderline}</div><div class="trend">50–79% credits</div></div>
+      <div class="stat-card"><div class="label">At risk</div><div class="value" style="color:var(--coral)">${summary.at_risk}</div><div class="trend">&lt;50% credits</div></div>
+      <div class="stat-card"><div class="label">Total students</div><div class="value">${summary.total}</div></div>
+    </div>
+    <div class="info-box blue" style="margin-bottom:16px;font-size:12px">
+      🟢 A1–C6 = Credit pass &nbsp;|&nbsp; 🟡 D7 = Weak pass &nbsp;|&nbsp; 🔴 E8–F9 = Fail &nbsp;|&nbsp;
+      <b>Readiness</b> = % of subjects with a credit grade
+    </div>
+    ${classBlocks}
+    <div style="text-align:right;margin-top:8px">
+      <button class="btn btn-secondary" onclick="exportWASSCECSV()">⬇ Export CSV</button>
+    </div>`;
+  window._wascceData = data;
+}
+
+function exportWASSCECSV() {
+  const data = window._wascceData;
+  if (!data) return;
+  const subjects = data.subjects || [];
+  const headers = ['Student','Class','Year Group', ...subjects.map(s=>s.short||s.name),'Readiness %'];
+  const rows = (data.students||[]).map(s => [
+    s.first_name + ' ' + s.last_name, s.class_name, s.year_group,
+    ...subjects.map(sub => s.subjects[sub.id]?.grade || '—'),
+    s.wassce_readiness + '%'
+  ]);
+  const csv = [headers,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csv);
+  a.download = 'wassce_readiness.csv';
+  a.click();
+}
+
+// ════════════════════════════════════════════════════════════
+// GES DISTRICT REPORT EXPORT
+// ════════════════════════════════════════════════════════════
+
+async function exportGESReport() {
+  notify('Generating GES District Report…', 'success');
+  let analytics = null, teachers = null, classes = [];
+  try {
+    [analytics, teachers, classes] = await Promise.all([
+      GET('/analytics/school'),
+      GET('/analytics/teachers'),
+      GET('/classes'),
+    ]);
+  } catch(e) { notify('Failed to generate: ' + e.message, 'error'); return; }
+
+  const school     = CURRENT_USER?.school_name || 'School';
+  const now        = new Date().toLocaleDateString('en-GH', {day:'numeric',month:'long',year:'numeric'});
+  const schoolAvg  = Math.round(parseFloat(analytics?.stats?.avg_pct || 0));
+  const passRate   = analytics?.stats?.pass_count && analytics?.stats?.tests_done
+    ? Math.round(analytics.stats.pass_count / analytics.stats.tests_done * 100) : 0;
+
+  const rows = [
+    ['GES SCHOOL REPORT — ' + school],
+    ['Generated:', now],
+    [],
+    ['=== SCHOOL OVERVIEW ==='],
+    ['Metric','Value'],
+    ['Total students tested',       analytics?.stats?.students_tested || 0],
+    ['Total test attempts',         analytics?.stats?.tests_done || 0],
+    ['School average (%)',           schoolAvg],
+    ['Overall pass rate (%)',        passRate],
+    [],
+    ['=== CLASS PERFORMANCE ==='],
+    ['Class','Year Group','Students','Avg Score (%)','Pass Rate (%)','Status'],
+    ...(classes||[]).map(c => {
+      const avg = Math.round(parseFloat(c.class_avg||0));
+      return [c.name, c.year_group, c.student_count||0, avg, '—',
+        avg>=65?'Good':avg>=50?'Satisfactory':'Needs improvement'];
+    }),
+    [],
+    ['=== TEACHER ACTIVITY ==='],
+    ['Teacher','Department','Tests Created','Students Tested','Avg Student Score (%)','Questions in Bank'],
+    ...(teachers?.teachers||[]).map(t => [
+      t.teacher_name, t.department_name||'—', t.test_count||0,
+      t.students_tested||0, Math.round(parseFloat(t.avg_pct||0)), t.question_count||0
+    ]),
+    [],
+    ['=== SUBJECT PERFORMANCE ==='],
+    ['Subject','Tests','Students Tested','Average (%)'],
+    ...(teachers?.bySubject||[]).map(s => [
+      s.subject_name, s.test_count||0, s.students_tested||0,
+      Math.round(parseFloat(s.avg_pct||0))
+    ]),
+  ];
+
+  const csv = rows.map(r => Array.isArray(r)
+    ? r.map(v=>'"'+String(v||'').replace(/"/g,'""')+'"').join(',')
+    : ''
+  ).join('\n');
+
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csv);
+  a.download = `GES_Report_${school.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  notify('GES District Report downloaded', 'success');
+}
+
+// ════════════════════════════════════════════════════════════
+// SVG MINI TREND CHARTS
+// ════════════════════════════════════════════════════════════
+
+function svgSparkline(values, { w=160, h=40, color='var(--green)', fill=true } = {}) {
+  if (!values || values.length < 2) return '';
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = Math.round((i / (values.length - 1)) * (w - 4) + 2);
+    const y = Math.round(h - 4 - ((v - min) / range) * (h - 8));
+    return [x, y];
+  });
+  const line = pts.map(([x,y]) => `${x},${y}`).join(' ');
+  const area = fill
+    ? `<polygon points="${pts[0][0]},${h} ${line} ${pts[pts.length-1][0]},${h}" fill="${color}" opacity="0.12"/>`
+    : '';
+  const dots = pts.map(([x,y],i) =>
+    `<circle cx="${x}" cy="${y}" r="${i===pts.length-1?3:2}" fill="${color}"/>`
+  ).join('');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
+    ${area}
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}
+  </svg>`;
+}
+
+// Used inside teacher analytics table for quick score trend per teacher
+function teacherTrendSparkline(teacherId) {
+  // Returns an SVG sparkline from the teacher's semester trend data
+  // (data available from the analytics payload already loaded)
+  return '';
+}
+</script>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// TERM REPORT CARDS
+// ════════════════════════════════════════════════════════════
+
+async function loadAReportCards(m) {
+  m.innerHTML = panelLoader();
+  let classes = [];
+  try { classes = await GET('/classes') || []; } catch(e) {}
+
+  // Group by year
+  const byYear = {};
+  (classes||[]).forEach(c => { (byYear[c.year_group]=byYear[c.year_group]||[]).push(c); });
+  const clsOpts = Object.entries(byYear).sort(([a],[b])=>+a-+b).map(([yr,list]) =>
+    `<optgroup label="Year ${yr}">${list.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</optgroup>`
+  ).join('');
+
+  const currentYear = new Date().getFullYear();
+  const years = [`${currentYear-1}/${currentYear}`,`${currentYear}/${currentYear+1}`];
+  const yearOpts = years.map(y=>`<option value="${y}">${y}</option>`).join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Term Report Cards</div>
+    <div class="topbar-sub">Generate printable A4 report cards for an entire class</div></div>
+</div>
+<div class="page">
+  <div class="card" style="max-width:560px;margin-bottom:24px">
+    <div class="card-title" style="margin-bottom:16px">Select class and period</div>
+    <div class="form-group">
+      <label class="form-label">Class *</label>
+      <select id="rc-class" class="form-select"><option value="">Select class</option>${clsOpts}</select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label class="form-label">Academic year *</label>
+        <select id="rc-year" class="form-select">${yearOpts}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Semester *</label>
+        <select id="rc-sem" class="form-select"><option value="1">Semester 1</option><option value="2">Semester 2</option></select>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="generateReportCards()">Generate report cards →</button>
+  </div>
+  <div id="rc-output"></div>
+</div>`;
+}
+
+async function generateReportCards() {
+  const classId = document.getElementById('rc-class')?.value;
+  const acYear  = document.getElementById('rc-year')?.value;
+  const semester= document.getElementById('rc-sem')?.value;
+  if (!classId) { notify('Please select a class', 'error'); return; }
+  const out = document.getElementById('rc-output');
+  out.innerHTML = panelLoader();
+  let data = null;
+  try { data = await GET('/term-report', { class_id: classId, academic_year: acYear, semester }); }
+  catch(e) { out.innerHTML = `<div class="info-box coral">Error: ${e.message}</div>`; return; }
+
+  const { cards, subjects, grade_config: grades, class: cls, school, academic_year, semester: sem, total_students } = data;
+
+  const gradeColor = g => ['A1','B2','B3'].includes(g)?'#1A7A4A':['C4','C5','C6'].includes(g)?'#C47D0E':'#B84022';
+  const scoreColor = p => p>=60?'#1A7A4A':p>=40?'#C47D0E':'#B84022';
+
+  const cardHTML = cards.map(s => {
+    const rows = subjects.map(subj => {
+      const sd = s.subjects.find(x=>x.subject_id===subj.id);
+      const pct = sd?.avg_pct;
+      return `<tr>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:12px">${subj.name}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-size:12px;font-weight:600;color:${pct!==null?scoreColor(pct):'#999'}">${pct!==null?Math.round(pct)+'%':'—'}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-size:12px;font-weight:800;color:${sd?.grade?gradeColor(sd.grade):'#999'}">${sd?.grade||'—'}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:11px;color:#666">${sd?.grade?(['A1','B2','B3'].includes(sd.grade)?'Good work!':['C4','C5','C6'].includes(sd.grade)?'Keep it up':'Needs improvement'):'No data'}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="report-card-print" style="background:#fff;border:2px solid #1A7A4A;border-radius:8px;padding:24px;margin-bottom:28px;page-break-after:always;max-width:680px">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #1A7A4A;padding-bottom:12px;margin-bottom:14px">
+        <div>
+          <div style="font-size:20px;font-weight:800;color:#1A7A4A">${school?.name||'School'}</div>
+          ${school?.address?`<div style="font-size:11px;color:#666">${school.address}</div>`:''}
+          <div style="font-size:11px;color:#666;margin-top:2px">GES ID: ${school?.ges_id||'—'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:13px;font-weight:700">STUDENT REPORT CARD</div>
+          <div style="font-size:12px;color:#444">${academic_year} · Semester ${sem}</div>
+        </div>
+      </div>
+      <!-- Student info -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;background:#f0f9f4;border-radius:6px;padding:10px;margin-bottom:14px">
+        <div><div style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase">Student</div><div style="font-size:14px;font-weight:700">${s.last_name}, ${s.first_name}</div></div>
+        <div><div style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase">Class</div><div style="font-size:14px;font-weight:700">${cls.name}</div></div>
+        <div><div style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase">Class rank</div><div style="font-size:14px;font-weight:700">${s.rank} / ${total_students}</div></div>
+      </div>
+      <!-- Subject table -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+        <thead><tr style="background:#1A7A4A;color:#fff">
+          <th style="padding:7px 8px;font-size:12px;text-align:left">Subject</th>
+          <th style="padding:7px 8px;font-size:12px">Score</th>
+          <th style="padding:7px 8px;font-size:12px">Grade</th>
+          <th style="padding:7px 8px;font-size:12px;text-align:left">Remarks</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="background:#f0f9f4;font-weight:700">
+          <td style="padding:7px 8px;font-size:13px">OVERALL AVERAGE</td>
+          <td style="padding:7px 8px;text-align:center;font-size:13px;color:${s.overall_avg!==null?scoreColor(s.overall_avg):'#999'}">${s.overall_avg!==null?s.overall_avg+'%':'—'}</td>
+          <td style="padding:7px 8px;text-align:center;font-size:16px;font-weight:800;color:${s.overall_grade?gradeColor(s.overall_grade):'#999'}">${s.overall_grade||'—'}</td>
+          <td></td>
+        </tfoot>
+      </table>
+      <!-- Comments -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#444;margin-bottom:4px">CLASS TEACHER'S REMARKS</div>
+          <div contenteditable="true" style="border:1px solid #ddd;border-radius:4px;padding:8px;min-height:48px;font-size:12px;color:#333" placeholder="Type remarks here…"></div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#444;margin-bottom:4px">HEAD TEACHER'S REMARKS</div>
+          <div contenteditable="true" style="border:1px solid #ddd;border-radius:4px;padding:8px;min-height:48px;font-size:12px;color:#333"></div>
+        </div>
+      </div>
+      <!-- Signatures -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:10px">
+        ${['Class Teacher','Head Teacher',"Parent / Guardian's Signature"].map(label=>`
+        <div style="text-align:center">
+          <div style="border-bottom:1px solid #333;margin-bottom:4px;height:30px"></div>
+          <div style="font-size:10px;color:#666">${label}</div>
+        </div>`).join('')}
+      </div>
+      <!-- Date -->
+      <div style="text-align:right;margin-top:8px;font-size:11px;color:#888">Date: ___________________</div>
+    </div>`;
+  }).join('');
+
+  out.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:15px;font-weight:700">${cls.name} · ${academic_year} Sem ${sem} · ${total_students} students</div>
+      <button class="btn btn-primary" onclick="window.print()">🖨 Print all report cards</button>
+    </div>
+    <style>@media print{.topbar,.page>div:first-child,.btn,#offline-bar,#sync-badge,#pwa-install-bar{display:none!important}.report-card-print{page-break-after:always;border:2px solid #1A7A4A!important}}</style>
+    ${cardHTML}`;
+}
+
+// ════════════════════════════════════════════════════════════
+// AT-RISK STUDENT ALERTS
+// ════════════════════════════════════════════════════════════
+
+async function loadAAtRisk(m) {
+  m.innerHTML = panelLoader();
+  let classes = [];
+  try { classes = await GET('/classes') || []; } catch(e) {}
+
+  const byYear = {};
+  (classes||[]).forEach(c => { (byYear[c.year_group]=byYear[c.year_group]||[]).push(c); });
+  const clsOpts = `<option value="">All classes</option>` + Object.entries(byYear).sort(([a],[b])=>+a-+b).map(([yr,list]) =>
+    `<optgroup label="Year ${yr}">${list.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</optgroup>`
+  ).join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">At-Risk Students</div>
+    <div class="topbar-sub">Students failing, declining, or not engaging</div></div>
+</div>
+<div class="page">
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;align-items:flex-end">
+    <div class="form-group" style="margin:0;min-width:200px">
+      <label class="form-label">Filter by class</label>
+      <select id="ar-class" class="form-select">${clsOpts}</select>
+    </div>
+    <div class="form-group" style="margin:0;min-width:130px">
+      <label class="form-label">Threshold (%)</label>
+      <input id="ar-threshold" class="form-control" type="number" value="45" min="20" max="70">
+    </div>
+    <button class="btn btn-primary" onclick="fetchAtRisk()">Run analysis →</button>
+  </div>
+  <div id="ar-output"><div class="info-box blue">Choose filters above and click "Run analysis".</div></div>
+</div>`;
+}
+
+async function fetchAtRisk() {
+  const classId   = document.getElementById('ar-class')?.value;
+  const threshold = document.getElementById('ar-threshold')?.value || 45;
+  const out = document.getElementById('ar-output');
+  out.innerHTML = panelLoader();
+  let data = null;
+  try { data = await GET('/at-risk', { class_id: classId||'', threshold }); }
+  catch(e) { out.innerHTML = `<div class="info-box coral">Error: ${e.message}</div>`; return; }
+
+  const { at_risk, declining, no_attempts, summary } = data;
+
+  const studentChip = (s, badge, reason) => {
+    const initials = ((s.first_name||'?')[0]+(s.last_name||'?')[0]).toUpperCase();
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div class="student-avatar" style="background:${s.avatar_color||'var(--coral)'};width:36px;height:36px;font-size:12px;flex-shrink:0">${initials}</div>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${s.first_name} ${s.last_name}</div>
+        <div style="font-size:11px;color:var(--text-3)">${s.class_name||''}${reason?' · '+reason:''}</div>
+      </div>
+      ${badge}
+      <button class="btn btn-ghost btn-sm" onclick="openRemediationModal(${s.student_id})">Study plan →</button>
+    </div>`;
+  };
+
+  const section = (title, icon, color, items, badgeFn, reasonFn) => {
+    if (!items.length) return '';
+    return `<div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <div><div class="card-title">${icon} ${title}</div><div class="card-sub">${items.length} student${items.length!==1?'s':''}</div></div>
+      </div>
+      ${items.map(s => studentChip(s, badgeFn(s), reasonFn(s))).join('')}
+    </div>`;
+  };
+
+  out.innerHTML = `
+    <div class="stats-row" style="margin-bottom:20px">
+      <div class="stat-card"><div class="label">Below threshold</div><div class="value" style="color:var(--coral)">${summary.at_risk_count}</div></div>
+      <div class="stat-card"><div class="label">Declining</div><div class="value" style="color:var(--amber)">${summary.declining_count}</div></div>
+      <div class="stat-card"><div class="label">No attempts</div><div class="value" style="color:var(--text-3)">${summary.missing_count}</div></div>
+    </div>
+    ${section('Failing — Below '+data.threshold+'%','🔴','coral', at_risk,
+      s=>`<span class="badge badge-coral">${Math.round(s.avg_pct||0)}% avg</span>`,
+      s=>`${s.test_count} test${s.test_count!==1?'s':''}, ${s.fail_count} fail${s.fail_count!==1?'s':''}`)}
+    ${section('Declining Performance','🟡','amber', declining,
+      s=>`<span class="badge badge-amber">${Math.round(s.recent_avg||0)}% recent</span>`,
+      s=>`${s.test_count} recent test${s.test_count!==1?'s':''}`)}
+    ${section('No Engagement — Zero Attempts','⚪','text-3', no_attempts,
+      s=>`<span class="badge" style="background:var(--bg)">No tests done</span>`,
+      s=>s.class_name)}
+    ${!at_risk.length&&!declining.length&&!no_attempts.length?`<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">No at-risk students found</div><div class="empty-desc">All students are performing above the ${data.threshold}% threshold</div></div>`:''}`
+    ;
+}
+
+// ════════════════════════════════════════════════════════════
+// REMEDIATION / STUDY PLANNER
+// ════════════════════════════════════════════════════════════
+
+async function openRemediationModal(studentId) {
+  adminModal('Loading study plan…', '<div style="padding:20px;text-align:center;color:var(--text-3)">Analysing performance data…</div>', null, '');
+  let data = null;
+  try { data = await GET('/remediation', { student_id: studentId }); }
+  catch(e) { adminModal('Error', `<div class="info-box coral">${e.message}</div>`, null, 'Close'); return; }
+
+  const { sub_strands, hard_questions, summary } = data;
+
+  const STATUS_COLOR = { critical: 'var(--coral)', needs_work: 'var(--amber)', good: 'var(--green)' };
+
+  const bars = (sub_strands||[]).map(s => {
+    const pct = Math.round(parseFloat(s.accuracy_pct)||0);
+    return `<div class="bar-row">
+      <div class="bar-label" title="${s.sub_strand}" style="width:140px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.icon} ${s.sub_strand}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${STATUS_COLOR[s.status]}"></div></div>
+      <div class="bar-val" style="color:${STATUS_COLOR[s.status]};font-size:11px">${pct}%</div>
+    </div>`;
+  }).join('');
+
+  const hardQ = (hard_questions||[]).slice(0,5).map(q =>
+    `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="font-weight:600;color:var(--coral)">${q.error_rate_pct}% wrong</span>
+      <span style="color:var(--text-3);margin:0 6px">·</span>${q.sub_strand}
+      <div style="color:var(--text-2);margin-top:2px">${(q.question_text||'').slice(0,100)}…</div>
+    </div>`
+  ).join('');
+
+  const body = `
+    <div class="stats-row" style="margin-bottom:14px">
+      <div class="stat-card" style="padding:10px"><div class="label" style="font-size:10px">Critical</div><div style="font-size:20px;font-weight:800;color:var(--coral)">${summary.critical_count}</div></div>
+      <div class="stat-card" style="padding:10px"><div class="label" style="font-size:10px">Needs work</div><div style="font-size:20px;font-weight:800;color:var(--amber)">${summary.needs_work_count}</div></div>
+      <div class="stat-card" style="padding:10px"><div class="label" style="font-size:10px">Strong</div><div style="font-size:20px;font-weight:800;color:var(--green)">${summary.strong_count}</div></div>
+    </div>
+    ${bars ? `<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:8px">Sub-strand accuracy</div>${bars}</div>` : '<div class="info-box blue" style="font-size:12px">No sub-strand data yet — student needs to complete more tests.</div>'}
+    ${hardQ ? `<div><div style="font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:6px">Most problematic questions</div>${hardQ}</div>` : ''}
+    ${summary.critical_count > 0 ? `<div class="info-box amber" style="margin-top:12px;font-size:12px">💡 Recommend: Ask this student to practise the <b>${summary.critical_count} critical sub-strand${summary.critical_count!==1?'s':''}</b> in Practice Mode before the next test.</div>` : ''}`;
+
+  adminModal('Study Plan — Remediation Analysis', body, null, 'Close');
+}
+
+// Attach remediation to student's own result view
+async function loadStudentRemediation(studentId, subjectId) {
+  let data = null;
+  try { data = await GET('/remediation', subjectId ? { subject_id: subjectId } : {}); }
+  catch(e) { return ''; }
+  if (!data?.sub_strands?.length) return '';
+
+  const weak = (data.sub_strands||[]).filter(s => s.status !== 'good').slice(0,5);
+  if (!weak.length) return '';
+
+  return `<div class="card" style="margin-top:16px;border-left:3px solid var(--amber)">
+    <div class="card-title" style="color:var(--amber)">📚 Study recommendations</div>
+    <div class="card-sub" style="margin-bottom:10px">Based on your performance, focus on these areas:</div>
+    ${weak.map(s=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:18px">${s.icon}</span>
+      <div style="flex:1"><div style="font-size:13px;font-weight:600">${s.sub_strand}</div>
+        <div style="font-size:11px;color:var(--text-3)">${s.label} · ${Math.round(parseFloat(s.accuracy_pct)||0)}% accuracy</div></div>
+      <button class="btn btn-secondary btn-sm" onclick="startPractice('${(s.sub_strand||'').replace(/'/g,"\\'")}')">Practise →</button>
+    </div>`).join('')}
+  </div>`;
 }
 </script>
 </body>

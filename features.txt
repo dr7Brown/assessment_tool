@@ -1,0 +1,52 @@
+Tier 1 — Immediate competitive edge
+1. WASSCE Prediction Engine
+Every result, every attempt, every sub-strand score feeds a model that predicts each student's likely WASSCE grade. Administrators see a school-wide "WASSCE Readiness Dashboard" at a glance — traffic-light per student, per subject. Parents pay for this insight. No other local platform has it.
+
+2. Parent Portal + SMS Alerts
+Ghana runs on SMS. When a student scores below 50%, the parent gets a text. When they improve, another. Parents can log in via a simple link to see their child's test history, attendance, and predicted grade. Administrators can broadcast school-wide messages. This single feature sells the platform to PTA meetings.
+
+3. Offline-First Mode
+Rural schools have unreliable internet. Students download a test, complete it offline, and it syncs when they reconnect. A small badge on the topbar shows "3 results pending sync." This removes the biggest objection administrators have.
+
+4. Inter-School League Table
+Schools that opt in compete on anonymised average scores per subject. Think: "Your school ranks 4th of 23 in the Greater Accra region for ICT." Administrators are competitive — this drives adoption organically. Schools invite each other.
+
+5. GES Report Generator
+One click exports a formatted end-of-term report that matches GES's exact template — class results, attendance summary, subject averages, teacher activity. The administrator sends it to the district office without touching Excel. This alone justifies the subscription.
+
+Tier 2 — Deep stickiness
+6. AI Essay Marker
+Short-answer and essay questions currently need manual marking. Integrate the Anthropic API to give a suggested mark and justification — teacher reviews and approves in one click. Backlog disappears. This is a genuine time-saver that teachers will fight to keep.
+
+7. Remediation Planner
+After each test, the system automatically creates a personalised "study plan" for each student showing exactly which sub-strands to revise and suggesting specific practice questions. Students see it on their dashboard. Teachers see which sub-strands most students failed school-wide.
+
+8. Timetable Integration
+Import the school timetable. Tests automatically suggest appropriate due dates. Live classes auto-populate in the right slot. Meetings that clash with a registered lesson get flagged. Administrators stop receiving complaints about overdue tests during exam week.
+
+9. Digital Marksheet + Terminal Report Generator
+Print-ready terminal report cards per student with GES grades, class rank, teacher comments (typed in-platform), head teacher signature block, and school stamp placeholder. The only thing left to do is press Print. This replaces a full day of secretary work per term.
+
+10. WhatsApp Broadcast Integration
+Teachers can send a test reminder or a "results are ready" message to a class's WhatsApp group directly from the platform. Uses WhatsApp Business API. In Ghana, this is the real notification channel — not email.
+
+Tier 3 — Administrator power features
+11. Multi-School District Dashboard
+District education officers get a single login showing aggregate data across all their schools — average scores, attendance rates, chronic absentees, teacher activity. Schools within a district share a question bank. This gets you government contracts.
+
+12. Question Bank Marketplace
+Schools can publish curated question sets to a school-to-school marketplace. Verified WASSCE past questions, topic packs, BECE revision sets. Revenue share with the contributing school. Creates a content flywheel — the more schools join, the richer the bank gets.
+
+13. Teacher Accountability Index
+Administrators see per-teacher: questions created, tests set, tests marked, average marking turnaround time, student improvement rate. Not punitive — framed as a professional development scorecard. Teachers can see their own data. This is the feature that sells to headmasters immediately.
+
+14. Fraud & Integrity Flags
+Detect unusual patterns: two students with identical answer sequences, completion times far below average (guessing), attempts from the same IP address at the same millisecond. Flag them for administrator review. Schools using paper exams have no equivalent — this is a genuine advantage.
+
+15. Student Portfolio PDF
+End of the year, each student can download a PDF portfolio: every test, every score, sub-strand heatmap, improvement trajectory, predicted WASSCE grade, attendance record, and teacher comments. Something tangible they keep. Parents pay for this. It also doubles as a leaving certificate supplement.
+
+The one feature that would make administrators stop scrolling
+"Try it for free with your real data."
+
+A 30-day full-featured trial where the onboarding wizard imports students from a CSV and generates 50 ICT questions from the WAEC syllabus in under 2 minutes. The administrator sees a populated dashboard with real data before they've spoken to a salesperson. That experience, more than any feature list, is what closes the deal.

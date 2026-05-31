@@ -97,6 +97,9 @@ try {
         case 'school':            handleSchoolSettings($method, $body); break;
         case 'grade-config':      handleGradeConfig($method, $body); break;
         case 'semester-results':  handleSemesterResults($method, $parts[1]??null, $body); break;
+        case 'term-report':       handleTermReport($method); break;
+        case 'at-risk':           handleAtRisk($method); break;
+        case 'remediation':       handleRemediation($method); break;
         case 'meetings':          handleMeetings($method, $parts, $body); break;
         case 'ai-generate':  handleAIGenerate($method, $body); break;
         case 'questions-bulk': handleBulkQuestions($method, $body); break;
@@ -105,6 +108,7 @@ try {
         case 'users-bulk':  handleUsersBulk($method, $body); break;
         case 'departments': handleDepartments($method, $id, $parts, $body); break;
         case 'subjects':    handleSubjects($method, $id, $parts[2] ?? null, $body); break;
+        case 'sync':        handleSync($method); break;
         default:
             err("Endpoint not found: '$resource' (path: $path)", 404);
     }
@@ -1928,6 +1932,123 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
         );
 
         respond(compact('teachers', 'schoolAvg', 'bySubject', 'semTrend'));
+    }
+
+    // GET /analytics/wassce — school-wide WASSCE readiness prediction
+    if ($sub === 'wassce') {
+        require_role($auth, 'teacher', 'admin');
+        ensureGradeConfigSchema();
+        $classId    = (int)($_GET['class_id']      ?? 0);
+        $acYear     = trim($_GET['academic_year']  ?? '');
+        $semNum     = (int)($_GET['semester']      ?? 0);
+        $classWhere = $classId ? 'AND cs.class_id=?' : '';
+        $classParam = $classId ? [$classId] : [];
+        $acWhere    = $acYear  ? 'AND t.academic_year=?' : '';
+        $semWhere   = $semNum  ? 'AND t.semester=?'      : '';
+        $pPeriod    = array_merge($acYear ? [$acYear] : [], $semNum ? [$semNum] : []);
+
+        $rows = DB::fetchAll(
+            "SELECT u.id AS student_id, u.first_name, u.last_name, u.avatar_color,
+                    c.id AS class_id, c.name AS class_name, c.year_group,
+                    s.id AS subject_id, s.name AS subject_name, s.short_name AS subject_short,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    COUNT(DISTINCT a.id) AS test_count
+             FROM users u
+             JOIN class_students cs ON cs.student_id=u.id
+             JOIN classes c ON c.id=cs.class_id AND c.school_id=?
+             JOIN attempts a ON a.student_id=u.id AND a.status IN ('submitted','marked')
+             JOIN tests t ON t.id=a.test_id AND t.subject_id IS NOT NULL $acWhere $semWhere
+             JOIN subjects s ON s.id=t.subject_id
+             WHERE u.school_id=? $classWhere
+             GROUP BY u.id, u.first_name, u.last_name, u.avatar_color,
+                      c.id, c.name, c.year_group, s.id, s.name, s.short_name
+             ORDER BY c.year_group, c.name, u.last_name, u.first_name, s.name",
+            array_merge([$sid], $pPeriod, [$sid], $classParam)
+        );
+
+        $gradeConf = DB::fetchAll('SELECT * FROM grade_config WHERE school_id=? ORDER BY sort_order', [$sid]);
+        if (empty($gradeConf)) {
+            $gradeConf=[['grade'=>'A1','min_pct'=>80,'max_pct'=>100],['grade'=>'B2','min_pct'=>70,'max_pct'=>79],
+                ['grade'=>'B3','min_pct'=>60,'max_pct'=>69],['grade'=>'C4','min_pct'=>55,'max_pct'=>59],
+                ['grade'=>'C5','min_pct'=>50,'max_pct'=>54],['grade'=>'C6','min_pct'=>45,'max_pct'=>49],
+                ['grade'=>'D7','min_pct'=>40,'max_pct'=>44],['grade'=>'E8','min_pct'=>35,'max_pct'=>39],
+                ['grade'=>'F9','min_pct'=>0,'max_pct'=>34]];
+        }
+        $gradeOf = function(float $pct) use ($gradeConf): string {
+            foreach ($gradeConf as $g) { if ($pct>=(float)$g['min_pct']&&$pct<=(float)$g['max_pct']) return $g['grade']; }
+            return 'F9';
+        };
+        $isCredit = fn(string $g) => in_array($g, ['A1','B2','B3','C4','C5','C6']);
+
+        $students = []; $subjects = [];
+        foreach ($rows as $r) {
+            $sKey = $r['student_id'];
+            $subKey = $r['subject_id'];
+            if (!isset($students[$sKey])) {
+                $students[$sKey] = ['student_id'=>$sKey,'first_name'=>$r['first_name'],'last_name'=>$r['last_name'],
+                    'avatar_color'=>$r['avatar_color'],'class_id'=>$r['class_id'],'class_name'=>$r['class_name'],
+                    'year_group'=>$r['year_group'],'subjects'=>[],'credit_count'=>0,'subject_count'=>0];
+            }
+            if (!isset($subjects[$subKey])) {
+                $subjects[$subKey] = ['id'=>$subKey,'name'=>$r['subject_name'],'short'=>$r['subject_short']];
+            }
+            $pct = (float)$r['avg_pct']; $grade = $gradeOf($pct);
+            $students[$sKey]['subjects'][$subKey] = ['avg_pct'=>$pct,'grade'=>$grade,'is_credit'=>$isCredit($grade),'test_count'=>(int)$r['test_count']];
+            $students[$sKey]['subject_count']++;
+            if ($isCredit($grade)) $students[$sKey]['credit_count']++;
+        }
+        foreach ($students as &$s) {
+            $s['wassce_readiness'] = $s['subject_count'] > 0 ? round($s['credit_count'] / $s['subject_count'] * 100) : 0;
+        }
+        $stuArr = array_values($students);
+        respond([
+            'students'     => $stuArr,
+            'subjects'     => array_values($subjects),
+            'grade_config' => $gradeConf,
+            'summary'      => [
+                'ready'      => count(array_filter($stuArr, fn($s)=>$s['wassce_readiness']>=80)),
+                'borderline' => count(array_filter($stuArr, fn($s)=>$s['wassce_readiness']>=50&&$s['wassce_readiness']<80)),
+                'at_risk'    => count(array_filter($stuArr, fn($s)=>$s['wassce_readiness']<50)),
+                'total'      => count($stuArr),
+            ],
+        ]);
+    }
+
+    // GET /analytics/badges — student achievement badges
+    if ($sub === 'badges') {
+        $studentId = ($auth['role'] === 'student') ? (int)$auth['user_id'] : (int)($_GET['student_id'] ?? $auth['user_id']);
+        $attempts  = DB::fetchAll(
+            "SELECT a.id, a.submitted_at, a.started_at,
+                    ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),1) AS pct_score,
+                    TIMESTAMPDIFF(MINUTE,a.started_at,a.submitted_at) AS duration_min
+             FROM attempts a WHERE a.student_id=? AND a.status IN ('submitted','marked')
+             ORDER BY a.submitted_at ASC",
+            [$studentId]
+        );
+        $streak = DB::fetchOne('SELECT current_streak,longest_streak FROM streaks WHERE student_id=?', [$studentId]);
+        $curStreak = (int)($streak['current_streak'] ?? 0);
+        $maxStreak = max($curStreak, (int)($streak['longest_streak'] ?? 0));
+        $cnt = count($attempts);
+        $badges = [];
+        if ($cnt>=1)  $badges[]=['id'=>'pioneer', 'icon'=>'🌟','name'=>'Pioneer',      'desc'=>'Completed your first test'];
+        if ($cnt>=10) $badges[]=['id'=>'scholar',  'icon'=>'📚','name'=>'Scholar',      'desc'=>'Completed 10 tests'];
+        if ($cnt>=25) $badges[]=['id'=>'veteran',  'icon'=>'🎓','name'=>'Veteran',      'desc'=>'Completed 25 tests'];
+        $perfects = array_filter($attempts, fn($a)=>(float)$a['pct_score']>=99);
+        if (count($perfects)>=1) $badges[]=['id'=>'perfect','icon'=>'💯','name'=>'Perfect Score','desc'=>'Scored 100% on a test'];
+        $high = array_filter($attempts, fn($a)=>(float)$a['pct_score']>=90);
+        if (count($high)>=3) $badges[]=['id'=>'highachiver','icon'=>'🎯','name'=>'High Achiever','desc'=>'90%+ on 3 or more tests'];
+        $passes = array_filter($attempts, fn($a)=>(float)$a['pct_score']>=50);
+        if (count($passes) === $cnt && $cnt >= 5) $badges[]=['id'=>'consistent','icon'=>'✅','name'=>'Consistent','desc'=>'Passed every test'];
+        if ($maxStreak>=7)   $badges[]=['id'=>'streak7',  'icon'=>'🔥','name'=>'Week Warrior', 'desc'=>'7-day study streak'];
+        if ($maxStreak>=30)  $badges[]=['id'=>'streak30', 'icon'=>'🔥🔥','name'=>'Dedicated',   'desc'=>'30-day study streak'];
+        if ($maxStreak>=100) $badges[]=['id'=>'streak100','icon'=>'👑','name'=>'Legend',       'desc'=>'100-day study streak'];
+        if ($cnt>=3) {
+            $last3 = array_slice($attempts, -3);
+            if ((float)$last3[2]['pct_score'] > (float)$last3[0]['pct_score'] + 10) {
+                $badges[]=['id'=>'rising','icon'=>'📈','name'=>'Rising Star','desc'=>'Scores improving in recent tests'];
+            }
+        }
+        respond(['badges'=>$badges,'total'=>count($badges),'attempt_count'=>$cnt,'streak'=>$maxStreak]);
     }
 
     // GET /analytics/question-stats — admin question bank overview
@@ -4649,4 +4770,432 @@ function ensureSubjectSchema(): void {
             PRIMARY KEY (school_id, subject_id)
         ) ENGINE=InnoDB");
     } catch (Throwable $e) {}
+}
+
+// ══════════════════════════════════════════════════════════════
+// INCREMENTAL SYNC  — GET /sync?since=UNIX_TIMESTAMP
+//
+// Returns everything changed since `since` for the current user.
+// The client stores the returned `synced_at` and sends it next time.
+// This keeps subsequent syncs tiny (only deltas).
+// ══════════════════════════════════════════════════════════════
+function handleSync(string $method): void {
+    if ($method !== 'GET') err('GET only', 405);
+    $auth = require_auth();
+    $sid  = $auth['school_id'];
+    $uid  = $auth['user_id'];
+    $role = $auth['role'];
+
+    // `since` is a Unix timestamp from the client; default to 30 days ago
+    $since     = isset($_GET['since']) ? (int)$_GET['since'] : 0;
+    $sinceDate = $since > 0
+        ? date('Y-m-d H:i:s', $since)
+        : date('Y-m-d H:i:s', strtotime('-30 days'));
+
+    $payload = ['synced_at' => time()];
+
+    if ($role === 'student') {
+        // Tests assigned to the student's class(es)
+        $payload['tests'] = DB::fetchAll(
+            "SELECT t.id, t.title, t.status, t.time_limit_min, t.due_at, t.subject_id,
+                    t.semester, t.academic_year, t.created_at
+             FROM tests t
+             JOIN test_assignments ta ON ta.test_id = t.id
+             JOIN class_students   cs ON cs.class_id = ta.class_id AND cs.student_id = ?
+             WHERE t.school_id = ? AND t.status = 'published'
+               AND (t.created_at >= ? OR t.updated_at >= ?)
+             LIMIT 100",
+            [$uid, $sid, $sinceDate, $sinceDate]
+        );
+
+        // Student's own attempts
+        $payload['attempts'] = DB::fetchAll(
+            "SELECT a.id, a.test_id, a.status, a.score_auto, a.score_manual,
+                    a.max_score, a.submitted_at, a.started_at
+             FROM attempts a
+             WHERE a.student_id = ? AND (a.started_at >= ? OR a.submitted_at >= ?)
+             LIMIT 100",
+            [$uid, $sinceDate, $sinceDate]
+        );
+
+        // Upcoming meetings for the student's class
+        $payload['meetings'] = DB::fetchAll(
+            "SELECT m.id, m.title, m.meeting_date, m.start_time, m.end_time,
+                    m.status, m.subject_id
+             FROM meetings m
+             WHERE m.class_id IN (SELECT class_id FROM class_students WHERE student_id = ?)
+               AND m.school_id = ? AND m.status != 'cancelled'
+               AND (m.created_at >= ? OR m.updated_at >= ?)
+             LIMIT 50",
+            [$uid, $sid, $sinceDate, $sinceDate]
+        );
+
+    } elseif ($role === 'teacher') {
+        // Teacher's own tests
+        $payload['tests'] = DB::fetchAll(
+            "SELECT id, title, status, time_limit_min, due_at, subject_id,
+                    semester, academic_year, created_at
+             FROM tests
+             WHERE creator_id = ? AND school_id = ? AND created_at >= ?
+             LIMIT 100",
+            [$uid, $sid, $sinceDate]
+        );
+
+        // Questions the teacher created or in their subjects
+        $payload['questions'] = DB::fetchAll(
+            "SELECT id, type, question_text, sub_strand, difficulty, marks,
+                    subject_id, created_at
+             FROM questions
+             WHERE school_id = ? AND author_id = ? AND created_at >= ?
+             LIMIT 200",
+            [$sid, $uid, $sinceDate]
+        );
+
+        // Teacher's meetings
+        $payload['meetings'] = DB::fetchAll(
+            "SELECT id, title, meeting_date, start_time, end_time, status,
+                    class_id, subject_id, created_at
+             FROM meetings
+             WHERE teacher_id = ? AND school_id = ?
+               AND (created_at >= ? OR updated_at >= ?)
+             LIMIT 50",
+            [$uid, $sid, $sinceDate, $sinceDate]
+        );
+
+    } elseif ($role === 'admin') {
+        // School-wide tests
+        $payload['tests'] = DB::fetchAll(
+            "SELECT id, title, status, creator_id, subject_id, created_at
+             FROM tests
+             WHERE school_id = ? AND created_at >= ?
+             LIMIT 100",
+            [$sid, $sinceDate]
+        );
+
+        // School-wide meetings
+        $payload['meetings'] = DB::fetchAll(
+            "SELECT id, title, meeting_date, start_time, end_time, status,
+                    teacher_id, class_id, subject_id, created_at
+             FROM meetings
+             WHERE school_id = ? AND (created_at >= ? OR updated_at >= ?)
+             LIMIT 100",
+            [$sid, $sinceDate, $sinceDate]
+        );
+
+        // Grade config changes
+        $payload['grade_config'] = DB::fetchAll(
+            'SELECT * FROM grade_config WHERE school_id = ? LIMIT 20',
+            [$sid]
+        );
+    }
+
+    // Strip nulls to keep payload lean
+    foreach ($payload as $k => $v) {
+        if (is_array($v) && empty($v)) unset($payload[$k]);
+    }
+
+    respond($payload);
+}
+
+// ══════════════════════════════════════════════════════════════
+// TERM REPORT CARDS
+// GET /term-report?class_id=N&academic_year=YYYY/YYYY&semester=N
+// Returns full per-student data needed to render A4 report cards
+// ══════════════════════════════════════════════════════════════
+function handleTermReport(string $method): void {
+    $auth = require_auth();
+    require_role($auth, 'teacher', 'admin');
+    ensureGradeConfigSchema();
+    $sid     = $auth['school_id'];
+    $classId = (int)($_GET['class_id']      ?? 0);
+    $acYear  = trim($_GET['academic_year']  ?? '');
+    $semNum  = (int)($_GET['semester']      ?? 0);
+    if (!$classId || !$acYear || !$semNum) err('class_id, academic_year and semester required');
+
+    $cls = DB::fetchOne('SELECT id, name, year_group FROM classes WHERE id=? AND school_id=?', [$classId, $sid]);
+    if (!$cls) err('Class not found', 404);
+
+    $school = DB::fetchOne('SELECT name, address, ges_id FROM schools WHERE id=?', [$sid]);
+
+    $students = DB::fetchAll(
+        'SELECT u.id, u.first_name, u.last_name, u.avatar_color
+         FROM users u JOIN class_students cs ON cs.student_id=u.id
+         WHERE cs.class_id=? ORDER BY u.last_name, u.first_name',
+        [$classId]
+    );
+
+    $subjects = DB::fetchAll(
+        'SELECT DISTINCT s.id, s.name, s.short_name FROM subjects s
+         JOIN class_subjects csj ON csj.subject_id=s.id WHERE csj.class_id=? ORDER BY s.name',
+        [$classId]
+    );
+
+    $attempts = DB::fetchAll(
+        "SELECT a.student_id, t.subject_id,
+                ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                COUNT(DISTINCT a.id) AS test_count
+         FROM attempts a JOIN tests t ON t.id=a.test_id
+         WHERE a.student_id IN (SELECT student_id FROM class_students WHERE class_id=?)
+           AND t.semester=? AND t.academic_year=? AND a.status IN ('submitted','marked')
+         GROUP BY a.student_id, t.subject_id",
+        [$classId, $semNum, $acYear]
+    );
+
+    $gradeConf = DB::fetchAll('SELECT * FROM grade_config WHERE school_id=? ORDER BY sort_order', [$sid]);
+    if (empty($gradeConf)) {
+        $gradeConf = [
+            ['grade'=>'A1','label'=>'Excellent','min_pct'=>80,'max_pct'=>100],['grade'=>'B2','label'=>'Very Good','min_pct'=>70,'max_pct'=>79],
+            ['grade'=>'B3','label'=>'Good','min_pct'=>60,'max_pct'=>69],['grade'=>'C4','label'=>'Credit','min_pct'=>55,'max_pct'=>59],
+            ['grade'=>'C5','label'=>'Credit','min_pct'=>50,'max_pct'=>54],['grade'=>'C6','label'=>'Credit','min_pct'=>45,'max_pct'=>49],
+            ['grade'=>'D7','label'=>'Pass','min_pct'=>40,'max_pct'=>44],['grade'=>'E8','label'=>'Pass','min_pct'=>35,'max_pct'=>39],
+            ['grade'=>'F9','label'=>'Fail','min_pct'=>0,'max_pct'=>34],
+        ];
+    }
+
+    $gradeOf = function(float $pct) use ($gradeConf): string {
+        foreach ($gradeConf as $g) {
+            if ($pct >= (float)$g['min_pct'] && $pct <= (float)$g['max_pct']) return $g['grade'];
+        }
+        return 'F9';
+    };
+
+    // Build map: student_id → subject_id → { avg_pct, grade }
+    $map = [];
+    foreach ($attempts as $att) {
+        $pct = (float)$att['avg_pct'];
+        $map[$att['student_id']][$att['subject_id']] = [
+            'avg_pct'    => $pct,
+            'grade'      => $gradeOf($pct),
+            'test_count' => (int)$att['test_count'],
+        ];
+    }
+
+    // Build student cards with rankings
+    $cards = [];
+    foreach ($students as $stu) {
+        $subjectRows = [];
+        $sum = 0; $cnt = 0;
+        foreach ($subjects as $subj) {
+            $d   = $map[$stu['id']][$subj['id']] ?? null;
+            $pct = $d ? (float)$d['avg_pct'] : null;
+            if ($pct !== null) { $sum += $pct; $cnt++; }
+            $subjectRows[] = [
+                'subject_id'    => $subj['id'],
+                'subject_name'  => $subj['name'],
+                'subject_short' => $subj['short_name'],
+                'avg_pct'       => $pct,
+                'grade'         => $pct !== null ? $gradeOf($pct) : null,
+                'test_count'    => $d['test_count'] ?? 0,
+            ];
+        }
+        $overallAvg = $cnt > 0 ? round($sum / $cnt, 1) : null;
+        $cards[] = [
+            'student_id'   => $stu['id'],
+            'first_name'   => $stu['first_name'],
+            'last_name'    => $stu['last_name'],
+            'avatar_color' => $stu['avatar_color'],
+            'subjects'     => $subjectRows,
+            'overall_avg'  => $overallAvg,
+            'overall_grade'=> $overallAvg !== null ? $gradeOf($overallAvg) : null,
+        ];
+    }
+
+    // Rank by overall average
+    usort($cards, fn($a,$b) => ($b['overall_avg'] ?? -1) <=> ($a['overall_avg'] ?? -1));
+    foreach ($cards as $i => &$c) { $c['rank'] = $i + 1; }
+
+    respond([
+        'class'         => $cls,
+        'school'        => $school,
+        'subjects'      => $subjects,
+        'cards'         => $cards,
+        'academic_year' => $acYear,
+        'semester'      => $semNum,
+        'grade_config'  => $gradeConf,
+        'total_students'=> count($cards),
+    ]);
+}
+
+// ══════════════════════════════════════════════════════════════
+// AT-RISK STUDENT ALERTS
+// GET /at-risk?class_id=N&threshold=40&academic_year=...&semester=N
+// Returns students below threshold or showing declining trend
+// ══════════════════════════════════════════════════════════════
+function handleAtRisk(string $method): void {
+    $auth = require_auth();
+    require_role($auth, 'teacher', 'admin');
+    $sid       = $auth['school_id'];
+    $uid       = $auth['user_id'];
+    $role      = $auth['role'];
+    $threshold = max(0, min(100, (int)($_GET['threshold'] ?? 45)));
+    $classId   = (int)($_GET['class_id']      ?? 0);
+    $acYear    = trim($_GET['academic_year']  ?? '');
+    $semNum    = (int)($_GET['semester']      ?? 0);
+
+    $classWhere  = $classId ? 'AND cs.class_id=?' : '';
+    $classParams = $classId ? [$classId] : [];
+
+    // Teacher: only their classes
+    if ($role === 'teacher') {
+        $teacherClass = 'AND cs.class_id IN (SELECT id FROM classes WHERE school_id=? AND teacher_id=?)';
+        $teacherParams = [$sid, $uid];
+    } else {
+        $teacherClass  = '';
+        $teacherParams = [$sid];
+    }
+
+    $acWhere  = $acYear  ? 'AND t.academic_year=?' : '';
+    $semWhere = $semNum  ? 'AND t.semester=?'      : '';
+    $acParam  = $acYear  ? [$acYear]  : [];
+    $semParam = $semNum  ? [$semNum]  : [];
+
+    // Students with average below threshold
+    $atRisk = DB::fetchAll(
+        "SELECT u.id AS student_id, u.first_name, u.last_name, u.avatar_color,
+                c.name AS class_name, c.id AS class_id,
+                ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                COUNT(DISTINCT a.id) AS test_count,
+                SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score<0.5,1,0)) AS fail_count
+         FROM users u
+         JOIN class_students cs ON cs.student_id=u.id
+         JOIN classes c ON c.id=cs.class_id
+         JOIN attempts a ON a.student_id=u.id
+         JOIN tests t ON t.id=a.test_id
+         WHERE u.school_id=? $teacherClass $classWhere $acWhere $semWhere
+           AND a.status IN ('submitted','marked') AND c.school_id=?
+         GROUP BY u.id, u.first_name, u.last_name, u.avatar_color, c.name, c.id
+         HAVING avg_pct < ? AND test_count >= 2
+         ORDER BY avg_pct ASC LIMIT 50",
+        array_merge($teacherParams, $classParams, $acParam, $semParam, [$threshold], [$sid])
+    );
+
+    // Students with declining trend (last 3 tests getting worse)
+    $declining = DB::fetchAll(
+        "SELECT u.id AS student_id, u.first_name, u.last_name,
+                c.name AS class_name,
+                ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS recent_avg,
+                COUNT(DISTINCT a.id) AS test_count
+         FROM users u
+         JOIN class_students cs ON cs.student_id=u.id
+         JOIN classes c ON c.id=cs.class_id
+         JOIN attempts a ON a.student_id=u.id AND a.id IN (
+             SELECT a2.id FROM attempts a2 WHERE a2.student_id=u.id
+             AND a2.status IN ('submitted','marked') ORDER BY a2.submitted_at DESC LIMIT 3
+         )
+         JOIN tests t ON t.id=a.test_id
+         WHERE u.school_id=? $classWhere AND c.school_id=?
+         GROUP BY u.id, u.first_name, u.last_name, c.name
+         HAVING recent_avg < ? AND test_count >= 2
+         ORDER BY recent_avg ASC LIMIT 30",
+        array_merge([$sid], $classParams, [$sid, $threshold + 10])
+    );
+
+    // Missing students (enrolled but zero attempts)
+    $missing = DB::fetchAll(
+        "SELECT u.id AS student_id, u.first_name, u.last_name, c.name AS class_name
+         FROM users u
+         JOIN class_students cs ON cs.student_id=u.id
+         JOIN classes c ON c.id=cs.class_id
+         WHERE u.school_id=? $classWhere AND c.school_id=?
+           AND NOT EXISTS (SELECT 1 FROM attempts a2 WHERE a2.student_id=u.id AND a2.status IN ('submitted','marked'))
+         LIMIT 30",
+        array_merge([$sid], $classParams, [$sid])
+    );
+
+    respond([
+        'threshold'  => $threshold,
+        'at_risk'    => $atRisk,
+        'declining'  => $declining,
+        'no_attempts'=> $missing,
+        'summary'    => [
+            'at_risk_count'   => count($atRisk),
+            'declining_count' => count($declining),
+            'missing_count'   => count($missing),
+        ],
+    ]);
+}
+
+// ══════════════════════════════════════════════════════════════
+// REMEDIATION PLANNER
+// GET /remediation?student_id=N  (student sees own; teacher sees any)
+// Returns weak sub-strands + recommended practice areas
+// ══════════════════════════════════════════════════════════════
+function handleRemediation(string $method): void {
+    $auth = require_auth();
+    $sid  = $auth['school_id'];
+    $uid  = $auth['user_id'];
+    $role = $auth['role'];
+
+    $studentId = ($role === 'student') ? $uid : (int)($_GET['student_id'] ?? $uid);
+    $subjId    = !empty($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
+
+    $subjFilter = $subjId ? 'AND t.subject_id=?' : '';
+    $subjParam  = $subjId ? [$subjId] : [];
+
+    // Sub-strand accuracy
+    $subStrands = DB::fetchAll(
+        "SELECT q.sub_strand,
+                COUNT(*) AS total_q,
+                SUM(IF(an.is_correct=1,1,0)) AS correct_q,
+                ROUND(AVG(IF(an.is_correct=1,100,0)),1) AS accuracy_pct,
+                MAX(a.submitted_at) AS last_attempted
+         FROM answers an
+         JOIN questions q ON q.id=an.question_id
+         JOIN attempts a  ON a.id=an.attempt_id
+         JOIN tests t     ON t.id=a.test_id
+         WHERE a.student_id=? AND an.is_correct IS NOT NULL
+           AND q.sub_strand IS NOT NULL $subjFilter
+         GROUP BY q.sub_strand
+         ORDER BY accuracy_pct ASC",
+        array_merge([$studentId], $subjParam)
+    );
+
+    // Tag each as weak / needs work / strong
+    $tagged = array_map(function($row) {
+        $pct = (float)$row['accuracy_pct'];
+        return array_merge($row, [
+            'status'     => $pct < 40 ? 'critical' : ($pct < 60 ? 'needs_work' : 'good'),
+            'label'      => $pct < 40 ? 'Critical — urgent revision' : ($pct < 60 ? 'Needs work' : 'Good'),
+            'icon'       => $pct < 40 ? '🔴' : ($pct < 60 ? '🟡' : '🟢'),
+        ]);
+    }, $subStrands);
+
+    // Hardest individual questions (answered wrong most often)
+    $hardQuestions = DB::fetchAll(
+        "SELECT q.id, q.question_text, q.sub_strand, q.type,
+                COUNT(*) AS attempts,
+                SUM(IF(an.is_correct=0,1,0)) AS wrong_count,
+                ROUND(SUM(IF(an.is_correct=0,1,0))/COUNT(*)*100,0) AS error_rate_pct
+         FROM answers an
+         JOIN questions q ON q.id=an.question_id
+         JOIN attempts a  ON a.id=an.attempt_id
+         JOIN tests t     ON t.id=a.test_id
+         WHERE a.student_id=? $subjFilter AND an.is_correct IS NOT NULL
+         GROUP BY q.id, q.question_text, q.sub_strand, q.type
+         HAVING wrong_count >= 1 AND error_rate_pct >= 50
+         ORDER BY error_rate_pct DESC, wrong_count DESC LIMIT 10",
+        array_merge([$studentId], $subjParam)
+    );
+
+    // Overall score trend (last 10 tests)
+    $trend = DB::fetchAll(
+        "SELECT t.title, t.subject_id, a.submitted_at,
+                ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),1) AS score_pct
+         FROM attempts a JOIN tests t ON t.id=a.test_id
+         WHERE a.student_id=? AND a.status IN ('submitted','marked') $subjFilter
+         ORDER BY a.submitted_at DESC LIMIT 10",
+        array_merge([$studentId], $subjParam)
+    );
+
+    respond([
+        'student_id'   => $studentId,
+        'sub_strands'  => $tagged,
+        'hard_questions'=> $hardQuestions,
+        'trend'        => array_reverse($trend),
+        'summary'      => [
+            'critical_count'   => count(array_filter($tagged, fn($r) => $r['status'] === 'critical')),
+            'needs_work_count' => count(array_filter($tagged, fn($r) => $r['status'] === 'needs_work')),
+            'strong_count'     => count(array_filter($tagged, fn($r) => $r['status'] === 'good')),
+        ],
+    ]);
 }

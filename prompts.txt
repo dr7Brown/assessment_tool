@@ -661,3 +661,12 @@ Rural schools have unreliable internet. Students download a test,
 complete it offline, and it syncs when they reconnect. 
 A small badge on the topbar shows "3 results pending sync." 
 This removes the biggest objection administrators have.
+
+next: 
+error when i run analysis on at risk students on teachers dashboard
+"Error: Database error: SQLSTATE[HY093]: Invalid parameter number"
+
+when i do it on admin dashboard, i get the error
+"Error: Database error: SQLSTATE[42000]: Syntax error or access violation: 1235 This version of MariaDB doesn't yet support 'LIMIT & IN/ALL/ANY/SOME subquery'"
+
+fix all and continue with the upgrades
