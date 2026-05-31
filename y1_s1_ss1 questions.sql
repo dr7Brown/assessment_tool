@@ -1,12 +1,12 @@
 -- ============================================================
--- AceICT: 100 MCQ Questions — Year 1, S1/SS1 Productivity Tools
+--Generate 100 MCQ Questions — Year 1, S1/SS1 Productivity Tools
 -- Ghana GES ICT Curriculum
 -- Sub-strand: SS1 — Productivity Tools
 -- Topics: Word Processing, Spreadsheets, Presentations,
 --         Email, File Management, Operating Systems
 -- Difficulty: 40 Easy, 40 Medium, 20 Hard
 -- All options stored as separate rows in question_options
--- school_id=1, author_id=1, year_group=1
+-- use school_id=1, author_id=1, year_group=1
 -- ============================================================
 
 SET FOREIGN_KEY_CHECKS=0;

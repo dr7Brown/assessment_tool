@@ -1,0 +1,178 @@
+Implement a Google Meet attendance integration system inside the assessment platform.
+
+Architecture:
+
+* Google Meet handles video conferencing.
+* The assessment platform handles attendance, analytics, and participation tracking.
+
+Recommended implementation:
+Students should NOT join Google Meet directly.
+Instead:
+
+1. Teachers create meetings inside the platform.
+
+2. Meetings contain:
+
+   * title
+   * subject_id
+   * teacher_id
+   * class_id
+   * Google Meet link
+   * meeting date
+   * start time
+   * end time
+
+3. Students see upcoming meetings on their dashboard.
+
+4. Students click a “Join Meeting” button inside the platform.
+
+5. When the button is clicked:
+
+   * attendance is recorded in the database
+   * joined_at timestamp is stored
+   * IP address and device info are stored
+   * student is redirected automatically to the Google Meet link
+
+Implementation flow:
+Student clicks Join Meeting
+→ system saves attendance record
+→ redirect to Google Meet
+
+Create these database tables:
+
+## meetings
+can include these fields and any other necessary
+school_id
+id
+title
+subject_id
+teacher_id
+class_id
+google_meet_link
+meeting_date
+start_time
+end_time
+created_at
+
+## meeting_attendance
+can include these fields and any other necessary
+id
+meeting_id
+student_id
+joined_at
+left_at
+duration_minutes
+attendance_status
+ip_address
+device_info
+last_seen
+
+Attendance statuses:
+
+* absent
+* partial
+* late
+* present
+
+Attendance rules:
+
+* 0 minutes = absent
+* 1–10 minutes = partial
+* 10–20 minutes = late
+* 20+ minutes = present
+
+Implement heartbeat tracking:
+
+* frontend sends AJAX request every 5 minute
+* update last_seen timestamp
+* calculate active session duration
+* prevent fake attendance
+
+Teacher and admin dashboard features:
+
+* create meeting
+* edit meeting
+* cancel meeting
+* view attendance
+* attendance analytics
+* absentee list
+* participation statistics
+
+Student dashboard features:
+
+* upcoming live classes
+* join meeting button
+* attendance history
+* meeting replay links (future)
+
+Attendance analytics:
+* total students present
+* late students
+* absent students
+* attendance percentage
+* most active students
+* chronic absentees
+* class attendance trends
+
+Generate:
+* backend API endpoints
+* database migrations
+* attendance logic
+* heartbeat tracking logic
+* attendance analytics queries
+* CSV export support
+
+Security requirements:
+
+* only authenticated students can join meetings
+* prevent duplicate attendance entries
+* validate meeting access by class enrollment
+* protect Google Meet links from public access
+
+Recommended workflow:
+Teacher creates meeting
+→ students see upcoming meeting
+→ student clicks Join Meeting
+→ attendance saved
+→ redirect to Google Meet
+→ heartbeat updates attendance duration
+→ teacher views analytics and attendance reports
+
+
+error: when creating meeting, when i submit the form.
+Error: Server error: Call to undefined method DB::lastInsertId()
+fix it
+i also want you to allow me select multiple classes.
+
+error: 
+1. when i click on attendance button, i get the error message:
+"Error: Not your meeting"
+2. system creates two meetings each time i create a meeting. 
+3. when i try to edit a meeting, the class field becomes blank on the form, i want
+the classes i chose to show there.
+the meeting link field too becomes blank.
+4. when student check meeting history, upcoming meeting also shows "absent" 
+under "Attendance". since meeting time not due, attendance should be "upcoming"
+instead of absent.
+
+next: 
+1. dont allow creating of a meeting in the past dates
+2. when teacher or admin clicks "cancel" meeting, cancel confirmation should be 
+given, then if confirmed, then the needed action taken
+3. admin should get additional button that allows him to join any of the meetings 
+the admin "join" button to come before "Attendance Edit Cancel" buttons
+4. meetings should be sorted with the one with the closest due date 
+being the topmost.
+5. when meetings reach 20, load more button appears below to load the next 20
+feature for all users.
+6. when editing a meeting, unable to change the selected class. 
+
+next:
+1. meetings should end when ending time elapses.
+2. ended meetings should not show under "upcoming" meetings
+3. cancel meeting feature still not working
+4. add sn to the data
+5. admin and teachers should be able to sort meetings by classes and by date(months)
+
+
+

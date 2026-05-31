@@ -94,6 +94,10 @@ try {
         case 'chat':          handleChat($method, $id, $parts[1] ?? null, $parts[2] ?? null, $parts[3] ?? null, $body); break;
         case 'promotion':         handlePromotion($method, $parts[1] ?? null, $body); break;
         case 'academic-periods':  handleAcademicPeriods($method, $id, $body); break;
+        case 'school':            handleSchoolSettings($method, $body); break;
+        case 'grade-config':      handleGradeConfig($method, $body); break;
+        case 'semester-results':  handleSemesterResults($method, $parts[1]??null, $body); break;
+        case 'meetings':          handleMeetings($method, $parts, $body); break;
         case 'ai-generate':  handleAIGenerate($method, $body); break;
         case 'questions-bulk': handleBulkQuestions($method, $body); break;
         case 'live':        handleLive($method, $parts, $body); break;
@@ -1172,6 +1176,7 @@ function handleStudents(string $method, ?int $id, ?string $sub, array $body): vo
                 "SELECT a.student_id,
                         AVG(ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),2)) AS avg_pct
                  FROM attempts a
+                 JOIN tests t ON t.id=a.test_id
                  JOIN class_students cs ON cs.student_id=a.student_id
                  JOIN classes c ON c.id=cs.class_id
                  WHERE c.school_id=? AND c.name=? AND a.status IN ('submitted','marked') $sF
@@ -3011,11 +3016,11 @@ function handleBulkQuestions(string $method, array $body): void {
             $bloom  = trim($q['bloom_level'] ?? 'Remember');
             $marks  = max(1, (int)($q['marks'] ?? 1));
             $type   = trim($q['type']        ?? 'mcq');
-            $exp    = trim($q['explanation'] ?? '');
+            $exp    = trim($q['explanation'] ?? $q['marking_guide'] ?? '');
 
-            // Validate difficulty
+            // Validate difficulty and type
             if (!in_array($diff, ['Easy','Medium','Hard'])) $diff = 'Medium';
-            if (!in_array($type, ['mcq','essay','short','tf'])) $type = 'mcq';
+            if (!in_array($type, ['mcq','multi','essay','short','fill-in','tf'])) $type = 'mcq';
 
             $qid = DB::insert(
                 'INSERT INTO questions
@@ -3030,23 +3035,38 @@ function handleBulkQuestions(string $method, array $body): void {
                 ]
             );
 
-            // Insert options A/B/C/D
+            // Build options based on question type
             $opts = [];
-            // Support both {A:'text', B:'text'} and [{label,text,correct}] formats
-            if (isset($q['A']) || isset($q['option_a'])) {
-                // CSV flat format: A, B, C, D columns + correct column
-                $correct = strtoupper(trim($q['correct'] ?? $q['answer'] ?? 'A'));
-                foreach (['A','B','C','D'] as $lbl) {
-                    $val = trim($q[$lbl] ?? $q['option_'.strtolower($lbl)] ?? '');
-                    if ($val) $opts[] = ['label'=>$lbl,'text'=>$val,'correct'=>$lbl===$correct?1:0];
-                }
-            } elseif (!empty($q['options']) && is_array($q['options'])) {
+            if (!empty($q['options']) && is_array($q['options'])) {
+                // JSON/structured format — used by the JS bulk parser for all types
                 foreach ($q['options'] as $j => $o) {
                     $opts[] = [
                         'label'   => $o['label'] ?? $letters[$j] ?? $letters[0],
                         'text'    => trim($o['text'] ?? ''),
                         'correct' => (int)($o['correct'] ?? ($o['is_correct'] ?? 0)),
                     ];
+                }
+            } elseif ($type === 'tf') {
+                // CSV True/False: correct column = "True" or "False"
+                $ans = strtolower(trim($q['correct'] ?? $q['answer'] ?? 'true'));
+                $opts = [
+                    ['label'=>'A','text'=>'True', 'correct'=>in_array($ans,['true','yes','t','1'])?1:0],
+                    ['label'=>'B','text'=>'False','correct'=>in_array($ans,['false','no','f','0'])?1:0],
+                ];
+            } elseif (in_array($type, ['short','fill-in'])) {
+                // CSV: accepted_answers or correct_answer column, semicolon-separated
+                $raw = trim($q['accepted_answers'] ?? $q['correct_answer'] ?? $q['answer'] ?? '');
+                foreach (array_filter(array_map('trim', explode(';', $raw))) as $j => $ans) {
+                    $opts[] = ['label'=>$letters[$j]??$letters[0],'text'=>$ans,'correct'=>1];
+                }
+            } elseif ($type === 'essay') {
+                $opts = []; // essay has no options; marking_guide already in $exp
+            } elseif (isset($q['A']) || isset($q['option_a'])) {
+                // CSV MCQ flat format: A, B, C, D + correct column
+                $correct = strtoupper(trim($q['correct'] ?? $q['answer'] ?? 'A'));
+                foreach (['A','B','C','D'] as $lbl) {
+                    $val = trim($q[$lbl] ?? $q['option_'.strtolower($lbl)] ?? '');
+                    if ($val) $opts[] = ['label'=>$lbl,'text'=>$val,'correct'=>$lbl===$correct?1:0];
                 }
             }
 
@@ -3906,6 +3926,201 @@ function resolveStudentClass(array $body, $schoolId): array {
 // ══════════════════════════════════════════════════════════════
 // ACADEMIC PERIODS
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// SCHOOL SETTINGS
+// ══════════════════════════════════════════════════════════════
+function handleSchoolSettings(string $method, array $body): void {
+    $auth = require_auth();
+    require_role($auth, 'admin');
+    $sid = $auth['school_id'];
+    // Ensure schools table has extended columns
+    try {
+        DB::execute("ALTER TABLE schools ADD COLUMN IF NOT EXISTS region    VARCHAR(100) NULL");
+        DB::execute("ALTER TABLE schools ADD COLUMN IF NOT EXISTS ges_id    VARCHAR(50)  NULL");
+        DB::execute("ALTER TABLE schools ADD COLUMN IF NOT EXISTS phone     VARCHAR(30)  NULL");
+        DB::execute("ALTER TABLE schools ADD COLUMN IF NOT EXISTS address   VARCHAR(255) NULL");
+        DB::execute("ALTER TABLE schools ADD COLUMN IF NOT EXISTS email     VARCHAR(150) NULL");
+        DB::execute("ALTER TABLE schools ADD COLUMN IF NOT EXISTS logo_url  VARCHAR(500) NULL");
+    } catch (Throwable $e) {}
+
+    if ($method === 'GET') {
+        $school = DB::fetchOne('SELECT id, name, region, ges_id, phone, address, email, logo_url FROM schools WHERE id=?', [$sid]);
+        if (!$school) err('School not found', 404);
+        respond($school);
+    }
+
+    if ($method === 'PATCH') {
+        $sets=[]; $params=[];
+        $allowed = ['name','region','ges_id','phone','address','email','logo_url'];
+        foreach ($allowed as $f) {
+            if (array_key_exists($f,$body)) { $sets[]="$f=?"; $params[]=trim($body[$f]); }
+        }
+        if ($sets) { $params[]=$sid; DB::execute('UPDATE schools SET '.implode(',',$sets).' WHERE id=?',$params); }
+        // Also update school_name in users table if name changed
+        if (isset($body['name'])) {
+            // school_name is stored in JWT but users.school_name might not exist — safe to ignore
+        }
+        respond(['message'=>'School settings saved']);
+    }
+    err('School endpoint error',404);
+}
+
+// ══════════════════════════════════════════════════════════════
+// GRADE CONFIGURATION  (Ghana GES A1-F9 system)
+// ══════════════════════════════════════════════════════════════
+function handleGradeConfig(string $method, array $body): void {
+    $auth = require_auth();
+    $sid  = $auth['school_id'];
+    ensureGradeConfigSchema();
+
+    if ($method === 'GET') {
+        $grades = DB::fetchAll('SELECT * FROM grade_config WHERE school_id=? ORDER BY sort_order', [$sid]);
+        if (empty($grades)) {
+            // Return Ghana GES defaults
+            $grades = [
+                ['grade'=>'A1','label'=>'Excellent',         'min_pct'=>80,'max_pct'=>100,'sort_order'=>1],
+                ['grade'=>'B2','label'=>'Very Good',          'min_pct'=>70,'max_pct'=>79, 'sort_order'=>2],
+                ['grade'=>'B3','label'=>'Good',               'min_pct'=>60,'max_pct'=>69, 'sort_order'=>3],
+                ['grade'=>'C4','label'=>'Credit',             'min_pct'=>55,'max_pct'=>59, 'sort_order'=>4],
+                ['grade'=>'C5','label'=>'Credit',             'min_pct'=>50,'max_pct'=>54, 'sort_order'=>5],
+                ['grade'=>'C6','label'=>'Credit',             'min_pct'=>45,'max_pct'=>49, 'sort_order'=>6],
+                ['grade'=>'D7','label'=>'Pass',               'min_pct'=>40,'max_pct'=>44, 'sort_order'=>7],
+                ['grade'=>'E8','label'=>'Pass',               'min_pct'=>35,'max_pct'=>39, 'sort_order'=>8],
+                ['grade'=>'F9','label'=>'Fail',               'min_pct'=>0, 'max_pct'=>34, 'sort_order'=>9],
+            ];
+        }
+        respond($grades);
+    }
+
+    if ($method === 'POST') {
+        require_role($auth,'admin');
+        $grades = $body['grades'] ?? [];
+        if (empty($grades)) err('grades array required');
+        DB::execute('DELETE FROM grade_config WHERE school_id=?', [$sid]);
+        foreach ($grades as $i => $g) {
+            DB::execute('INSERT INTO grade_config (school_id,grade,label,min_pct,max_pct,sort_order) VALUES (?,?,?,?,?,?)',
+                [$sid, $g['grade'], $g['label'], (float)$g['min_pct'], (float)$g['max_pct'], $i+1]);
+        }
+        respond(['message'=>'Grade boundaries saved']);
+    }
+    err('Grade config error',404);
+}
+
+// ══════════════════════════════════════════════════════════════
+// SEMESTER RESULT SHEET
+// ══════════════════════════════════════════════════════════════
+function handleSemesterResults(string $method, ?string $sub, array $body): void {
+    $auth = require_auth();
+    require_role($auth,'teacher','admin');
+    $sid = $auth['school_id'];
+    if ($method !== 'GET') err('GET only',405);
+
+    // ?class_id=N&academic_year=2024/2025&semester=1
+    $classId  = (int)($_GET['class_id']      ?? 0);
+    $acYear   = trim($_GET['academic_year']  ?? '');
+    $semNum   = (int)($_GET['semester']      ?? 0);
+    if (!$classId || !$acYear || !$semNum) err('class_id, academic_year and semester required');
+
+    $cls = DB::fetchOne('SELECT id,name,year_group FROM classes WHERE id=? AND school_id=?',[$classId,$sid]);
+    if (!$cls) err('Class not found',404);
+
+    // Students in class
+    $students = DB::fetchAll(
+        'SELECT u.id, u.first_name, u.last_name, u.avatar_color FROM users u
+         JOIN class_students cs ON cs.student_id=u.id WHERE cs.class_id=? ORDER BY u.last_name,u.first_name',
+        [$classId]
+    );
+
+    // Subjects for this class
+    $subjects = DB::fetchAll(
+        'SELECT DISTINCT s.id,s.name,s.short_name FROM subjects s
+         JOIN class_subjects csj ON csj.subject_id=s.id WHERE csj.class_id=? ORDER BY s.name',
+        [$classId]
+    );
+
+    // All submitted attempts for this class + semester + academic year
+    $attempts = DB::fetchAll(
+        "SELECT a.student_id, t.subject_id,
+                ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                COUNT(DISTINCT a.id) AS test_count
+         FROM attempts a
+         JOIN tests t ON t.id=a.test_id
+         WHERE a.student_id IN (SELECT student_id FROM class_students WHERE class_id=?)
+           AND t.semester=? AND t.academic_year=? AND a.status IN ('submitted','marked')
+         GROUP BY a.student_id, t.subject_id",
+        [$classId, $semNum, $acYear]
+    );
+
+    // Build a student→subject→avg map
+    $map = [];
+    foreach ($attempts as $att) {
+        $map[$att['student_id']][$att['subject_id']] = ['avg_pct' => $att['avg_pct'], 'test_count' => $att['test_count']];
+    }
+
+    // Grade config
+    ensureGradeConfigSchema();
+    $gradeConf = DB::fetchAll('SELECT * FROM grade_config WHERE school_id=? ORDER BY sort_order',[$sid]);
+    if (empty($gradeConf)) {
+        $gradeConf=[
+            ['grade'=>'A1','label'=>'Excellent', 'min_pct'=>80,'max_pct'=>100,'sort_order'=>1],
+            ['grade'=>'B2','label'=>'Very Good',  'min_pct'=>70,'max_pct'=>79, 'sort_order'=>2],
+            ['grade'=>'B3','label'=>'Good',        'min_pct'=>60,'max_pct'=>69, 'sort_order'=>3],
+            ['grade'=>'C4','label'=>'Credit',      'min_pct'=>55,'max_pct'=>59, 'sort_order'=>4],
+            ['grade'=>'C5','label'=>'Credit',      'min_pct'=>50,'max_pct'=>54, 'sort_order'=>5],
+            ['grade'=>'C6','label'=>'Credit',      'min_pct'=>45,'max_pct'=>49, 'sort_order'=>6],
+            ['grade'=>'D7','label'=>'Pass',        'min_pct'=>40,'max_pct'=>44, 'sort_order'=>7],
+            ['grade'=>'E8','label'=>'Pass',        'min_pct'=>35,'max_pct'=>39, 'sort_order'=>8],
+            ['grade'=>'F9','label'=>'Fail',        'min_pct'=>0, 'max_pct'=>34, 'sort_order'=>9],
+        ];
+    }
+
+    // Build result rows
+    $results = [];
+    foreach ($students as $stu) {
+        $row = ['student_id'=>$stu['id'],'first_name'=>$stu['first_name'],'last_name'=>$stu['last_name'],'avatar_color'=>$stu['avatar_color'],'subjects'=>[],'overall_avg'=>null];
+        $sum=0; $cnt=0;
+        foreach ($subjects as $subj) {
+            $data = $map[$stu['id']][$subj['id']] ?? null;
+            $pct  = $data ? (float)$data['avg_pct'] : null;
+            $grade = null;
+            if ($pct !== null) {
+                foreach ($gradeConf as $g) { if ($pct>=(float)$g['min_pct'] && $pct<=(float)$g['max_pct']) { $grade=$g['grade']; break; } }
+                $sum += $pct; $cnt++;
+            }
+            $row['subjects'][] = ['subject_id'=>$subj['id'],'subject_name'=>$subj['name'],'subject_short'=>$subj['short_name'],'avg_pct'=>$pct,'grade'=>$grade,'test_count'=>$data['test_count']??0];
+        }
+        $row['overall_avg'] = $cnt>0 ? round($sum/$cnt,1) : null;
+        $results[] = $row;
+    }
+
+    // Sort by overall avg desc for ranking
+    usort($results, fn($a,$b) => ($b['overall_avg']??-1) <=> ($a['overall_avg']??-1));
+    foreach ($results as $i => &$r) { $r['rank'] = $i+1; }
+
+    $school = DB::fetchOne('SELECT name FROM schools WHERE id=?',[$sid]);
+    respond([
+        'class' => $cls, 'subjects' => $subjects, 'results' => $results,
+        'academic_year' => $acYear, 'semester' => $semNum, 'school_name' => $school['name']??'School',
+        'grade_config' => $gradeConf,
+    ]);
+}
+
+function ensureGradeConfigSchema(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    DB::execute("CREATE TABLE IF NOT EXISTS grade_config (
+        id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        school_id  INT UNSIGNED NOT NULL,
+        grade      VARCHAR(5)   NOT NULL,
+        label      VARCHAR(30)  NOT NULL,
+        min_pct    DECIMAL(5,2) NOT NULL,
+        max_pct    DECIMAL(5,2) NOT NULL,
+        sort_order TINYINT      DEFAULT 0,
+        UNIQUE KEY uniq_school_grade (school_id, grade)
+    ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+}
+
 function ensureAcademicPeriodsSchema(): void {
     static $done = false;
     if ($done) return;
@@ -3999,6 +4214,42 @@ function handleAcademicPeriods(string $method, ?int $id, array $body): void {
         respond(['id' => $newId, 'message' => "Year $yg period updated: $year Semester $sem"]);
     }
 
+    // PATCH /academic-periods/{id} — edit or activate/deactivate
+    if ($method === 'PATCH' && $id) {
+        require_role($auth, 'admin');
+        $p = DB::fetchOne('SELECT id, year_group, is_active FROM academic_periods WHERE id=? AND school_id=?', [$id, $sid]);
+        if (!$p) err('Period not found', 404);
+
+        // Handle activate request: deactivate ALL others in same year group first
+        if (array_key_exists('is_active', $body) && (int)$body['is_active'] === 1) {
+            DB::execute(
+                'UPDATE academic_periods SET is_active=0, ended_at=NOW() WHERE school_id=? AND year_group=? AND id!=?',
+                [$sid, (int)$p['year_group'], $id]
+            );
+            DB::execute('UPDATE academic_periods SET is_active=1, started_at=NOW(), ended_at=NULL WHERE id=?', [$id]);
+            respond(['message' => 'Period activated — others in Year ' . $p['year_group'] . ' deactivated']);
+        }
+
+        $sets=[]; $params=[];
+        if (array_key_exists('is_active', $body))     { $sets[]='is_active=?';     $params[]=(int)$body['is_active']; if(!(int)$body['is_active']){$sets[]='ended_at=NOW()';} }
+        if (array_key_exists('academic_year', $body)) { $sets[]='academic_year=?'; $params[]=trim($body['academic_year']); }
+        if (array_key_exists('semester', $body))      { $sets[]='semester=?';      $params[]=(int)$body['semester']; }
+        if (array_key_exists('start_date', $body))    { $sets[]='start_date=?';    $params[]=($body['start_date']?:null); }
+        if (array_key_exists('end_date', $body))      { $sets[]='end_date=?';      $params[]=($body['end_date']?:null); }
+        if ($sets) { $params[]=$id; DB::execute('UPDATE academic_periods SET '.implode(',',$sets).' WHERE id=?',$params); }
+        respond(['message'=>'Period updated']);
+    }
+
+    // DELETE /academic-periods/{id}
+    if ($method === 'DELETE' && $id) {
+        require_role($auth, 'admin');
+        $p = DB::fetchOne('SELECT id, is_active FROM academic_periods WHERE id=? AND school_id=?', [$id, $sid]);
+        if (!$p) err('Period not found', 404);
+        if ((int)$p['is_active']) err('Cannot delete an active period. Deactivate it first.', 409);
+        DB::execute('DELETE FROM academic_periods WHERE id=?', [$id]);
+        respond(['message'=>'Period deleted']);
+    }
+
     err('Academic periods endpoint error', 404);
 }
 
@@ -4051,6 +4302,332 @@ function ensureClassSubjectSchema(): void {
             PRIMARY KEY (student_id, class_id)
         ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     } catch (Throwable $e) {}
+}
+
+// ══════════════════════════════════════════════════════════════
+// MEETINGS — Google Meet Attendance
+// ══════════════════════════════════════════════════════════════
+
+function ensureMeetingsSchema(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    DB::execute("CREATE TABLE IF NOT EXISTS meetings (
+        id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        school_id        INT UNSIGNED  NOT NULL,
+        title            VARCHAR(255)  NOT NULL,
+        subject_id       INT UNSIGNED  NULL,
+        teacher_id       INT UNSIGNED  NOT NULL,
+        class_id         INT UNSIGNED  NOT NULL,
+        google_meet_link VARCHAR(1000) NOT NULL,
+        meeting_date     DATE          NOT NULL,
+        start_time       TIME          NOT NULL,
+        end_time         TIME          NOT NULL,
+        status           ENUM('scheduled','live','ended','cancelled') NOT NULL DEFAULT 'scheduled',
+        description      TEXT          NULL,
+        created_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+        updated_at       TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_school_date (school_id, meeting_date),
+        INDEX idx_class       (class_id),
+        INDEX idx_teacher     (teacher_id)
+    ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    DB::execute("CREATE TABLE IF NOT EXISTS meeting_attendance (
+        id                BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        meeting_id        INT UNSIGNED NOT NULL,
+        student_id        INT UNSIGNED NOT NULL,
+        joined_at         TIMESTAMP    NULL,
+        last_seen         TIMESTAMP    NULL,
+        duration_minutes  INT UNSIGNED NOT NULL DEFAULT 0,
+        attendance_status ENUM('absent','partial','late','present') NOT NULL DEFAULT 'absent',
+        ip_address        VARCHAR(45)  NULL,
+        device_info       VARCHAR(500) NULL,
+        created_at        TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_meeting_student (meeting_id, student_id),
+        INDEX idx_meeting (meeting_id),
+        INDEX idx_student (student_id)
+    ) ENGINE=InnoDB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+}
+
+function calcAttendanceStatus(int $minutes): string {
+    if ($minutes <= 0)  return 'absent';
+    if ($minutes < 10)  return 'partial';
+    if ($minutes < 20)  return 'late';
+    return 'present';
+}
+
+function handleMeetings(string $method, array $parts, array $body): void {
+    $auth = require_auth();
+    ensureMeetingsSchema();
+    $sid  = $auth['school_id'];
+    $uid  = $auth['user_id'];
+    $role = $auth['role'];
+
+    $id1    = $parts[1] ?? null;
+    $id     = ($id1 !== null && ctype_digit((string)$id1)) ? (int)$id1 : null;
+    $action = ($id1 !== null && !ctype_digit((string)$id1)) ? $id1 : null;
+    $sub    = $parts[2] ?? null;
+
+    // ── GET /meetings/analytics
+    if ($action === 'analytics') {
+        require_role($auth, 'teacher', 'admin');
+        $teacherWhere = ($role === 'teacher') ? 'AND m.teacher_id=?' : '';
+        $params = $role === 'teacher' ? [$sid, $uid] : [$sid];
+        $rows = DB::fetchAll(
+            "SELECT m.id, m.title, m.meeting_date, m.start_time, m.end_time, m.status,
+                    c.name AS class_name, s.name AS subject_name,
+                    COUNT(DISTINCT ma.id)                              AS joined_count,
+                    (SELECT COUNT(*) FROM class_students WHERE class_id=m.class_id) AS class_size,
+                    SUM(ma.attendance_status='present')  AS present_count,
+                    SUM(ma.attendance_status='late')     AS late_count,
+                    SUM(ma.attendance_status='partial')  AS partial_count,
+                    SUM(ma.attendance_status='absent' OR ma.attendance_status IS NULL) AS absent_count,
+                    ROUND(AVG(ma.duration_minutes),1)   AS avg_duration
+             FROM meetings m
+             LEFT JOIN classes c    ON c.id = m.class_id
+             LEFT JOIN subjects s   ON s.id = m.subject_id
+             LEFT JOIN meeting_attendance ma ON ma.meeting_id = m.id
+             WHERE m.school_id=? $teacherWhere AND m.status != 'cancelled'
+             GROUP BY m.id
+             ORDER BY m.meeting_date DESC LIMIT 60",
+            $params
+        );
+        respond(['meetings' => $rows]);
+    }
+
+    // ── GET /meetings/history (student's own attendance)
+    if ($action === 'history') {
+        require_role($auth, 'student');
+        $hSubjId    = !empty($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
+        $hSubjWhere = $hSubjId ? 'AND m.subject_id = ?' : '';
+        $hSubjParam = $hSubjId ? [$hSubjId] : [];
+        $rows = DB::fetchAll(
+            "SELECT m.id, m.title, m.meeting_date, m.start_time, m.end_time,
+                    c.name AS class_name, s.name AS subject_name,
+                    ma.joined_at, ma.duration_minutes, ma.attendance_status
+             FROM meetings m
+             LEFT JOIN classes c  ON c.id = m.class_id
+             LEFT JOIN subjects s ON s.id = m.subject_id
+             LEFT JOIN meeting_attendance ma ON ma.meeting_id=m.id AND ma.student_id=?
+             WHERE m.class_id IN (SELECT class_id FROM class_students WHERE student_id=?)
+               AND m.school_id=? AND m.status != 'cancelled'
+               $hSubjWhere
+             ORDER BY m.meeting_date DESC, m.start_time DESC LIMIT 60",
+            array_merge([$uid, $uid, $sid], $hSubjParam)
+        );
+        respond($rows);
+    }
+
+    // ── Collection endpoints (no id)
+    if ($id === null && $action === null) {
+        if ($method === 'GET') {
+            // Auto-transition scheduled/live meetings to 'ended' when end time has passed
+            $aeWhere  = ($role === 'teacher') ? 'AND teacher_id=?' : '';
+            $aeParams = $role === 'teacher' ? [$sid, $uid] : [$sid];
+            DB::execute(
+                "UPDATE meetings SET status='ended'
+                 WHERE school_id=? $aeWhere
+                   AND status IN ('scheduled','live')
+                   AND CONCAT(meeting_date,' ',end_time) < NOW()",
+                $aeParams
+            );
+            // Optional subject filter from context bar
+            $subjId     = !empty($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
+            $subjWhere  = $subjId ? 'AND m.subject_id = ?' : '';
+            $subjParam  = $subjId ? [$subjId] : [];
+
+            if ($role === 'student') {
+                $rows = DB::fetchAll(
+                    "SELECT m.id, m.title, m.meeting_date, m.start_time, m.end_time,
+                            m.status, m.description,
+                            c.name AS class_name, s.name AS subject_name,
+                            u.first_name AS teacher_first, u.last_name AS teacher_last,
+                            ma.attendance_status, ma.joined_at
+                     FROM meetings m
+                     JOIN  classes c ON c.id = m.class_id
+                     LEFT JOIN subjects s ON s.id = m.subject_id
+                     JOIN  users u ON u.id = m.teacher_id
+                     LEFT JOIN meeting_attendance ma ON ma.meeting_id=m.id AND ma.student_id=?
+                     WHERE m.class_id IN (SELECT class_id FROM class_students WHERE student_id=?)
+                       AND m.school_id=? AND m.status != 'cancelled'
+                       AND m.meeting_date >= CURDATE() - INTERVAL 7 DAY
+                       $subjWhere
+                     ORDER BY m.meeting_date ASC, m.start_time ASC LIMIT 30",
+                    array_merge([$uid, $uid, $sid], $subjParam)
+                );
+            } else {
+                $teacherWhere = ($role === 'teacher') ? 'AND m.teacher_id=?' : '';
+                $params = $role === 'teacher' ? [$sid, $uid] : [$sid];
+                $rows = DB::fetchAll(
+                    "SELECT m.id, m.title, m.meeting_date, m.start_time, m.end_time,
+                            m.status, m.description, m.class_id,
+                            c.name AS class_name, s.name AS subject_name,
+                            u.first_name AS teacher_first, u.last_name AS teacher_last,
+                            (SELECT COUNT(*) FROM meeting_attendance WHERE meeting_id=m.id) AS attendance_count,
+                            (SELECT COUNT(*) FROM class_students WHERE class_id=m.class_id)  AS class_size
+                     FROM meetings m
+                     JOIN  classes c ON c.id = m.class_id
+                     LEFT JOIN subjects s ON s.id = m.subject_id
+                     JOIN  users u ON u.id = m.teacher_id
+                     WHERE m.school_id=? $teacherWhere $subjWhere
+                     ORDER BY m.meeting_date DESC, m.start_time DESC LIMIT 60",
+                    array_merge($params, $subjParam)
+                );
+            }
+            respond($rows ?? []);
+        }
+
+        if ($method === 'POST') {
+            require_role($auth, 'teacher', 'admin');
+            $title  = trim($body['title'] ?? '');
+            $link   = trim($body['google_meet_link'] ?? '');
+            $date   = trim($body['meeting_date'] ?? '');
+            $start  = trim($body['start_time'] ?? '');
+            $end    = trim($body['end_time'] ?? '');
+            // Accept class_ids (array) or legacy class_id (scalar)
+            $classIds = [];
+            if (!empty($body['class_ids']) && is_array($body['class_ids'])) {
+                $classIds = array_map('intval', $body['class_ids']);
+            } elseif (!empty($body['class_id'])) {
+                $classIds = [(int)$body['class_id']];
+            }
+            $classIds = array_values(array_unique($classIds));
+            if (!$title || empty($classIds) || !$link || !$date || !$start || !$end)
+                err('title, class_ids, google_meet_link, meeting_date, start_time, end_time required');
+            $teacherId  = ($role === 'admin' && !empty($body['teacher_id'])) ? (int)$body['teacher_id'] : $uid;
+            $subjId     = $body['subject_id'] ?: null;
+            $desc       = trim($body['description'] ?? '');
+            $createdIds = [];
+            foreach ($classIds as $cid) {
+                $cls = DB::fetchOne('SELECT id FROM classes WHERE id=? AND school_id=?', [$cid, $sid]);
+                if (!$cls) continue;
+                $newId = DB::insert(
+                    'INSERT INTO meetings (school_id,title,subject_id,teacher_id,class_id,google_meet_link,meeting_date,start_time,end_time,description)
+                     VALUES (?,?,?,?,?,?,?,?,?,?)',
+                    [$sid, $title, $subjId, $teacherId, $cid, $link, $date, $start, $end, $desc]
+                );
+                $createdIds[] = $newId;
+            }
+            if (empty($createdIds)) err('No valid classes found', 404);
+            respond(['ids' => $createdIds, 'count' => count($createdIds), 'message' => count($createdIds) . ' meeting(s) created']);
+        }
+        err('Method not allowed', 405);
+    }
+
+    // ── Single-meeting endpoints
+    $meeting = DB::fetchOne('SELECT * FROM meetings WHERE id=? AND school_id=?', [$id, $sid]);
+    if (!$meeting) err('Meeting not found', 404);
+
+    // POST /meetings/{id}/join
+    if ($sub === 'join' && $method === 'POST') {
+        require_role($auth, 'student');
+        if ($meeting['status'] === 'cancelled') err('This meeting has been cancelled', 410);
+        $enrolled = DB::fetchOne('SELECT 1 FROM class_students WHERE class_id=? AND student_id=?', [$meeting['class_id'], $uid]);
+        if (!$enrolled) err('You are not enrolled in this class', 403);
+
+        $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? null;
+        if ($ip) $ip = trim(explode(',', $ip)[0]);
+        $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500);
+
+        DB::execute(
+            'INSERT INTO meeting_attendance (meeting_id, student_id, joined_at, last_seen, ip_address, device_info)
+             VALUES (?,?,NOW(),NOW(),?,?)
+             ON DUPLICATE KEY UPDATE
+               joined_at   = IF(joined_at IS NULL, NOW(), joined_at),
+               last_seen   = NOW(),
+               ip_address  = VALUES(ip_address),
+               device_info = VALUES(device_info)',
+            [$id, $uid, $ip, $ua]
+        );
+        if ($meeting['status'] === 'scheduled') {
+            DB::execute("UPDATE meetings SET status='live' WHERE id=?", [$id]);
+        }
+        respond(['meet_link' => $meeting['google_meet_link']]);
+    }
+
+    // POST /meetings/{id}/heartbeat
+    if ($sub === 'heartbeat' && $method === 'POST') {
+        require_role($auth, 'student');
+        $att = DB::fetchOne('SELECT joined_at FROM meeting_attendance WHERE meeting_id=? AND student_id=?', [$id, $uid]);
+        if (!$att || !$att['joined_at']) err('No attendance record found', 404);
+        $dur    = (int)(DB::fetchOne('SELECT TIMESTAMPDIFF(MINUTE,?,NOW()) AS d', [$att['joined_at']])['d'] ?? 0);
+        $status = calcAttendanceStatus($dur);
+        DB::execute(
+            'UPDATE meeting_attendance SET last_seen=NOW(), duration_minutes=?, attendance_status=? WHERE meeting_id=? AND student_id=?',
+            [$dur, $status, $id, $uid]
+        );
+        respond(['duration_minutes' => $dur, 'status' => $status]);
+    }
+
+    // GET /meetings/{id}/attendance
+    if ($sub === 'attendance' && $method === 'GET') {
+        require_role($auth, 'teacher', 'admin');
+        if ($role === 'teacher' && (int)$meeting['teacher_id'] !== (int)$uid) err('Not your meeting', 403);
+        $rows = DB::fetchAll(
+            "SELECT u.id, u.first_name, u.last_name, u.avatar_color,
+                    ma.joined_at, ma.last_seen, ma.duration_minutes, ma.attendance_status, ma.ip_address
+             FROM class_students cs
+             JOIN users u ON u.id = cs.student_id
+             LEFT JOIN meeting_attendance ma ON ma.meeting_id=? AND ma.student_id=u.id
+             WHERE cs.class_id=?
+             ORDER BY COALESCE(ma.attendance_status,'absent') ASC, u.last_name, u.first_name",
+            [$id, $meeting['class_id']]
+        );
+        $cls = DB::fetchOne('SELECT name FROM classes WHERE id=?', [$meeting['class_id']]);
+        $total   = count($rows);
+        $present = count(array_filter($rows, fn($r) => ($r['attendance_status'] ?? '') === 'present'));
+        $late    = count(array_filter($rows, fn($r) => ($r['attendance_status'] ?? '') === 'late'));
+        $partial = count(array_filter($rows, fn($r) => ($r['attendance_status'] ?? '') === 'partial'));
+        $absent  = $total - $present - $late - $partial;
+        $out     = $meeting; unset($out['google_meet_link']);
+        respond([
+            'meeting'    => $out,
+            'class_name' => $cls['name'] ?? '',
+            'attendance' => $rows,
+            'summary'    => ['total'=>$total,'present'=>$present,'late'=>$late,'partial'=>$partial,'absent'=>$absent],
+        ]);
+    }
+
+    // PATCH /meetings/{id}
+    if ($method === 'PATCH') {
+        require_role($auth, 'teacher', 'admin');
+        if ($role === 'teacher' && (int)$meeting['teacher_id'] !== $uid) err('Not your meeting', 403);
+        $fields = []; $vals = [];
+        foreach (['title','google_meet_link','meeting_date','start_time','end_time','description','status'] as $f) {
+            if (array_key_exists($f, $body)) { $fields[] = "$f=?"; $vals[] = $body[$f]; }
+        }
+        if (array_key_exists('subject_id', $body)) { $fields[] = 'subject_id=?'; $vals[] = $body['subject_id'] ?: null; }
+        if (!empty($body['class_id'])) {
+            $newCls = DB::fetchOne('SELECT id FROM classes WHERE id=? AND school_id=?', [(int)$body['class_id'], $sid]);
+            if ($newCls) { $fields[] = 'class_id=?'; $vals[] = (int)$body['class_id']; }
+        }
+        if (!$fields) err('Nothing to update');
+        $vals[] = $id;
+        DB::execute('UPDATE meetings SET ' . implode(',', $fields) . ' WHERE id=?', $vals);
+        respond(['message' => 'Meeting updated']);
+    }
+
+    // DELETE /meetings/{id}  → soft-cancel
+    if ($method === 'DELETE') {
+        require_role($auth, 'teacher', 'admin');
+        if ($role === 'teacher' && (int)$meeting['teacher_id'] !== $uid) err('Not your meeting', 403);
+        DB::execute("UPDATE meetings SET status='cancelled' WHERE id=?", [$id]);
+        respond(['message' => 'Meeting cancelled']);
+    }
+
+    // GET /meetings/{id}
+    if ($method === 'GET') {
+        if ($role === 'student') {
+            $enrolled = DB::fetchOne('SELECT 1 FROM class_students WHERE class_id=? AND student_id=?', [$meeting['class_id'], $uid]);
+            if (!$enrolled) err('Access denied', 403);
+            unset($meeting['google_meet_link']); // students never get the raw link
+        }
+        // Enrich with class_name for the edit modal
+        $cls = DB::fetchOne('SELECT name FROM classes WHERE id=?', [$meeting['class_id']]);
+        $meeting['class_name'] = $cls['name'] ?? '';
+        respond($meeting);
+    }
+
+    err('Not found', 404);
 }
 
 function ensureSubjectSchema(): void {

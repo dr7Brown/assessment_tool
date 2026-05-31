@@ -600,11 +600,64 @@ show under "Fill in" in question bank.: done
 the subject on the context bar as well as semester based or overall based.
 2. Create teacher analytics too on admin dashboard, should be semester, year or overall analytics
 
-next:
+next: entered
 1. when setting test, the current semester should be the default, unless teacher changes it
+2. school data under admin >settings >general not saved
+3. admin unable to set academic year and semester periods. 
+when i click on "set period" under settings> academic year, nothing happens
+4.complete the components of the report on admin dashboard. should be School, year, semester, subject, teacher, students, class based.
+add all feature that a good assessment management must have
 
+next: all done
+1. Allow admin to edit, delete, activate as current, deactivate existing academic semester
+2. allow only one active semester in a year group. rest should be inactive.  any time a semester is marked
+active, all others in the same year group should be marked inactive.
+3. add other functionality a good assessment platform for ghana shs school should have
 
+next: all done
+1. add "join live quiz" to student side bar item
+2. why am i getting undefined when i open result sheet on table heading (#	Student	undefined	undefined	undefined	undefined	undefined	undefined	undefined	undefined	undefined	Overall	Grade)
+and below too, the grades (A1: 80–100% (undefined)
+B2: 70–79% (undefined)
+B3: 60–69% (undefined)
+C4: 55–59% (undefined)
+C5: 50–54% (undefined)
+C6: 45–49% (undefined)
+D7: 40–44% (undefined)
+E8: 35–39% (undefined)
+F9: 0–34% (undefined))
 
+next: 
+the grading are in decimals, i want it in integers. (A1: 80.00–100.00% (Excellent)
+B2: 70.00–79.00% (Very Good)
+B3: 60.00–69.00% (Good)
+C4: 55.00–59.00% (Credit)
+C5: 50.00–54.00% (Credit)
+C6: 45.00–49.00% (Credit)
+D7: 40.00–44.00% (Pass)
+E8: 35.00–39.00% (Pass)
+F9: 0.00–34.00% (Fail))
 
+fix it under settings "Grade boundaries" too
 
+next: done
+1. bulk upload for question bank works but for only MCQ, i want you
+to do that to allow all question type, use drop down to select the 
+question type, then it do that 
 
+next: 
+students live class and teacher Meetings sidebar items do not reflect subject
+selected on context bar. currently showing all meetings irrespective of the subject
+
+next: 
+take yourself to be the owner of the system, and you want it to be one of its kind
+best to catch the attention of all school administrators.
+what features would you have added?
+
+next: 
+1. add analytics of meeting attendance to already attendance analytics.
+3. Offline-First Mode
+Rural schools have unreliable internet. Students download a test, 
+complete it offline, and it syncs when they reconnect. 
+A small badge on the topbar shows "3 results pending sync." 
+This removes the biggest objection administrators have.

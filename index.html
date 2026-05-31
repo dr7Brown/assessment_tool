@@ -280,6 +280,8 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="nav-item active" onclick="sNav('dashboard',this)"><div class="ni-icon">📊</div>Dashboard</div>
         <div class="nav-item" onclick="sNav('my-tests',this)"><div class="ni-icon">📋</div>My tests<span class="nav-badge" id="s-due-badge" style="display:none"></span></div>
         <div class="nav-item" onclick="sNav('practice',this)"><div class="ni-icon">🎯</div>Practice mode</div>
+        <div class="nav-item" onclick="openJoinLiveModal()"><div class="ni-icon">⚡</div>Join live quiz</div>
+        <div class="nav-item" onclick="sNav('live-classes',this)"><div class="ni-icon">📅</div>Live classes</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">Progress</div>
@@ -348,6 +350,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="nav-item active" onclick="tNav('dashboard',this)"><div class="ni-icon">📊</div>Dashboard</div>
         <div class="nav-item" onclick="tNav('tests',this)"><div class="ni-icon">📋</div>Tests</div>
         <div class="nav-item" onclick="tNav('live',this)"><div class="ni-icon">⚡</div>Live quiz</div>
+        <div class="nav-item" onclick="tNav('meetings',this)"><div class="ni-icon">📅</div>Meetings</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">Classes</div>
@@ -409,7 +412,9 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="nav-item" onclick="aNav('classes',this)"><div class="ni-icon">🗂️</div>Classes</div>
         <div class="nav-item" onclick="aNav('subjects',this)"><div class="ni-icon">📖</div>Subjects</div>
         <div class="nav-item" onclick="aNav('reports',this)"><div class="ni-icon">📊</div>Reports</div>
+        <div class="nav-item" onclick="openSemesterResultSheet()"><div class="ni-icon">📄</div>Result sheets</div>
         <div class="nav-item" onclick="aNav('analytics',this)"><div class="ni-icon">📈</div>Analytics</div>
+        <div class="nav-item" onclick="aNav('meetings',this)"><div class="ni-icon">📅</div>Meetings</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">Management</div>
@@ -745,13 +750,23 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
       <button class="modal-close" onclick="closeModal('bulk-upload-modal')">&#x2715;</button>
     </div>
     <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label" style="font-weight:700">Question type</label>
+        <select id="bulk-qtype" class="form-select" onchange="updateBulkTypeUI()">
+          <option value="mcq">MCQ — Multiple Choice</option>
+          <option value="tf">True / False</option>
+          <option value="short">Short Answer</option>
+          <option value="fill-in">Fill-in the Blank</option>
+          <option value="essay">Essay</option>
+        </select>
+      </div>
       <div class="tab-bar">
         <button class="tab-btn active" onclick="switchTab(this,'bulk-csv')">Upload CSV</button>
         <button class="tab-btn" onclick="switchTab(this,'bulk-paste')">Paste from Excel</button>
         <button class="tab-btn" onclick="switchTab(this,'bulk-template')">Download template</button>
       </div>
       <div id="bulk-csv" class="tab-pane active">
-        <div class="info-box blue" style="margin-bottom:16px">
+        <div class="info-box blue" id="bulk-type-info" style="margin-bottom:16px">
           Required columns: <b>question_text, A, B, C, D, correct, sub_strand, difficulty</b><br>
           The <b>correct</b> column should contain A, B, C or D.
         </div>
@@ -769,7 +784,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
       <div id="bulk-paste" class="tab-pane">
         <div class="info-box blue" style="margin-bottom:12px">Copy from Excel and paste below. First row must be the header.</div>
         <textarea class="form-textarea" id="paste-area" rows="8"
-          placeholder="Paste Excel data here (tab-separated)&#10;question_text&#9;A&#9;B&#9;C&#9;D&#9;correct&#9;sub_strand&#9;difficulty"></textarea>
+          id="paste-area" placeholder="Paste Excel data here (tab-separated)&#10;question_text&#9;A&#9;B&#9;C&#9;D&#9;correct&#9;sub_strand&#9;difficulty"></textarea>
         <button class="btn btn-secondary" style="margin-top:8px" onclick="parsePastedData()">Parse pasted data</button>
       </div>
       <div id="bulk-template" class="tab-pane">
@@ -1707,6 +1722,7 @@ function sRender(v){
   else if(v==='history')    loadHistory(m);
   else if(v==='quiz')       renderQuizPanel(m);
   else if(v==='results')    renderResultsPanel(m);
+  else if(v==='live-classes') loadSLiveClasses(m);
   else if(v==='messages')   loadStudentMessages(m);
   else if(v==='chat')       loadGroupChat(m,'s');
 }
@@ -1797,6 +1813,7 @@ async function loadDash(m) {
       `<div class="stat-card"><div class="label">Best score</div><div class="value" style="color:${pctCol(Math.round(stats.best_pct||0))}">${Math.round(stats.best_pct||0)}%</div><div class="trend">in ${subjName}</div></div>`}
     <div class="stat-card"><div class="label">Study streak</div><div class="value" style="color:var(--purple)">${streak}</div><div class="trend">days 🔥</div></div>
   </div>
+  <div id="s-dash-meetings-card" style="display:none;margin-bottom:20px"></div>
   <div class="grid-2" style="margin-bottom:20px">
     <div class="card">
       <div class="card-header">
@@ -1938,6 +1955,37 @@ async function loadMyTests(m) {
     </div>
   </div>
 </div>`;
+  // Async-inject upcoming live classes card (non-blocking)
+  GET('/meetings', SCTX.subject_id ? { subject_id: SCTX.subject_id } : {}).then(meets => {
+    const el = document.getElementById('s-dash-meetings-card');
+    if (!el || !meets?.length) return;
+    const today = new Date().toISOString().split('T')[0];
+    const upcoming = meets.filter(mt => mt.meeting_date >= today).slice(0, 3);
+    if (!upcoming.length) return;
+    const STATUS = { live:'<span class="badge badge-green">Live now</span>', scheduled:'<span class="badge badge-blue">Scheduled</span>' };
+    el.innerHTML = `<div class="card">
+      <div class="card-header">
+        <div><div class="card-title">📅 Upcoming live classes</div></div>
+        <button class="btn btn-ghost" onclick="sNav('live-classes',null)">View all →</button>
+      </div>
+      ${upcoming.map(mt => {
+        const now = new Date(), mStart = new Date(mt.meeting_date+'T'+(mt.start_time||'00:00'));
+        const mEnd   = new Date(mt.meeting_date+'T'+(mt.end_time||'23:59'));
+        const canJoin = now >= new Date(mStart-30*60*1000) && now <= new Date(mEnd.getTime()+30*60*1000);
+        const joined  = mt.attendance_status && mt.attendance_status !== 'absent';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px">${mt.title}</div>
+            <div style="font-size:12px;color:var(--text-3)">${mt.class_name} · ${fmtDate(mt.meeting_date)} ${(mt.start_time||'').slice(0,5)}–${(mt.end_time||'').slice(0,5)}</div>
+          </div>
+          ${STATUS[mt.status]||''}
+          ${joined ? `<span class="badge badge-green">Joined ✓</span>` :
+            canJoin ? `<button class="btn btn-primary btn-sm" onclick="joinMeeting(${mt.id})">Join →</button>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`;
+    el.style.display = '';
+  }).catch(() => {});
 }
 
 // ── Practice ───────────────────────────────────────────────────
@@ -2666,6 +2714,7 @@ function tRender(v){
   else if(v==='classes')   loadTClasses(m);
   else if(v==='marking')   loadTMarking(m);
   else if(v==='analytics') loadTAnalytics(m);
+  else if(v==='meetings')  loadTMeetings(m);
   else if(v==='messages')  loadTMessages(m);
   else if(v==='chat')      loadGroupChat(m,'t');
 }
@@ -4492,14 +4541,10 @@ async function loadTCreate(m, prefill) {
                title="Academic year is set by your administrator">
             ${t.academic_year || TCTX.academic_year || '— auto-detected —'}
           </div>
-          <input type="hidden" id="new-test-academic-year" value="${t.academic_year || TCTX.academic_year || ''}">
+          <input type="hidden" id="new-test-academic-year" value="${t.academic_year || TCTX.academic_year || (()=>{const m=new Date().getMonth()+1,y=new Date().getFullYear();return (m>=8?y:y-1)+'/'+(m>=8?y+1:y);})()}">
         </div>
         <div class="form-group"><label class="form-label">Semester</label>
-          <select class="form-select" id="new-test-semester">
-            <option value="" ${!t.semester?'selected':''}>— Auto-detect —</option>
-            <option value="1" ${t.semester==1?'selected':''}>Semester 1</option>
-            <option value="2" ${t.semester==2?'selected':''}>Semester 2</option>
-          </select>
+          ${(()=>{ const d=t.semester||TCTX.semester||([8,9,10,11,12,1].includes(new Date().getMonth()+1)?1:2); return '<select class=\"form-select\" id=\"new-test-semester\"><option value=\"\">— Auto-detect —</option><option value=\"1\" '+(d==1?'selected':'')+'>Semester 1</option><option value=\"2\" '+(d==2?'selected':'')+'>Semester 2</option></select>'; })()}
         </div>
         <div class="form-group"><label class="form-label">Time limit</label>
           <select class="form-select" id="new-test-time">
@@ -4996,6 +5041,7 @@ function aRender(v){
   else if(v==='messages')    loadAMessages(m);
   else if(v==='chat')        loadGroupChat(m,'a');
   else if(v==='promotion')   loadAPromotion(m);
+  else if(v==='meetings')    loadAMeetings(m);
 }
 
 // ── Admin Question Bank ────────────────────────────────────────
@@ -5304,80 +5350,60 @@ async function loadAAcademicPeriods(m) {
     </table>` : '<div style="padding:20px;color:var(--text-3)">No history yet — set the first period above.</div>'}
   </div>
 
-  <!-- Set period modal (inline) -->
-  <div id="ap-set-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:600;display:none;align-items:center;justify-content:center">
-    <div style="background:#fff;border-radius:12px;padding:28px;width:100%;max-width:420px;box-shadow:0 8px 40px rgba(0,0,0,.18)">
-      <div style="font-size:17px;font-weight:800;margin-bottom:20px" id="ap-modal-title">Set period — Year 1</div>
-      <input type="hidden" id="ap-yg">
-      <div class="form-group">
-        <label class="form-label">Academic year <span style="font-weight:400;color:var(--text-3)">(e.g. 2024/2025)</span></label>
-        <input class="form-input" id="ap-year" placeholder="2024/2025" pattern="\\d{4}/\\d{4}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Semester</label>
-        <select class="form-select" id="ap-sem">
-          <option value="1">Semester 1 (Sep – Jan)</option>
-          <option value="2">Semester 2 (Feb – Jul)</option>
-        </select>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="form-group">
-          <label class="form-label">Start date</label>
-          <input class="form-input" id="ap-start" type="date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">End date</label>
-          <input class="form-input" id="ap-end" type="date">
-        </div>
-      </div>
-      <div class="info-box blue" style="font-size:12px;margin-bottom:16px">
-        All new tests and student submissions for <b>Year Group <span id="ap-yg-label">1</span></b> will be tagged with this period going forward.
-      </div>
-      <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button class="btn btn-secondary" onclick="document.getElementById('ap-set-modal').style.display='none'">Cancel</button>
-        <button class="btn btn-primary" onclick="apSavePeriod()">Save period →</button>
-      </div>
-    </div>
-  </div>
+  
 </div>`;
 }
 
 function apOpenSetModal(yg, currentYear, currentSem) {
-  const modal = document.getElementById('ap-set-modal');
-  if (!modal) return;
-  document.getElementById('ap-yg').value        = yg;
-  document.getElementById('ap-yg-label').textContent = yg;
-  document.getElementById('ap-modal-title').textContent = `Set period — Year Group ${yg}`;
-  // Suggest next period if current is known
-  if (currentYear) {
-    document.getElementById('ap-year').value = currentYear;
-    document.getElementById('ap-sem').value  = currentSem;
-  } else {
-    // Suggest current date-based period
-    const m = new Date().getMonth() + 1;
-    const y = new Date().getFullYear();
-    document.getElementById('ap-year').value = (m >= 8 ? y : y-1) + '/' + (m >= 8 ? y+1 : y);
-    document.getElementById('ap-sem').value  = [8,9,10,11,12,1].includes(m) ? '1' : '2';
-  }
-  modal.style.display = 'flex';
-}
+  // Suggest a period value
+  const m = new Date().getMonth() + 1;
+  const y = new Date().getFullYear();
+  const suggestYear = currentYear || ((m >= 8 ? y : y-1) + '/' + (m >= 8 ? y+1 : y));
+  const suggestSem  = currentSem  || ([8,9,10,11,12,1].includes(m) ? 1 : 2);
 
-async function apSavePeriod() {
-  const yg    = parseInt(document.getElementById('ap-yg').value);
-  const year  = document.getElementById('ap-year').value.trim();
-  const sem   = parseInt(document.getElementById('ap-sem').value);
-  const start = document.getElementById('ap-start')?.value || null;
-  const end   = document.getElementById('ap-end')?.value   || null;
-  if (!year || !/^\d{4}\/\d{4}$/.test(year)) { notify('Enter academic year as YYYY/YYYY (e.g. 2024/2025)', 'error'); return; }
-  try {
-    await POST('/academic-periods', { year_group: yg, academic_year: year, semester: sem, start_date: start, end_date: end });
-    document.getElementById('ap-set-modal').style.display = 'none';
-    notify(`Year ${yg} period updated: ${year} Semester ${sem}`, 'success');
-    // Refresh whichever settings tab is open
-    const tab = document.getElementById('st-academic-content');
-    if (tab) loadAcademicTab();
-    else loadAAcademicPeriods(document.getElementById('a-main'));
-  } catch(e) { notify(e.message, 'error'); }
+  adminModal(
+    `Set period — Year Group ${yg}`,
+    `<input type="hidden" id="ap-yg-val" value="${yg}">
+     <div class="form-group">
+       <label class="form-label">Academic year <span style="font-weight:400;color:var(--text-3)">(e.g. 2024/2025)</span></label>
+       <input class="form-input" id="ap-year" value="${suggestYear}" placeholder="2024/2025" pattern="\\d{4}/\\d{4}">
+     </div>
+     <div class="form-group">
+       <label class="form-label">Semester</label>
+       <select class="form-select" id="ap-sem">
+         <option value="1" ${suggestSem==1?'selected':''}>Semester 1 (Sep – Jan)</option>
+         <option value="2" ${suggestSem==2?'selected':''}>Semester 2 (Feb – Jul)</option>
+       </select>
+     </div>
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+       <div class="form-group">
+         <label class="form-label">Start date <span style="font-weight:400;color:var(--text-3)">(optional)</span></label>
+         <input class="form-input" id="ap-start" type="date">
+       </div>
+       <div class="form-group">
+         <label class="form-label">End date <span style="font-weight:400;color:var(--text-3)">(optional)</span></label>
+         <input class="form-input" id="ap-end" type="date">
+       </div>
+     </div>
+     <div class="info-box blue" style="font-size:12px">
+       All new tests and student submissions for <b>Year Group ${yg}</b> will be tagged with this period going forward.
+     </div>`,
+    async () => {
+      const ygv   = parseInt(document.getElementById('ap-yg-val').value);
+      const year  = document.getElementById('ap-year').value.trim();
+      const sem   = parseInt(document.getElementById('ap-sem').value);
+      const start = document.getElementById('ap-start')?.value || null;
+      const end   = document.getElementById('ap-end')?.value   || null;
+      if (!year || !/^\d{4}\/\d{4}$/.test(year)) { notify('Enter academic year as YYYY/YYYY (e.g. 2024/2025)', 'error'); return; }
+      await POST('/academic-periods', { year_group: ygv, academic_year: year, semester: sem, start_date: start, end_date: end });
+      document.getElementById('adm-modal')?.remove();
+      notify(`Year ${ygv} period set: ${year} Semester ${sem}`, 'success');
+      const tab = document.getElementById('st-academic-content');
+      if (tab) loadAcademicTab();
+      else loadAAcademicPeriods(document.getElementById('a-main'));
+    },
+    'Save period →'
+  );
 }
 
 async function loadAAnalytics(m) {
@@ -6837,19 +6863,244 @@ async function csSetStudentGroup(studentId, groupTag) {
   } catch(e) { notify(e.message, 'error'); }
 }
 
-function loadAReports(m){
-  const reports=[{i:'📊',t:'Term 2 Performance Report',d:'Class-by-class breakdown. GES format. PDF and Excel.'},{i:'🎓',t:'Student Progress Summary',d:'Individual performance across all sub-strands.'},{i:'⚠️',t:'At-Risk Student Report',d:'Students below 50% with recommended interventions.'},{i:'📈',t:'WASSCE Readiness Forecast',d:'Predicted grade distribution based on current data.'},{i:'📋',t:'Teacher Assessment Activity',d:'Tests created, essays marked and analytics per teacher.'},{i:'🇬🇭',t:'GES Annual Return',d:'Formatted for Ghana Education Service reporting.'}];
-  m.innerHTML=`
-<div class="topbar"><div class="topbar-title">Reports</div><div class="topbar-actions"><button class="btn btn-primary" onclick="notify('Generating all reports...','success')">Generate all</button></div></div>
-<div class="page"><div class="grid-3">
-  ${reports.map(r=>`<div class="report-card" onclick="downloadReport('${r.t}')">
-    <div style="font-size:28px;margin-bottom:10px">${r.i}</div>
-    <div style="font-size:14px;font-weight:700;margin-bottom:4px">${r.t}</div>
-    <div style="font-size:12px;color:var(--text-3);line-height:1.5">${r.d}</div>
-    <div style="margin-top:12px"><span class="badge badge-green">Ready</span></div>
-  </div>`).join('')}
-</div></div>`;
+async function loadAReports(m) {
+  m.innerHTML = panelLoader();
+  // Fetch data needed for reports
+  let analytics = null, teachers = [], classes = [], apData = null;
+  try {
+    [analytics, teachers, classes, apData] = await Promise.all([
+      GET('/analytics/school').catch(()=>null),
+      GET('/teachers').catch(()=>[]),
+      GET('/classes').catch(()=>[]),
+      GET('/academic-periods').catch(()=>null),
+    ]);
+  } catch(e) {}
+  const ov       = analytics?.overview    || {};
+  const atRisk   = analytics?.at_risk     || [];
+  const bySubj   = analytics?.by_subject  || [];
+  const perClass = analytics?.per_class   || [];
+  const allPeriods = apData?.available   || [];
+
+  const schoolName = CURRENT_USER?.school_name || 'School';
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GH',{day:'numeric',month:'short',year:'numeric'}) : '—';
+
+  // Report filter state
+  if (!window._rptFilter) window._rptFilter = { semester: '', academic_year: '', subject: '', teacher: '', class_id: '' };
+
+  const periodOpts = [`<option value="">All periods</option>`,
+    ...allPeriods.map(p=>`<option value="${p.academic_year}|${p.semester}">${p.academic_year} · Sem ${p.semester}</option>`)
+  ].join('');
+  const teacherOpts = [`<option value="">All teachers</option>`,
+    ...(teachers||[]).map(t=>`<option value="${t.teacher_id}">${t.teacher_name}</option>`)
+  ].join('');
+  const classOpts = [`<option value="">All classes</option>`,
+    ...(classes||[]).map(c=>`<option value="${c.id}">${c.name} (Year ${c.year_group})</option>`)
+  ].join('');
+  const subjOpts = [`<option value="">All subjects</option>`,
+    ...bySubj.map(s=>`<option value="${s.subject_id}">${s.subject_name}</option>`)
+  ].join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Reports</div>
+  <div class="topbar-sub">${schoolName} · ${new Date().toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="printCurrentPage('Reports','rpt-page')">🖨 Print all</button>
+  </div>
+</div>
+<div class="page" id="rpt-page">
+
+  <!-- ── FILTERS ── -->
+  <div class="card" style="padding:16px;margin-bottom:20px">
+    <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Report filters</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div><label class="form-label" style="font-size:11px">Period</label>
+        <select class="form-select" style="min-width:180px" onchange="rptApplyFilter('period',this.value)">${periodOpts}</select></div>
+      <div><label class="form-label" style="font-size:11px">Subject</label>
+        <select class="form-select" style="min-width:160px" onchange="rptApplyFilter('subject',this.value)">${subjOpts}</select></div>
+      <div><label class="form-label" style="font-size:11px">Teacher</label>
+        <select class="form-select" style="min-width:170px" onchange="rptApplyFilter('teacher',this.value)">${teacherOpts}</select></div>
+      <div><label class="form-label" style="font-size:11px">Class</label>
+        <select class="form-select" style="min-width:160px" onchange="rptApplyFilter('class',this.value)">${classOpts}</select></div>
+      <button class="btn btn-ghost btn-sm" onclick="rptClearFilters()">Clear</button>
+      <button class="btn btn-primary btn-sm" onclick="rptRefresh()">Apply →</button>
+    </div>
+  </div>
+
+  <!-- ── SUMMARY STATS ── -->
+  <div class="stats-row" style="margin-bottom:20px">
+    <div class="stat-card"><div class="label">Total students</div><div class="value">${ov.student_count||0}</div></div>
+    <div class="stat-card"><div class="label">School average</div><div class="value" style="color:${col(Math.round(parseFloat(ov.school_avg)||0))}">${Math.round(parseFloat(ov.school_avg)||0)}%</div></div>
+    <div class="stat-card"><div class="label">Active classes</div><div class="value">${ov.class_count||0}</div></div>
+    <div class="stat-card"><div class="label">Tests conducted</div><div class="value">${ov.test_count||0}</div></div>
+    <div class="stat-card"><div class="label">At-risk students</div><div class="value" style="color:var(--coral)">${atRisk.length}</div></div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:20px">
+    <!-- Class performance -->
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Class performance</div><div class="card-sub">${perClass.length} classes</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="rptExportClass()">⬇ Export</button>
+      </div>
+      ${perClass.length ? `<table class="data-table">
+        <thead><tr><th>Class</th><th>Year</th><th>Students</th><th>Avg</th><th>Pass count</th></tr></thead>
+        <tbody>${perClass.map(c=>{const avg=Math.round(parseFloat(c.class_avg)||0);return`<tr>
+          <td><b>${c.class_name}</b></td>
+          <td><span class="badge badge-gray" style="font-size:10px">Year ${c.year_group}</span></td>
+          <td>${c.student_count||0}</td>
+          <td><span style="font-weight:700;color:${col(avg)}">${avg}%</span></td>
+          <td>${c.pass_count||0}</td>
+        </tr>`;}).join('')}</tbody>
+      </table>` : '<div style="padding:16px;color:var(--text-3)">No data. Publish tests and have students submit.</div>'}
+    </div>
+
+    <!-- Subject performance -->
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">Subject performance</div><div class="card-sub">${bySubj.length} subjects</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="rptExportSubject()">⬇ Export</button>
+      </div>
+      ${bySubj.length ? `<div class="bar-chart">${bySubj.map(s=>{const v=Math.round(parseFloat(s.avg_pct)||0);return`
+        <div class="bar-row">
+          <div class="bar-label" style="width:140px">${s.subject_short||s.subject_name}</div>
+          <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
+          <div class="bar-val" style="color:${col(v)}">${v}%</div>
+          <span style="font-size:10px;color:var(--text-3);margin-left:6px">${s.test_count}t · ${s.student_count}s</span>
+        </div>`;}).join('')}</div>`
+        : '<div style="padding:16px;color:var(--text-3)">No subject data yet.</div>'}
+    </div>
+  </div>
+
+  <!-- At-risk students -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div><div class="card-title">At-risk students</div><div class="card-sub">Below 50% · ${atRisk.length} students</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="rptExportAtRisk()">⬇ Export</button>
+    </div>
+    ${atRisk.length ? `<table class="data-table" id="rpt-atrisk-tbl">
+      <thead><tr><th>Student</th><th>Class</th><th>Average</th><th>Status</th><th></th></tr></thead>
+      <tbody>${atRisk.map(s=>{const avg=Math.round(parseFloat(s.avg_pct)||0);return`<tr>
+        <td><b>${s.first_name} ${s.last_name}</b></td>
+        <td>${s.class_name||'—'}</td>
+        <td><span style="font-weight:700;color:var(--coral)">${avg}%</span></td>
+        <td><span class="badge badge-coral" style="font-size:10px">At risk</span></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${s.id})">View</button></td>
+      </tr>`;}).join('')}</tbody>
+    </table>` : '<div style="padding:16px;color:var(--green)">✓ No at-risk students currently.</div>'}
+  </div>
+
+  <!-- Teacher activity -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div><div class="card-title">Teacher assessment activity</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="rptExportTeachers()">⬇ Export</button>
+    </div>
+    ${teachers.length ? `<table class="data-table">
+      <thead><tr><th>Teacher</th><th>Department</th><th>Tests created</th><th>Questions</th><th>Students assessed</th></tr></thead>
+      <tbody>${teachers.map(t=>`<tr>
+        <td><b>${t.teacher_name||t.first_name+' '+t.last_name}</b></td>
+        <td style="color:var(--text-3)">${t.department_name||'—'}</td>
+        <td>${t.test_count||0}</td>
+        <td>${t.question_count||0}</td>
+        <td>${t.students_tested||t.class_count||0}</td>
+      </tr>`).join('')}</tbody>
+    </table>` : '<div style="padding:16px;color:var(--text-3)">No teacher data available.</div>'}
+  </div>
+
+  <!-- Quick export cards -->
+  <div class="grid-3">
+    ${[
+      {i:'📊',t:'School performance report',d:'Full school breakdown by class, subject, teacher',fn:'rptExportSchool'},
+      {i:'🎓',t:'Student progress report',d:'Individual performance and WASSCE readiness',fn:'rptExportStudents'},
+      {i:'⚠️',t:'At-risk intervention list',d:'Students needing support with suggested actions',fn:'rptExportAtRisk'},
+      {i:'📈',t:'WASSCE readiness forecast',d:'Grade distribution prediction based on current data',fn:'rptExportWassce'},
+      {i:'📋',t:'Test completion report',d:'Submitted vs assigned per class and subject',fn:'rptExportCompletion'},
+      {i:'📄',t:'Semester result sheet',d:'Full class result sheet with GES A1–F9 grades per student per subject',fn:'openSemesterResultSheet'},
+      {i:'🇬🇭',t:'GES annual return data',d:'Formatted for Ghana Education Service reporting',fn:'rptExportGES'},
+    ].map(r=>`
+    <div class="report-card" onclick="${r.fn}()" style="cursor:pointer">
+      <div style="font-size:28px;margin-bottom:10px">${r.i}</div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${r.t}</div>
+      <div style="font-size:12px;color:var(--text-3);line-height:1.5">${r.d}</div>
+      <div style="margin-top:12px"><span class="badge badge-green" style="font-size:10px">Export →</span></div>
+    </div>`).join('')}
+  </div>
+</div>`;
+
+  // Store data for exports
+  window._rptData = { analytics, teachers, classes, bySubj, perClass, atRisk, schoolName, apData };
 }
+
+function rptApplyFilter(type, val) {
+  if (!window._rptFilter) window._rptFilter = {};
+  if (type === 'period') {
+    if (val) { const [ay,sem] = val.split('|'); window._rptFilter.academic_year = ay; window._rptFilter.semester = sem; }
+    else { delete window._rptFilter.academic_year; delete window._rptFilter.semester; }
+  } else if (type === 'subject')  window._rptFilter.subject_id = val || '';
+  else if (type === 'teacher')    window._rptFilter.teacher_id  = val || '';
+  else if (type === 'class')      window._rptFilter.class_id    = val || '';
+}
+
+function rptClearFilters() {
+  window._rptFilter = {};
+  const m = document.getElementById('a-main');
+  if (m) loadAReports(m);
+}
+
+async function rptRefresh() {
+  // Re-fetch with filters applied
+  const f = window._rptFilter || {};
+  const params = {};
+  if (f.academic_year) params.academic_year = f.academic_year;
+  if (f.semester)      params.semester      = f.semester;
+  if (f.subject_id)    params.subject_id    = f.subject_id;
+  let analytics = null;
+  try { analytics = await GET('/analytics/school', params); } catch(e) {}
+  if (!analytics) { notify('No data for selected filters', 'warn'); return; }
+
+  const d = window._rptData || {};
+  const perClass = analytics?.per_class || d.perClass || [];
+  const bySubj   = analytics?.by_subject || d.bySubj || [];
+  const atRisk   = analytics?.at_risk || [];
+  const ov       = analytics?.overview || {};
+  window._rptData = {...d, analytics, perClass, bySubj, atRisk, ov};
+  notify('Filters applied — export buttons now use filtered data', 'success');
+}
+
+// ── Report exports ────────────────────────────────────────────
+function rptExportSchool() {
+  const d = window._rptData || {}; const perClass = d.perClass || [];
+  const headers = ['Class','Year Group','Students','Avg Score %','Pass Count','Pass Rate %'];
+  const rows = perClass.map(c=>{const avg=Math.round(parseFloat(c.class_avg)||0);const pr=c.pass_count&&c.student_count?Math.round(c.pass_count/c.student_count*100):0;return[c.class_name,`Year ${c.year_group}`,c.student_count,avg,c.pass_count,pr];});
+  exportToXLS(`${d.schoolName||'School'}_performance_${new Date().toISOString().slice(0,10)}`,headers,rows,'School Performance',{school:d.schoolName,rows:[['Report:','School Performance'],['Date:',new Date().toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'})],['Total Students:',String(d.analytics?.overview?.student_count||0)],['School Average:',Math.round(parseFloat(d.analytics?.overview?.school_avg)||0)+'%']]});
+}
+
+function rptExportAtRisk() {
+  const d = window._rptData || {}; const atRisk = d.atRisk || [];
+  const headers = ['Student','Class','Average %','Status'];
+  const rows = atRisk.map(s=>[`${s.first_name} ${s.last_name}`,s.class_name||'—',Math.round(parseFloat(s.avg_pct)||0),'At risk']);
+  exportToXLS(`at_risk_students_${new Date().toISOString().slice(0,10)}`,headers,rows,'At-Risk Students',{school:d.schoolName,rows:[['Report:','At-Risk Students'],['Date:',new Date().toLocaleDateString('en-GH')],['Count:',String(atRisk.length)]]});
+}
+
+function rptExportSubject() {
+  const d = window._rptData || {}; const bySubj = d.bySubj || [];
+  const headers = ['Subject','Avg Score %','Tests','Students'];
+  const rows = bySubj.map(s=>[s.subject_name,Math.round(parseFloat(s.avg_pct)||0),s.test_count||0,s.student_count||0]);
+  exportToXLS(`subject_performance_${new Date().toISOString().slice(0,10)}`,headers,rows,'By Subject',{school:d.schoolName,rows:[['Report:','Subject Performance Report'],['Date:',new Date().toLocaleDateString('en-GH')]]});
+}
+
+function rptExportTeachers() {
+  const d = window._rptData || {}; const teachers = d.teachers || [];
+  const headers = ['Teacher','Department','Tests','Questions','Students Assessed'];
+  const rows = teachers.map(t=>[t.teacher_name||`${t.first_name} ${t.last_name}`,t.department_name||'—',t.test_count||0,t.question_count||0,t.students_tested||0]);
+  exportToXLS(`teacher_activity_${new Date().toISOString().slice(0,10)}`,headers,rows,'Teacher Activity',{school:d.schoolName,rows:[['Report:','Teacher Assessment Activity'],['Date:',new Date().toLocaleDateString('en-GH')]]});
+}
+
+function rptExportStudents() { notify('Run "At-risk students" export and use student details for individual reports.',''); }
+function rptExportWassce()   { notify('WASSCE readiness available in Analytics → Student Performance.',''); }
+function rptExportCompletion(){ notify('Test completion data available in Analytics → Teacher Analytics.',''); }
+function rptExportGES()      { notify('GES export: use class performance export — includes all required fields.',''); rptExportSchool(); }
 
 async function loadATeachers(m) {
   let teachers = [], classes = [], depts = [];
@@ -7634,7 +7885,11 @@ function downloadCsvTemplate(role, cols) {
   notify('Template downloaded', 'success');
 }
 
-function loadASettings(m) {
+async function loadASettings(m) {
+  // Pre-fetch school data
+  let school = null;
+  try { school = await GET('/school'); } catch(e) {}
+  school = school || {};
   m.innerHTML = `
 <div class="topbar">
   <div><div class="topbar-title">Settings</div></div>
@@ -7644,6 +7899,7 @@ function loadASettings(m) {
     <button class="tab-btn active" onclick="settingsTab(this,'st-general')">General</button>
     <button class="tab-btn" onclick="settingsTab(this,'st-subjects')">Subjects</button>
     <button class="tab-btn" onclick="settingsTab(this,'st-academic');loadAcademicTab()">Academic year</button>
+    <button class="tab-btn" onclick="settingsTab(this,'st-grades');loadGradeConfig()">Grade boundaries</button>
     <button class="tab-btn" onclick="settingsTab(this,'st-chat');loadChatGroupsTab()">Class chats</button>
     <button class="tab-btn" onclick="settingsTab(this,'st-notifications')">Notifications</button>
     <button class="tab-btn" onclick="settingsTab(this,'st-security')">Security</button>
@@ -7654,13 +7910,15 @@ function loadASettings(m) {
     <div class="grid-2">
       <div class="card">
         <div class="card-title" style="margin-bottom:16px">School information</div>
-        <div class="form-group"><label class="form-label">School name</label><input class="form-input" value="Bright Future Senior High School"></div>
+        <div class="form-group"><label class="form-label">School name</label><input class="form-input" id="sch-name" value="${school.name||CURRENT_USER?.school_name||''}"></div>
         <div class="form-group"><label class="form-label">Region</label>
-          <select class="form-select">${['Greater Accra','Ashanti','Western','Central','Eastern','Northern','Upper East','Upper West','Volta','Bono East'].map(r=>`<option>${r}</option>`).join('')}</select>
+          <select class="form-select" id="sch-region">${['Greater Accra','Ashanti','Western','Central','Eastern','Northern','Upper East','Upper West','Volta','Bono East','Oti','North East','Savannah','Ahafo','Western North'].map(r=>`<option ${school.region===r?'selected':''}>${r}</option>`).join('')}</select>
         </div>
-        <div class="form-group"><label class="form-label">GES School ID</label><input class="form-input" placeholder="GES-GR-2024-XXXX"></div>
-        <div class="form-group"><label class="form-label">Contact email</label><input class="form-input" type="email" value="${CURRENT_USER?.email||'admin@school.edu.gh'}"></div>
-        <button class="btn btn-primary" style="margin-top:4px" onclick="notify('Settings saved','success')">Save changes</button>
+        <div class="form-group"><label class="form-label">GES School ID</label><input class="form-input" id="sch-ges" placeholder="GES-GR-2024-XXXX" value="${school.ges_id||''}"></div>
+        <div class="form-group"><label class="form-label">Contact email</label><input class="form-input" id="sch-email" type="email" value="${school.email||CURRENT_USER?.email||''}"></div>
+        <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="sch-phone" type="tel" placeholder="+233 …" value="${school.phone||''}"></div>
+        <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="sch-addr" placeholder="School address" value="${school.address||''}"></div>
+        <button class="btn btn-primary" style="margin-top:4px" id="sch-save-btn" onclick="saveSchoolSettings()">Save changes</button>
       </div>
       <div class="card">
         <div class="card-title" style="margin-bottom:16px">Subscription plan</div>
@@ -7686,6 +7944,11 @@ function loadASettings(m) {
     </div>
   </div>
 
+  <!-- Grade boundaries tab -->
+  <div id="st-grades" class="tab-pane" style="display:none">
+    <div id="st-grades-content"><div style="padding:20px;color:var(--text-3)">Loading…</div></div>
+  </div>
+
   <!-- Academic Year tab -->
   <div id="st-academic" class="tab-pane" style="display:none">
     <div id="st-academic-content"><div style="padding:20px;color:var(--text-3)">Loading…</div></div>
@@ -7707,12 +7970,50 @@ function loadASettings(m) {
 </div>`;
 }
 
+async function saveSchoolSettings() {
+  const btn = document.getElementById('sch-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const payload = {
+      name:    document.getElementById('sch-name')?.value?.trim(),
+      region:  document.getElementById('sch-region')?.value,
+      ges_id:  document.getElementById('sch-ges')?.value?.trim(),
+      email:   document.getElementById('sch-email')?.value?.trim(),
+      phone:   document.getElementById('sch-phone')?.value?.trim(),
+      address: document.getElementById('sch-addr')?.value?.trim(),
+    };
+    if (!payload.name) { notify('School name is required', 'error'); return; }
+    await PATCH('/school', payload);
+    if (CURRENT_USER && payload.name) CURRENT_USER.school_name = payload.name;
+    notify('School settings saved ✓', 'success');
+  } catch(e) { notify(e.message || 'Could not save settings', 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Save changes'; } }
+}
+
+// ── Ghana GES grade from percentage ──────────────────────────
+let _gesGradeCache = null;
+async function gesGradeFromPct(pct) {
+  if (!_gesGradeCache) {
+    try { _gesGradeCache = await GET('/grade-config'); } catch(e) {}
+    if (!_gesGradeCache) _gesGradeCache = [
+      {grade:'A1',min_pct:80,max_pct:100},{grade:'B2',min_pct:70,max_pct:79},
+      {grade:'B3',min_pct:60,max_pct:69},{grade:'C4',min_pct:55,max_pct:59},
+      {grade:'C5',min_pct:50,max_pct:54},{grade:'C6',min_pct:45,max_pct:49},
+      {grade:'D7',min_pct:40,max_pct:44},{grade:'E8',min_pct:35,max_pct:39},
+      {grade:'F9',min_pct:0, max_pct:34},
+    ];
+  }
+  const g = (_gesGradeCache||[]).find(g=>pct>=parseFloat(g.min_pct)&&pct<=parseFloat(g.max_pct));
+  return g?.grade || (pct>=50?'Pass':'Fail');
+}
+
 function settingsTab(btn, tabId) {
   switchTab(btn, tabId);
   if (tabId === 'st-subjects') {
     const pane = document.getElementById('st-subjects');
     if (pane && !pane.dataset.loaded) { pane.dataset.loaded = '1'; loadASubjects(pane, true); }
   }
+  if (tabId === 'st-grades') loadGradeConfig();
 }
 
 async function loadAcademicTab() {
@@ -7726,32 +8027,345 @@ async function loadAcademicTab() {
   const curMap   = {};
   current.forEach(p => { curMap[p.year_group] = p; });
   const fmtD = ts => ts ? new Date(ts).toLocaleDateString('en-GH',{day:'numeric',month:'short',year:'numeric'}) : '';
+
   el.innerHTML = `
+  <!-- Active period cards per year group -->
   <div class="grid-3" style="margin-bottom:24px">
     ${[1,2,3].map(yg => {
       const p = curMap[yg];
-      return `<div class="card" style="padding:20px">
-        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Year Group ${yg}</div>
-        <div style="font-size:18px;font-weight:800;color:var(--green-dk)">${p?p.academic_year:'—'}</div>
-        <div style="font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:4px">${p?`Semester ${p.semester}`:'-'}</div>
-        ${p&&p.start_date?`<div style="font-size:11px;color:var(--text-3)">${fmtD(p.start_date)} – ${fmtD(p.end_date)||'ongoing'}</div>`:''}
-        <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="apOpenSetModal(${yg},'${p?.academic_year||''}',${p?.semester||1})">
-          ${p?'Update':'Set period'}
-        </button>
+      return `<div class="card" style="padding:20px;border-top:3px solid ${p?'var(--green)':'var(--border)'}">
+        <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">
+          Year Group ${yg}
+          ${p?'<span class="badge badge-green" style="font-size:9px;margin-left:6px">Active</span>':'<span class="badge badge-gray" style="font-size:9px;margin-left:6px">None set</span>'}
+        </div>
+        <div style="font-size:20px;font-weight:800;color:var(--green-dk)">${p?p.academic_year:'—'}</div>
+        <div style="font-size:14px;font-weight:600;color:var(--text-2);margin-bottom:8px">${p?'Semester '+p.semester:'—'}</div>
+        ${p&&(p.start_date||p.end_date)?`<div style="font-size:11px;color:var(--text-3);margin-bottom:10px">${fmtD(p.start_date)||'?'} – ${fmtD(p.end_date)||'ongoing'}</div>`:''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="apOpenSetModal(${yg},'${p?.academic_year||''}',${p?.semester||1})">
+            ${p?'Update':'+ Set period'}
+          </button>
+          ${p?`<button class="btn btn-ghost btn-sm" onclick="apEditPeriod(${p.id},'${p.academic_year}',${p.semester},'${p.start_date||''}','${p.end_date||''}')">Edit</button>`:''}
+        </div>
       </div>`;
     }).join('')}
   </div>
+
+  <!-- Full history table with actions -->
   <div class="card">
-    <div class="card-header"><div class="card-title">Period history</div></div>
+    <div class="card-header">
+      <div class="card-title">All academic periods</div>
+      <div style="font-size:12px;color:var(--text-3)">Activating a period deactivates all others in the same year group</div>
+    </div>
     ${history.length ? `<table class="data-table">
-      <thead><tr><th>Year Group</th><th>Academic Year</th><th>Semester</th><th>Start</th><th>End</th><th>Set by</th><th>Status</th></tr></thead>
+      <thead><tr><th>Year</th><th>Academic Year</th><th>Semester</th><th>Start date</th><th>End date</th><th>Set by</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>${history.map(p=>`<tr>
-        <td>Year ${p.year_group}</td><td><b>${p.academic_year}</b></td><td>Semester ${p.semester}</td>
-        <td>${fmtD(p.start_date)||fmtD(p.started_at)}</td><td>${fmtD(p.end_date)||fmtD(p.ended_at)||'—'}</td>
+        <td>Year ${p.year_group}</td>
+        <td><b>${p.academic_year}</b></td>
+        <td>Semester ${p.semester}</td>
+        <td style="color:var(--text-3)">${fmtD(p.start_date)||fmtD(p.started_at)||'—'}</td>
+        <td style="color:var(--text-3)">${fmtD(p.end_date)||fmtD(p.ended_at)||'—'}</td>
         <td style="color:var(--text-3)">${p.set_by_name||'—'}</td>
-        <td><span class="badge badge-${p.is_active?'green':'gray'}">${p.is_active?'Active':'Closed'}</span></td>
-      </tr>`).join('')}</tbody></table>` : '<div style="padding:16px;color:var(--text-3)">No history yet.</div>'}
+        <td><span class="badge badge-${parseInt(p.is_active)===1?'green':'gray'}">${parseInt(p.is_active)===1?'Active':'Inactive'}</span></td>
+        <td>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="apEditPeriod(${p.id},'${p.academic_year}',${p.semester},'${p.start_date||''}','${p.end_date||''}')">Edit</button>
+            ${parseInt(p.is_active)!==1
+              ? `<button class="btn btn-ghost btn-sm" style="color:var(--green)" onclick="apSetActive(${p.id},${p.year_group})">Activate</button>`
+              : `<button class="btn btn-ghost btn-sm" style="color:var(--amber)" onclick="apSetInactive(${p.id})">Deactivate</button>`}
+            ${parseInt(p.is_active)!==1
+              ? `<button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="apDeletePeriod(${p.id},'${p.academic_year}',${p.semester})">Delete</button>`
+              : ''}
+          </div>
+        </td>
+      </tr>`).join('')}</tbody>
+    </table>` : '<div style="padding:16px;color:var(--text-3)">No periods yet — use "Set period" above to add one.</div>'}
   </div>`;
+}
+
+async function apSetActive(periodId, yearGroup) {
+  if (!confirm(`Activate this period?\n\nAll other periods for Year Group ${yearGroup} will be deactivated.`)) return;
+  try {
+    await PATCH(`/academic-periods/${periodId}`, { is_active: 1 });
+    notify('Period activated ✓', 'success');
+    loadAcademicTab();
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+async function apSetInactive(periodId) {
+  if (!confirm('Deactivate this period?')) return;
+  try {
+    await PATCH(`/academic-periods/${periodId}`, { is_active: 0 });
+    notify('Period deactivated', 'success');
+    loadAcademicTab();
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+async function apDeletePeriod(periodId, year, sem) {
+  if (!confirm(`Delete period: ${year} Semester ${sem}?\n\nThis cannot be undone.`)) return;
+  try {
+    await DELETE(`/academic-periods/${periodId}`);
+    notify('Period deleted', 'success');
+    loadAcademicTab();
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+function apEditPeriod(periodId, currentYear, currentSem, startDate, endDate) {
+  adminModal(
+    `Edit period`,
+    `<input type="hidden" id="ap-edit-id" value="${periodId}">
+     <div class="form-group">
+       <label class="form-label">Academic year</label>
+       <input class="form-input" id="ap-edit-year" value="${currentYear}" placeholder="2024/2025">
+     </div>
+     <div class="form-group">
+       <label class="form-label">Semester</label>
+       <select class="form-select" id="ap-edit-sem">
+         <option value="1" ${currentSem==1?'selected':''}>Semester 1 (Sep – Jan)</option>
+         <option value="2" ${currentSem==2?'selected':''}>Semester 2 (Feb – Jul)</option>
+       </select>
+     </div>
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+       <div class="form-group">
+         <label class="form-label">Start date</label>
+         <input class="form-input" id="ap-edit-start" type="date" value="${startDate||''}">
+       </div>
+       <div class="form-group">
+         <label class="form-label">End date</label>
+         <input class="form-input" id="ap-edit-end" type="date" value="${endDate||''}">
+       </div>
+     </div>`,
+    async () => {
+      const pid   = document.getElementById('ap-edit-id').value;
+      const year  = document.getElementById('ap-edit-year').value.trim();
+      const sem   = parseInt(document.getElementById('ap-edit-sem').value);
+      const start = document.getElementById('ap-edit-start').value || null;
+      const end   = document.getElementById('ap-edit-end').value   || null;
+      if (!year || !/^\d{4}\/\d{4}$/.test(year)) { notify('Enter academic year as YYYY/YYYY', 'error'); return; }
+      await PATCH(`/academic-periods/${pid}`, { academic_year: year, semester: sem, start_date: start, end_date: end });
+      document.getElementById('adm-modal')?.remove();
+      notify('Period updated ✓', 'success');
+      loadAcademicTab();
+    },
+    'Save changes →'
+  );
+}
+
+// ── Grade boundaries (Ghana GES A1-F9) ───────────────────────
+async function loadGradeConfig() {
+  const el = document.getElementById('st-grades-content');
+  if (!el) return;
+  el.innerHTML = '<div style="padding:20px;color:var(--text-3)">Loading…</div>';
+  let grades = [];
+  try { grades = await GET('/grade-config') || []; } catch(e) {}
+
+  el.innerHTML = `
+  <div class="card" style="max-width:620px">
+    <div class="card-header">
+      <div><div class="card-title">Grade boundaries — Ghana GES A1–F9 system</div>
+      <div class="card-sub">Customise the percentage thresholds for each grade. Used in result sheets and reports.</div></div>
+      <button class="btn btn-secondary btn-sm" onclick="gradeResetDefaults()">Reset to GES defaults</button>
+    </div>
+    <table class="data-table" id="grade-config-tbl">
+      <thead><tr><th>Grade</th><th>Label</th><th>Min %</th><th>Max %</th></tr></thead>
+      <tbody>
+        ${grades.map((g,i)=>`<tr>
+          <td><input class="form-input" id="gc-grade-${i}" value="${g.grade}" style="width:60px;font-weight:700"></td>
+          <td><input class="form-input" id="gc-label-${i}" value="${g.label}" style="width:130px"></td>
+          <td><input class="form-input" type="number" id="gc-min-${i}" value="${Math.round(parseFloat(g.min_pct))}" min="0" max="100" style="width:70px"></td>
+          <td><input class="form-input" type="number" id="gc-max-${i}" value="${Math.round(parseFloat(g.max_pct))}" min="0" max="100" style="width:70px"></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-primary" onclick="saveGradeConfig(${grades.length})">Save grade boundaries</button>
+    </div>
+  </div>
+  <div class="card" style="max-width:620px;margin-top:16px">
+    <div class="card-header"><div class="card-title">Preview</div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px">
+      ${grades.map(g=>{
+        const avg=(parseFloat(g.min_pct)+parseFloat(g.max_pct))/2;
+        return `<div style="text-align:center;padding:8px 12px;border-radius:8px;background:var(--bg);border:1px solid var(--border)">
+          <div style="font-size:18px;font-weight:800;color:${parseFloat(g.min_pct)>=50?'var(--green)':parseFloat(g.min_pct)>=40?'var(--amber)':'var(--coral)'}">${g.grade}</div>
+          <div style="font-size:11px;color:var(--text-3)">${Math.round(parseFloat(g.min_pct))}–${Math.round(parseFloat(g.max_pct))}%</div>
+          <div style="font-size:11px;font-weight:600">${g.label}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+async function saveGradeConfig(count) {
+  const grades = [];
+  for (let i = 0; i < count; i++) {
+    grades.push({
+      grade:   document.getElementById(`gc-grade-${i}`)?.value?.trim(),
+      label:   document.getElementById(`gc-label-${i}`)?.value?.trim(),
+      min_pct: parseInt(document.getElementById(`gc-min-${i}`)?.value || 0, 10),
+      max_pct: parseInt(document.getElementById(`gc-max-${i}`)?.value || 0, 10),
+    });
+  }
+  if (grades.some(g=>!g.grade)) { notify('All grade codes are required', 'error'); return; }
+  try {
+    await POST('/grade-config', { grades });
+    notify('Grade boundaries saved ✓', 'success');
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+async function gradeResetDefaults() {
+  if (!confirm('Reset to GES defaults?\nA1=80-100, B2=70-79, B3=60-69, C4=55-59, C5=50-54, C6=45-49, D7=40-44, E8=35-39, F9=0-34')) return;
+  const defaults = [
+    {grade:'A1',label:'Excellent',min_pct:80,max_pct:100},
+    {grade:'B2',label:'Very Good', min_pct:70,max_pct:79},
+    {grade:'B3',label:'Good',      min_pct:60,max_pct:69},
+    {grade:'C4',label:'Credit',    min_pct:55,max_pct:59},
+    {grade:'C5',label:'Credit',    min_pct:50,max_pct:54},
+    {grade:'C6',label:'Credit',    min_pct:45,max_pct:49},
+    {grade:'D7',label:'Pass',      min_pct:40,max_pct:44},
+    {grade:'E8',label:'Pass',      min_pct:35,max_pct:39},
+    {grade:'F9',label:'Fail',      min_pct:0, max_pct:34},
+  ];
+  try { await POST('/grade-config', { grades: defaults }); notify('Reset to GES defaults ✓','success'); loadGradeConfig(); }
+  catch(e) { notify(e.message,'error'); }
+}
+
+// ── Semester Result Sheet ─────────────────────────────────────
+async function openSemesterResultSheet() {
+  let classes = [], apData = null;
+  try { [classes, apData] = await Promise.all([GET('/classes'), GET('/academic-periods')]); } catch(e) {}
+  const allPeriods = apData?.available || [];
+
+  adminModal(
+    'Semester Result Sheet',
+    `<div class="form-group">
+       <label class="form-label">Class</label>
+       <select class="form-select" id="srs-class">
+         <option value="">Select class…</option>
+         ${(classes||[]).map(c=>`<option value="${c.id}">${c.name} (Year ${c.year_group})</option>`).join('')}
+       </select>
+     </div>
+     <div class="form-group">
+       <label class="form-label">Academic period</label>
+       <select class="form-select" id="srs-period">
+         <option value="">Select period…</option>
+         ${allPeriods.map(p=>`<option value="${p.academic_year}|${p.semester}">${p.academic_year} — Semester ${p.semester}</option>`).join('')}
+       </select>
+     </div>
+     <div class="info-box blue" style="font-size:12px">Generates a printable result sheet with GES grades for all students in the class.</div>`,
+    async () => {
+      const classId = document.getElementById('srs-class').value;
+      const period  = document.getElementById('srs-period').value;
+      if (!classId || !period) { notify('Select both class and period', 'error'); return; }
+      const [ay, sem] = period.split('|');
+      document.getElementById('adm-modal')?.remove();
+      await loadSemesterResultSheet(parseInt(classId), ay, parseInt(sem));
+    },
+    'Generate →'
+  );
+}
+
+async function loadSemesterResultSheet(classId, academicYear, semester) {
+  const m = document.getElementById('a-main');
+  if (!m) return;
+  m.innerHTML = panelLoader();
+  let data = null;
+  try { data = await GET('/semester-results', { class_id: classId, academic_year: academicYear, semester }); } catch(e) {
+    m.innerHTML = `<div class="page"><div class="info-box coral">Error: ${e.message}</div></div>`; return;
+  }
+
+  const cls      = data.class || {};
+  const subjects = data.subjects || [];
+  const results  = data.results  || [];
+  const grades   = data.grade_config || [];
+  const school   = data.school_name || 'School';
+
+  const getGrade = pct => {
+    if (pct === null) return '—';
+    const g = grades.find(g => parseFloat(pct) >= parseFloat(g.min_pct) && parseFloat(pct) <= parseFloat(g.max_pct));
+    return g ? g.grade : '—';
+  };
+
+  const headerCols = subjects.map(s=>`<th style="min-width:70px;text-align:center">${s.short_name||s.name||s.subject_short||s.subject_name}</th>`).join('');
+  const bodyRows = results.map(r=>{
+    const subjectCells = subjects.map(s=>{
+      const sd = r.subjects.find(x=>x.subject_id===s.id);
+      const pct = sd?.avg_pct;
+      const grade = sd?.grade || (pct!==null && pct!==undefined ? getGrade(pct) : '—');
+      return `<td style="text-align:center">
+        ${pct!==null&&pct!==undefined?`<div style="font-weight:700;color:${col(Math.round(pct))};font-size:12px">${grade}</div><div style="font-size:10px;color:var(--text-3)">${Math.round(pct)}%</div>`:'<span style="color:var(--text-3)">—</span>'}
+      </td>`;
+    }).join('');
+    const overallGrade = r.overall_avg !== null ? getGrade(r.overall_avg) : '—';
+    return `<tr>
+      <td style="font-weight:600;white-space:nowrap">#${r.rank}</td>
+      <td style="white-space:nowrap"><b>${r.last_name}, ${r.first_name}</b></td>
+      ${subjectCells}
+      <td style="text-align:center;font-weight:700;color:${col(Math.round(r.overall_avg||0))}">${r.overall_avg!==null?Math.round(r.overall_avg)+'%':'—'}</td>
+      <td style="text-align:center"><span style="font-weight:800;font-size:15px;color:${r.overall_avg>=50?'var(--green)':'var(--coral)'}">${overallGrade}</span></td>
+    </tr>`;
+  }).join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div>
+    <div class="topbar-title">${cls.name} — Result Sheet</div>
+    <div class="topbar-sub">${school} · ${academicYear} · Semester ${semester}</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="aNav('reports',null)">← Back</button>
+    <button class="btn btn-secondary" onclick="exportSemesterResultsXLSX()">⬇ Export Excel</button>
+    <button class="btn btn-primary" onclick="printCurrentPage('${cls.name} Result Sheet','srs-page')">🖨 Print</button>
+  </div>
+</div>
+<div class="page" id="srs-page" style="font-size:13px">
+  <div style="text-align:center;margin-bottom:20px;padding:16px;background:var(--green-lt);border-radius:var(--radius)">
+    <div style="font-size:20px;font-weight:800;color:var(--green-dk)">${school}</div>
+    <div style="font-size:15px;font-weight:700;margin-top:4px">${cls.name} — Semester ${semester} Result Sheet</div>
+    <div style="font-size:13px;color:var(--text-2);margin-top:2px">${academicYear} · Year Group ${cls.year_group} · ${results.length} students</div>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="data-table" style="min-width:100%">
+      <thead>
+        <tr style="background:var(--green-dk);color:#fff">
+          <th style="color:#fff">#</th>
+          <th style="color:#fff">Student</th>
+          ${headerCols}
+          <th style="text-align:center;color:#fff">Overall</th>
+          <th style="text-align:center;color:#fff">Grade</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  </div>
+  <div style="margin-top:20px;padding:12px;background:var(--bg);border-radius:var(--radius)">
+    <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--text-2)">GES Grade Scale</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      ${grades.map(g=>`<span style="padding:3px 8px;border-radius:4px;background:${parseFloat(g.min_pct)>=50?'var(--green-lt)':parseFloat(g.min_pct)>=40?'var(--amber-lt)':'var(--coral-lt)'};font-size:11px;font-weight:700">
+        ${g.grade}: ${Math.round(parseFloat(g.min_pct))}–${Math.round(parseFloat(g.max_pct))}% (${g.label})</span>`).join('')}
+    </div>
+  </div>
+</div>`;
+  window._srsData = data;
+}
+
+function exportSemesterResultsXLSX() {
+  const d = window._srsData; if (!d) return;
+  const subjects = d.subjects || [];
+  const results  = d.results  || [];
+  const headers  = ['Rank','Student',...subjects.map(s=>s.short_name||s.name||s.subject_short||s.subject_name),'Overall %','Grade'];
+  const rows = results.map(r=>{
+    const grades = subjects.map(s=>{
+      const sd = r.subjects.find(x=>x.subject_id===s.id);
+      return sd?.grade||'—';
+    });
+    return [r.rank, r.last_name+', '+r.first_name,...grades, r.overall_avg!==null?Math.round(r.overall_avg):'—', r.subjects[0]?.grade||'—'];
+  });
+  exportToXLS(
+    `${d.class?.name||'class'}_results_${d.academic_year}_S${d.semester}`,
+    headers, rows, 'Result Sheet',
+    {school:d.school_name, rows:[['Class:',d.class?.name],['Period:',`${d.academic_year} Semester ${d.semester}`],['Students:',String(results.length)]]}
+  );
 }
 
 async function loadChatGroupsTab() {
@@ -11664,6 +12278,46 @@ async function saveSchoolSettings() {
 
 let bulkParsedQuestions = [];
 
+const BULK_TYPE_CFG = {
+  mcq: {
+    info: `Required columns: <b>question_text, A, B, C, D, correct, sub_strand, difficulty</b><br>The <b>correct</b> column should contain A, B, C or D.`,
+    placeholder: `question_text\tA\tB\tC\tD\tcorrect\tsub_strand\tdifficulty`,
+    desc: `Fill in question text, 4 options (A–D), which is correct, sub-strand, and difficulty.`,
+  },
+  tf: {
+    info: `Required columns: <b>question_text, correct, sub_strand, difficulty</b><br>The <b>correct</b> column should be <b>True</b> or <b>False</b>.`,
+    placeholder: `question_text\tcorrect\tsub_strand\tdifficulty`,
+    desc: `Fill in the statement and whether the correct answer is True or False.`,
+  },
+  short: {
+    info: `Required columns: <b>question_text, accepted_answers, sub_strand, difficulty</b><br>Separate multiple accepted answers with a semicolon (;).`,
+    placeholder: `question_text\taccepted_answers\tsub_strand\tdifficulty`,
+    desc: `Fill in the question and all accepted answers (semicolon-separated for multiple).`,
+  },
+  'fill-in': {
+    info: `Required columns: <b>question_text, correct_answer, sub_strand, difficulty</b><br>Separate multiple accepted answers with a semicolon (;).`,
+    placeholder: `question_text\tcorrect_answer\tsub_strand\tdifficulty`,
+    desc: `Fill in the blank statement and the correct answer(s), semicolon-separated.`,
+  },
+  essay: {
+    info: `Required columns: <b>question_text, marking_guide, sub_strand, difficulty</b><br>The <b>marking_guide</b> is shown to teachers when marking.`,
+    placeholder: `question_text\tmarking_guide\tsub_strand\tdifficulty`,
+    desc: `Fill in the essay question and a marking guide/rubric for teachers.`,
+  },
+};
+
+function updateBulkTypeUI() {
+  const type = document.getElementById('bulk-qtype')?.value || 'mcq';
+  const cfg  = BULK_TYPE_CFG[type] || BULK_TYPE_CFG.mcq;
+  const info = document.getElementById('bulk-type-info');
+  const pa   = document.getElementById('paste-area');
+  if (info) info.innerHTML = cfg.info;
+  if (pa)   pa.placeholder = 'Paste Excel data here (tab-separated)\n' + cfg.placeholder;
+  clearBulkPreview();
+  const inp = document.getElementById('csv-file-input');
+  if (inp) inp.value = '';
+}
+
 function openBulkUpload() {
   bulkParsedQuestions = [];
   document.getElementById('bulk-parsed').style.display = 'none';
@@ -11673,6 +12327,8 @@ function openBulkUpload() {
   if (inp) inp.value = '';
   const pa = document.getElementById('paste-area');
   if (pa) pa.value = '';
+  const qt = document.getElementById('bulk-qtype');
+  if (qt) { qt.value = 'mcq'; updateBulkTypeUI(); }
   openModal('bulk-upload-modal');
 }
 
@@ -11720,10 +12376,10 @@ function parsePastedData() {
 }
 
 function parseCSVText(text) {
+  const qtype = document.getElementById('bulk-qtype')?.value || 'mcq';
   const lines = text.trim().split('\n');
   if (lines.length < 2) return [];
 
-  // Parse header — normalise keys to lowercase with underscores
   const headers = parseCSVRow(lines[0]).map(h =>
     h.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'')
   );
@@ -11739,28 +12395,43 @@ function parseCSVText(text) {
     const qtext = row.question_text || row.question || '';
     if (!qtext) continue;
 
-    // Build options array
-    const opts = [];
-    ['a','b','c','d'].forEach(ltr => {
-      const txt = row[ltr] || row['option_' + ltr] || '';
-      if (txt) opts.push({
-        label: ltr.toUpperCase(),
-        text:  txt,
-        correct: (row.correct||row.answer||'').toUpperCase() === ltr.toUpperCase() ? 1 : 0
+    let opts = [];
+    let explanation = row.explanation || row.marking_guide || '';
+
+    if (qtype === 'mcq') {
+      const correct = (row.correct || row.answer || '').toUpperCase();
+      ['a','b','c','d'].forEach(ltr => {
+        const txt = row[ltr] || row['option_' + ltr] || '';
+        if (txt) opts.push({ label: ltr.toUpperCase(), text: txt, correct: correct === ltr.toUpperCase() ? 1 : 0 });
       });
-    });
+    } else if (qtype === 'tf') {
+      const ans = (row.correct || row.answer || 'True').trim();
+      const isTrueCorrect = /^(true|yes|t|1)$/i.test(ans);
+      opts = [
+        { label: 'A', text: 'True',  correct: isTrueCorrect  ? 1 : 0 },
+        { label: 'B', text: 'False', correct: !isTrueCorrect ? 1 : 0 },
+      ];
+    } else if (qtype === 'short' || qtype === 'fill-in') {
+      const raw = row.accepted_answers || row.correct_answer || row.answer || '';
+      raw.split(';').map(s => s.trim()).filter(Boolean).forEach((ans, j) => {
+        opts.push({ label: String.fromCharCode(65 + j), text: ans, correct: 1 });
+      });
+    } else if (qtype === 'essay') {
+      explanation = row.marking_guide || row.explanation || '';
+      opts = []; // no options for essay
+    }
 
     questions.push({
       question_text: qtext,
+      type:          qtype,
       options:       opts,
-      sub_strand:    row.sub_strand  || row.substrand || 'S2/SS2',
-      difficulty:    row.difficulty  || 'Medium',
-      topic:         row.topic       || '',
-      marks:         parseInt(row.marks || '1') || 1,
-      explanation:   row.explanation || '',
-      bloom_level:   row.bloom_level || row.bloom || 'Remember',
-      year_group:    parseInt(row.year_group || '1') || 1,
-      type:          row.type || 'mcq',
+      explanation,
+      sub_strand:  row.sub_strand  || row.substrand || 'S2/SS2',
+      difficulty:  row.difficulty  || 'Medium',
+      topic:       row.topic       || '',
+      marks:       parseInt(row.marks || '1') || 1,
+      bloom_level: row.bloom_level || row.bloom || 'Remember',
+      year_group:  parseInt(row.year_group || '1') || 1,
     });
   }
   return questions;
@@ -11795,8 +12466,21 @@ function renderBulkPreview(questions) {
   count.textContent = '(' + questions.length + ' questions)';
 
   list.innerHTML = questions.slice(0, 50).map((q, i) => {
-    const correctOpt = q.options.find(o => o.correct);
     const diff = q.difficulty || 'Medium';
+    const TYPE_LABEL = {mcq:'MCQ', tf:'T/F', short:'Short', 'fill-in':'Fill-in', essay:'Essay'};
+    let answerHtml = '';
+    if (['mcq','tf'].includes(q.type)) {
+      answerHtml = `<div class="gen-q-opts">${q.options.map(o =>
+        `<span class="gen-opt ${o.correct?'correct-opt':''}">${o.correct?'&#x2713; ':''}${o.text}</span>`
+      ).join('')}</div>`;
+    } else if (['short','fill-in'].includes(q.type)) {
+      const ans = q.options.map(o=>o.text).join(' | ');
+      answerHtml = `<div style="font-size:12px;margin-top:6px;color:var(--green)">&#x2713; ${ans}</div>`;
+    } else if (q.type === 'essay') {
+      answerHtml = q.explanation
+        ? `<div style="font-size:12px;margin-top:6px;color:var(--text-2);font-style:italic">Marking guide: ${q.explanation}</div>`
+        : '';
+    }
     return `<div class="gen-q-card" id="bq${i}">
       <div class="gen-q-top">
         <div style="flex:1">
@@ -11804,18 +12488,14 @@ function renderBulkPreview(questions) {
             <span class="badge badge-${sub2badge(q.sub_strand)}">${q.sub_strand}</span>
             <span class="badge badge-${diff==='Easy'?'green':diff==='Medium'?'amber':'coral'}">${diff}</span>
             <span class="badge badge-gray">${q.marks} mark${q.marks>1?'s':''}</span>
-            <span class="badge badge-gray">${q.type}</span>
+            <span class="badge badge-blue">${TYPE_LABEL[q.type]||q.type}</span>
           </div>
           <div class="gen-q-text">${q.question_text}</div>
         </div>
         <button class="discard-btn" onclick="removeBulkQ(${i})" title="Remove this question">&#x2715;</button>
       </div>
-      <div class="gen-q-opts">
-        ${q.options.map(o =>
-          `<span class="gen-opt ${o.correct?'correct-opt':''}">${o.correct?'&#x2713; ':''}${o.text}</span>`
-        ).join('')}
-      </div>
-      ${q.explanation ? `<div style="font-size:12px;color:var(--text-3);margin-top:6px;font-style:italic">${q.explanation}</div>` : ''}
+      ${answerHtml}
+      ${q.explanation && q.type !== 'essay' ? `<div style="font-size:12px;color:var(--text-3);margin-top:6px;font-style:italic">${q.explanation}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -11859,26 +12539,60 @@ async function importBulkQuestions() {
 }
 
 function downloadBulkTemplate() {
-  const headers = 'question_text,A,B,C,D,correct,sub_strand,difficulty,topic,marks,explanation,bloom_level,year_group';
-  const example = [
-    '"What does CIA stand for in information security?",',
-    '"Central Intelligence Agency",',
-    '"Confidentiality, Integrity, Availability",',
-    '"Computer Integrity Assessment",',
-    '"Cyber Intelligence Architecture",',
-    'B,S2/SS2,Easy,CIA Triad,1,',
-    '"CIA = Confidentiality (authorised access only), Integrity (data accurate), Availability (accessible when needed).",',
-    'Remember,1'
-  ].join('');
+  const qtype = document.getElementById('bulk-qtype')?.value || 'mcq';
 
-  const csv = headers + '\n' + example + '\n';
-  const blob = new Blob([csv], {type: 'text/csv'});
+  const TEMPLATES = {
+    mcq: {
+      filename: 'aceict_mcq_template.csv',
+      header: 'question_text,A,B,C,D,correct,sub_strand,difficulty,topic,marks,explanation',
+      rows: [
+        '"What does CIA stand for in information security?","Central Intelligence Agency","Confidentiality, Integrity, Availability","Computer Integrity Assessment","Cyber Intelligence Architecture",B,S2/SS2,Easy,CIA Triad,1,"CIA = Confidentiality, Integrity, Availability"',
+        '"Which device connects two different networks?","Hub","Switch","Router","Repeater",C,S1/SS1,Medium,Networking,1,',
+      ]
+    },
+    tf: {
+      filename: 'aceict_tf_template.csv',
+      header: 'question_text,correct,sub_strand,difficulty,topic,marks,explanation',
+      rows: [
+        '"A router operates at the Network layer of the OSI model.",True,S1/SS1,Easy,Networking,1,',
+        '"RAM is a type of non-volatile memory.",False,S1/SS1,Medium,Hardware,1,"RAM loses data when power is off — it is volatile"',
+      ]
+    },
+    short: {
+      filename: 'aceict_short_answer_template.csv',
+      header: 'question_text,accepted_answers,sub_strand,difficulty,topic,marks,explanation',
+      rows: [
+        '"What does CPU stand for?","Central Processing Unit;CPU",S1/SS1,Easy,Hardware,1,',
+        '"Name the three components of the CIA triad.","Confidentiality, Integrity, Availability;CIA triad",S2/SS2,Medium,Security,2,',
+      ]
+    },
+    'fill-in': {
+      filename: 'aceict_fillin_template.csv',
+      header: 'question_text,correct_answer,sub_strand,difficulty,topic,marks,explanation',
+      rows: [
+        '"The full meaning of HTML is _____.","HyperText Markup Language;HTML",S1/SS2,Easy,Web Design,1,',
+        '"_____ is used to style web pages.","CSS;Cascading Style Sheets",S1/SS2,Easy,Web Design,1,',
+      ]
+    },
+    essay: {
+      filename: 'aceict_essay_template.csv',
+      header: 'question_text,marking_guide,sub_strand,difficulty,topic,marks',
+      rows: [
+        '"Explain the difference between hardware and software with two examples each.","Award 1 mark per correct example (max 4). Hardware: keyboard/mouse/monitor/CPU. Software: MS Word/Chrome/Windows. 1 mark for clear distinction.",S1/SS1,Medium,Computer Basics,5',
+        '"Describe how data is transmitted over a network.","Discuss: data packets, protocols (TCP/IP), sender/receiver, routing. Award marks for accuracy and completeness.",S2/SS1,Hard,Networking,6',
+      ]
+    }
+  };
+
+  const tpl = TEMPLATES[qtype] || TEMPLATES.mcq;
+  const csv = tpl.header + '\n' + tpl.rows.join('\n') + '\n';
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'aceict_question_template.csv';
+  a.download = tpl.filename;
   a.click();
   URL.revokeObjectURL(a.href);
-  notify('Template downloaded — open in Excel, fill in questions, save as CSV', 'success');
+  notify('Template downloaded — open in Excel, fill in your questions, save as CSV and upload', 'success');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -12843,6 +13557,572 @@ function slRenderEnded(m, participants) {
 function slLeave() {
   slEnd(); // clears localStorage + in-memory state
   sNav('dashboard', null);
+}
+
+// ════════════════════════════════════════════════════════════
+// MEETINGS — Google Meet Attendance
+// ════════════════════════════════════════════════════════════
+
+let _meetingHbInterval = null;
+let _meetingHbId       = null;
+let _savingMeeting     = false;
+
+function startMeetingHeartbeat(id) {
+  stopMeetingHeartbeat();
+  _meetingHbId = id;
+  _meetingHbInterval = setInterval(async () => {
+    try { await POST('/meetings/' + _meetingHbId + '/heartbeat', {}); } catch(e) {}
+  }, 5 * 60 * 1000);
+}
+function stopMeetingHeartbeat() {
+  if (_meetingHbInterval) { clearInterval(_meetingHbInterval); _meetingHbInterval = null; }
+  _meetingHbId = null;
+}
+
+// ── Teacher / Admin meeting list ─────────────────────────────
+const MTG_PAGE = 20; // rows per page
+
+async function loadTMeetings(m) {
+  m.innerHTML = panelLoader();
+  let meetings = [], classes = [], subjData = {};
+  const mtgParams = TCTX.subject_id ? { subject_id: TCTX.subject_id } : {};
+  try {
+    [meetings, classes, subjData] = await Promise.all([
+      GET('/meetings', mtgParams).catch(() => []),
+      GET('/classes').catch(() => []),
+      GET('/subjects').catch(() => ({}))
+    ]);
+  } catch(e) {}
+  meetings = meetings || [];
+  classes  = classes  || [];
+  const allSubjs = [...((subjData?.platform || []).filter(s => s.is_enabled == 1)), ...(subjData?.custom || [])];
+  window._mtgClasses  = classes;
+  window._mtgSubjects = allSubjs;
+
+  // Classify using full datetime (not just date) so same-day ended meetings go to "Past"
+  const now = new Date();
+  const isEndedFn = mt => {
+    const endDt = new Date(mt.meeting_date + 'T' + (mt.end_time || '23:59:59'));
+    return endDt <= now || mt.status === 'ended';
+  };
+  const cmp = (a,b) => (a.meeting_date + a.start_time).localeCompare(b.meeting_date + b.start_time);
+  window._mtgTabs = {
+    upcoming:  meetings.filter(mt => !isEndedFn(mt) && mt.status !== 'cancelled' && mt.status !== 'ended').sort(cmp),
+    past:      meetings.filter(mt => (isEndedFn(mt) || mt.status === 'ended') && mt.status !== 'cancelled').sort((a,b)=>-cmp(a,b)),
+    cancelled: meetings.filter(mt => mt.status === 'cancelled').sort((a,b)=>-cmp(a,b))
+  };
+  window._mtgPageSizes = { upcoming: MTG_PAGE, past: MTG_PAGE, cancelled: MTG_PAGE };
+  window._mtgFilters   = { class: '', month: '' };
+
+  // Build filter options from the full meetings list
+  const classOpts = [...new Set(meetings.map(m => m.class_name).filter(Boolean))].sort()
+    .map(cn => `<option value="${cn.replace(/"/g,'&quot;')}">${cn}</option>`).join('');
+  const monthOpts = [...new Set(meetings.map(m => (m.meeting_date||'').slice(0,7)).filter(Boolean))].sort()
+    .map(ym => {
+      const lbl = new Date(ym + '-15').toLocaleDateString('en-GH', {month:'long', year:'numeric'});
+      return `<option value="${ym}">${lbl}</option>`;
+    }).join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Meetings</div><div class="topbar-sub">Google Meet attendance tracking${TCTX.subject_name ? ` · <span class="badge badge-blue" style="font-size:11px;vertical-align:middle">${TCTX.subject_name}</span>` : ''}</div></div>
+  <div class="topbar-actions">
+    <button class="btn btn-primary" onclick="openMeetingModal(null)">+ Schedule meeting</button>
+  </div>
+</div>
+<div class="page">
+  <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+    <select id="mtg-f-class" class="form-select" style="width:auto;min-width:160px" onchange="applyMtgFilters()">
+      <option value="">All classes</option>${classOpts}
+    </select>
+    <select id="mtg-f-month" class="form-select" style="width:auto;min-width:180px" onchange="applyMtgFilters()">
+      <option value="">All months</option>${monthOpts}
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('mtg-f-class').value='';document.getElementById('mtg-f-month').value='';applyMtgFilters()">Clear</button>
+  </div>
+  <div class="tab-bar" id="mtg-tab-bar">
+    <button class="tab-btn active" onclick="switchMtgTab('upcoming',this)">Upcoming (${window._mtgTabs.upcoming.length})</button>
+    <button class="tab-btn" onclick="switchMtgTab('past',this)">Past (${window._mtgTabs.past.length})</button>
+    <button class="tab-btn" onclick="switchMtgTab('cancelled',this)">Cancelled (${window._mtgTabs.cancelled.length})</button>
+  </div>
+  <div id="mtg-tab-upcoming">${renderMtgTabContent('upcoming')}</div>
+  <div id="mtg-tab-past" style="display:none">${renderMtgTabContent('past')}</div>
+  <div id="mtg-tab-cancelled" style="display:none">${renderMtgTabContent('cancelled')}</div>
+</div>`;
+  window._mtgData = meetings;
+}
+
+function filteredMtgList(tab) {
+  const list = window._mtgTabs?.[tab] || [];
+  const f    = window._mtgFilters || {};
+  return list.filter(mt =>
+    (!f.class || mt.class_name === f.class) &&
+    (!f.month || (mt.meeting_date || '').startsWith(f.month))
+  );
+}
+
+function applyMtgFilters() {
+  window._mtgFilters = {
+    class: document.getElementById('mtg-f-class')?.value  || '',
+    month: document.getElementById('mtg-f-month')?.value  || ''
+  };
+  window._mtgPageSizes = { upcoming: MTG_PAGE, past: MTG_PAGE, cancelled: MTG_PAGE };
+  ['upcoming','past','cancelled'].forEach(tab => {
+    const el = document.getElementById('mtg-tab-' + tab);
+    if (el) el.innerHTML = renderMtgTabContent(tab);
+    // Update tab button count
+    const btn = document.querySelector(`#mtg-tab-bar .tab-btn:nth-child(${tab==='upcoming'?1:tab==='past'?2:3})`);
+    if (btn) {
+      const label = tab.charAt(0).toUpperCase() + tab.slice(1);
+      btn.textContent = `${label} (${filteredMtgList(tab).length})`;
+    }
+  });
+}
+
+function renderMtgTabContent(tab) {
+  const list      = filteredMtgList(tab);
+  const shown     = window._mtgPageSizes?.[tab] || MTG_PAGE;
+  const visible   = list.slice(0, shown);
+  const remaining = list.length - shown;
+  const isAdmin   = CURRENT_USER?.role === 'admin';
+
+  const SCHIP = {
+    scheduled: '<span class="badge badge-blue">Scheduled</span>',
+    live:      '<span class="badge badge-green">🔴 Live</span>',
+    ended:     '<span class="badge" style="background:var(--text-3);color:#fff">Ended</span>',
+    cancelled: '<span class="badge badge-coral">Cancelled</span>',
+  };
+
+  const row = (mt, sn) => {
+    const myMtg = isAdmin || CURRENT_USER?.id == mt.teacher_id;
+    return `<tr>
+      <td style="color:var(--text-3);font-size:12px;width:36px">${sn}</td>
+      <td>
+        <div style="font-weight:600">${mt.title}</div>
+        <div style="font-size:11px;color:var(--text-3)">${mt.class_name||''}${mt.subject_name ? ' · ' + mt.subject_name : ''}</div>
+      </td>
+      <td>${fmtDate(mt.meeting_date)}<div style="font-size:11px;color:var(--text-3)">${(mt.start_time||'').slice(0,5)} – ${(mt.end_time||'').slice(0,5)}</div></td>
+      <td>${SCHIP[mt.status] || mt.status}</td>
+      <td style="text-align:center">${mt.attendance_count||0} / ${mt.class_size||0}</td>
+      <td>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${myMtg && mt.status !== 'cancelled' && mt.status !== 'ended' ? `<button class="btn btn-primary btn-sm" onclick="adminJoinMeeting(${mt.id})">Join</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="viewMeetingAttendance(${mt.id})">Attendance</button>
+          ${mt.status !== 'cancelled' && mt.status !== 'ended' ? `
+            <button class="btn btn-ghost btn-sm" onclick="openMeetingModal(${mt.id})">Edit</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="cancelMeeting(${mt.id})">Cancel</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  };
+
+  const tableHtml = visible.length
+    ? `<table class="data-table"><thead><tr><th style="width:36px">#</th><th>Meeting</th><th>Date / Time</th><th>Status</th><th>Attendance</th><th>Actions</th></tr></thead><tbody>${visible.map((mt,i) => row(mt, i+1)).join('')}</tbody></table>`
+    : `<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">No meetings${window._mtgFilters?.class||window._mtgFilters?.month?' match your filters':' here'}</div></div>`;
+
+  const loadMoreBtn = remaining > 0
+    ? `<div style="text-align:center;margin-top:14px">
+         <button class="btn btn-secondary" onclick="loadMoreMtg('${tab}')">Load more (${remaining} remaining)</button>
+       </div>`
+    : '';
+
+  return tableHtml + loadMoreBtn;
+}
+
+function loadMoreMtg(tab) {
+  if (!window._mtgPageSizes) return;
+  window._mtgPageSizes[tab] = (window._mtgPageSizes[tab] || MTG_PAGE) + MTG_PAGE;
+  const el = document.getElementById('mtg-tab-' + tab);
+  if (el) el.innerHTML = renderMtgTabContent(tab);
+}
+
+function switchMtgTab(tab, btn) {
+  ['upcoming','past','cancelled'].forEach(t => {
+    const el = document.getElementById('mtg-tab-' + t);
+    if (el) el.style.display = t === tab ? '' : 'none';
+  });
+  document.querySelectorAll('#mtg-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+async function adminJoinMeeting(id) {
+  try {
+    const mt = await GET('/meetings/' + id);
+    if (mt?.google_meet_link) window.open(mt.google_meet_link, '_blank', 'noopener,noreferrer');
+    else alert('Meet link not available for this meeting.');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function openMeetingModal(id) {
+  let meeting = null;
+  if (id) { try { meeting = await GET('/meetings/' + id); } catch(e) {} }
+  const classes  = window._mtgClasses  || [];
+  const subjects = window._mtgSubjects || [];
+
+  // Group classes by year group for the checkbox list
+  const byYear = {};
+  classes.forEach(c => { (byYear[c.year_group] = byYear[c.year_group] || []).push(c); });
+  const classCheckboxes = Object.entries(byYear).sort(([a],[b])=>+a-+b).map(([yr, list]) =>
+    `<div style="font-size:11px;font-weight:700;color:var(--text-3);padding:4px 0 2px;text-transform:uppercase;letter-spacing:.5px">Year ${yr}</div>` +
+    list.map(c => `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:13px;border-radius:4px" onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background=''">
+      <input type="checkbox" class="mtg-class-cb" value="${c.id}" style="width:15px;height:15px;cursor:pointer">
+      <span>${c.name}</span>
+    </label>`).join('')
+  ).join('');
+
+  // Edit: single-select dropdown (changeable); Create: multi-checkbox
+  const editClsOpts = classes.map(c => `<option value="${c.id}" ${meeting?.class_id == c.id ? 'selected' : ''}>${c.name}</option>`).join('');
+  const classField = id
+    ? `<div class="form-group">
+         <label class="form-label">Class *</label>
+         <select id="mtg-class-edit" class="form-select"><option value="">Select class</option>${editClsOpts}</select>
+       </div>`
+    : `<div class="form-group">
+         <label class="form-label">Classes * <span style="font-weight:400;color:var(--text-3)">(select one or more)</span></label>
+         <div style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:6px 10px;background:var(--surface)">
+           ${classCheckboxes || '<span style="color:var(--text-3);font-size:13px">No classes found</span>'}
+         </div>
+       </div>`;
+
+  const subjOpts = `<option value="">— None —</option>` + subjects.map(s => `<option value="${s.id}" ${meeting?.subject_id == s.id ? 'selected' : ''}>${s.name}</option>`).join('');
+
+  adminModal(
+    id ? 'Edit Meeting' : 'Schedule Meeting',
+    `<div class="form-group">
+       <label class="form-label">Title *</label>
+       <input id="mtg-title" class="form-control" value="${meeting?.title||''}" placeholder="e.g. ICT Lesson 3 — Networks">
+     </div>
+     ${classField}
+     <div class="form-group">
+       <label class="form-label">Subject</label>
+       <select id="mtg-subj" class="form-select">${subjOpts}</select>
+     </div>
+     <div class="form-group">
+       <label class="form-label">Google Meet link *</label>
+       <input id="mtg-link" class="form-control" type="url" value="${meeting?.google_meet_link||''}" placeholder="https://meet.google.com/xxx-yyyy-zzz">
+     </div>
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+       <div class="form-group">
+         <label class="form-label">Date *</label>
+         <input id="mtg-date" class="form-control" type="date" value="${meeting?.meeting_date||''}" ${!id ? `min="${new Date().toISOString().split('T')[0]}"` : ''}>
+       </div>
+       <div class="form-group">
+         <label class="form-label">Start time *</label>
+         <input id="mtg-start" class="form-control" type="time" value="${(meeting?.start_time||'').slice(0,5)}">
+       </div>
+     </div>
+     <div class="form-group">
+       <label class="form-label">End time *</label>
+       <input id="mtg-end" class="form-control" type="time" value="${(meeting?.end_time||'').slice(0,5)}">
+     </div>
+     <div class="form-group">
+       <label class="form-label">Description</label>
+       <textarea id="mtg-desc" class="form-control" rows="2" placeholder="Optional notes for students">${meeting?.description||''}</textarea>
+     </div>`,
+    () => saveMeeting(id),
+    id ? 'Save changes' : 'Schedule meeting'
+  );
+}
+
+async function saveMeeting(id) {
+  if (_savingMeeting) return;
+  const title = document.getElementById('mtg-title')?.value?.trim();
+  const link  = document.getElementById('mtg-link')?.value?.trim();
+  const date  = document.getElementById('mtg-date')?.value;
+  const start = document.getElementById('mtg-start')?.value;
+  const end   = document.getElementById('mtg-end')?.value;
+
+  // For create: collect checked classes; for edit: single class dropdown
+  const classIds   = id ? null : [...new Set([...document.querySelectorAll('.mtg-class-cb:checked')].map(el => parseInt(el.value)))];
+  const editClassId = id ? (parseInt(document.getElementById('mtg-class-edit')?.value) || null) : null;
+
+  if (!title || !link || !date || !start || !end) {
+    alert('Please fill in all required fields (marked *)'); return;
+  }
+  if (!id && (!classIds || !classIds.length)) {
+    alert('Please select at least one class.'); return;
+  }
+
+  const payload = {
+    title,
+    google_meet_link: link,
+    meeting_date: date, start_time: start, end_time: end,
+    subject_id: parseInt(document.getElementById('mtg-subj')?.value) || null,
+    description: document.getElementById('mtg-desc')?.value || ''
+  };
+  if (!id) payload.class_ids = classIds;
+  if (id && editClassId) payload.class_id = editClassId;
+
+  _savingMeeting = true;
+  const btn = document.getElementById('adm-modal-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    if (id) await PATCH('/meetings/' + id, payload);
+    else     await POST('/meetings', payload);
+    document.getElementById('adm-modal')?.remove();
+    const m = document.getElementById('t-main') || document.getElementById('a-main');
+    if (m) loadTMeetings(m);
+  } catch(e) {
+    alert('Error: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = id ? 'Save changes' : 'Schedule meeting'; }
+  } finally {
+    _savingMeeting = false;
+  }
+}
+
+function cancelMeeting(id) {
+  const allMtgs = Object.values(window._mtgTabs || {}).flat();
+  const title   = allMtgs.find(m => m.id == id)?.title || 'this meeting';
+  adminModal(
+    'Cancel Meeting',
+    `<div class="info-box amber" style="margin-bottom:0">
+       <div style="font-weight:700;margin-bottom:6px">Cancel "${title}"?</div>
+       <div>Students will no longer see this meeting on their dashboard.</div>
+       <div style="margin-top:6px;font-size:12px;color:var(--text-3)">Existing attendance records are preserved for reporting.</div>
+     </div>`,
+    async () => {
+      try {
+        await DELETE('/meetings/' + id);
+        document.getElementById('adm-modal')?.remove();
+        const m = document.getElementById('t-main') || document.getElementById('a-main');
+        if (m) loadTMeetings(m);
+      } catch(e) { alert('Error: ' + e.message); }
+    },
+    'Yes, cancel meeting'
+  );
+}
+
+async function viewMeetingAttendance(id) {
+  const m = document.getElementById('t-main') || document.getElementById('a-main');
+  if (!m) return;
+  m.innerHTML = panelLoader();
+  let data = null;
+  try { data = await GET('/meetings/' + id + '/attendance'); }
+  catch(e) { m.innerHTML = `<div class="page"><div class="info-box coral">Error: ${e.message}</div></div>`; return; }
+
+  const mt  = data.meeting    || {};
+  const att = data.attendance || [];
+  const sum = data.summary    || {};
+  const attPct = sum.total ? Math.round((sum.present + sum.late) / sum.total * 100) : 0;
+
+  const SCHIP = {
+    present: '<span class="badge badge-green">Present</span>',
+    late:    '<span class="badge badge-amber">Late</span>',
+    partial: '<span class="badge badge-blue">Partial</span>',
+    absent:  '<span class="badge badge-coral">Absent</span>',
+  };
+
+  const rows = att.map(r => {
+    const status = r.attendance_status || 'absent';
+    const initials = ((r.first_name||'?')[0] + (r.last_name||'?')[0]).toUpperCase();
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="student-avatar" style="background:${r.avatar_color||'var(--teal)'};width:28px;height:28px;font-size:10px">${initials}</div>
+          <div>${r.first_name} ${r.last_name}</div>
+        </div>
+      </td>
+      <td>${r.joined_at ? fmtDate(r.joined_at) : '<span style="color:var(--text-3)">—</span>'}</td>
+      <td>${r.duration_minutes || 0} min</td>
+      <td>${SCHIP[status] || status}</td>
+      <td style="font-size:11px;color:var(--text-3)">${r.ip_address || '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const isTeacher = CURRENT_USER?.role === 'teacher';
+  const backFn    = isTeacher ? "tNav('meetings',null)" : "aNav('meetings',null)";
+
+  m.innerHTML = `
+<div class="topbar">
+  <div>
+    <div class="topbar-title">${mt.title || 'Meeting'} — Attendance</div>
+    <div class="topbar-sub">${data.class_name || ''} · ${mt.meeting_date ? fmtDate(mt.meeting_date) : ''} · ${(mt.start_time||'').slice(0,5)} – ${(mt.end_time||'').slice(0,5)}</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="${backFn}">← Back</button>
+    <button class="btn btn-secondary" onclick="exportMeetingAttCSV(${id})">⬇ Export CSV</button>
+  </div>
+</div>
+<div class="page">
+  <div class="stats-row" style="margin-bottom:20px">
+    <div class="stat-card"><div class="label">Present</div><div class="value" style="color:var(--green)">${sum.present||0}</div></div>
+    <div class="stat-card"><div class="label">Late</div><div class="value" style="color:var(--amber)">${sum.late||0}</div></div>
+    <div class="stat-card"><div class="label">Partial</div><div class="value" style="color:var(--blue, #3b82f6)">${sum.partial||0}</div></div>
+    <div class="stat-card"><div class="label">Absent</div><div class="value" style="color:var(--coral)">${sum.absent||0}</div></div>
+    <div class="stat-card"><div class="label">Attendance rate</div><div class="value" style="color:${col(attPct)}">${attPct}%</div></div>
+  </div>
+  <div class="card">
+    <table class="data-table">
+      <thead><tr><th>Student</th><th>Joined at</th><th>Duration</th><th>Status</th><th>IP address</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:20px">No attendance records yet</td></tr>'}</tbody>
+    </table>
+  </div>
+  <div class="info-box blue" style="margin-top:16px;font-size:12px">
+    Attendance rules: Present = 20+ min · Late = 10–19 min · Partial = 1–9 min · Absent = 0 min
+  </div>
+</div>`;
+  window._meetingAttData = data;
+}
+
+function exportMeetingAttCSV(id) {
+  const data = window._meetingAttData;
+  if (!data) return;
+  const mt  = data.meeting    || {};
+  const att = data.attendance || [];
+  const rows = [
+    ['Meeting:', mt.title || ''],
+    ['Class:',   data.class_name || ''],
+    ['Date:',    mt.meeting_date || ''],
+    ['Time:',    ((mt.start_time||'').slice(0,5) + ' – ' + (mt.end_time||'').slice(0,5))],
+    [],
+    ['Student', 'Joined At', 'Duration (min)', 'Status', 'IP Address'],
+    ...att.map(r => [
+      r.first_name + ' ' + r.last_name,
+      r.joined_at || '',
+      r.duration_minutes || 0,
+      r.attendance_status || 'absent',
+      r.ip_address || ''
+    ])
+  ];
+  const csv = rows.map(r => r.map(v => '"' + String(v||'').replace(/"/g, '""') + '"').join(',')).join('\n');
+  const a   = document.createElement('a');
+  a.href    = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
+  a.download = 'attendance_meeting_' + id + '.csv';
+  a.click();
+}
+
+// ── Admin meetings view (reuses teacher view) ────────────────
+async function loadAMeetings(m) {
+  window._mtgClasses  = null;
+  window._mtgSubjects = null;
+  await loadTMeetings(m);
+}
+
+// ── Student: live classes ────────────────────────────────────
+async function loadSLiveClasses(m) {
+  m.innerHTML = panelLoader();
+  let meetings = [], history = [];
+  const sParams = SCTX.subject_id ? { subject_id: SCTX.subject_id } : {};
+  try {
+    [meetings, history] = await Promise.all([
+      GET('/meetings', sParams).catch(() => []),
+      GET('/meetings/history', sParams).catch(() => [])
+    ]);
+  } catch(e) {}
+  meetings = meetings || [];
+  history  = history  || [];
+
+  const today = new Date().toISOString().split('T')[0];
+  const upcoming = meetings.filter(mt => mt.meeting_date >= today);
+
+  const SCHIP = {
+    absent:  '<span class="badge badge-coral">Absent</span>',
+    partial: '<span class="badge badge-blue">Partial</span>',
+    late:    '<span class="badge badge-amber">Late</span>',
+    present: '<span class="badge badge-green">Present ✓</span>',
+  };
+
+  const canJoin = mt => {
+    const now    = new Date();
+    const mStart = new Date(mt.meeting_date + 'T' + (mt.start_time || '00:00:00'));
+    const mEnd   = new Date(mt.meeting_date + 'T' + (mt.end_time   || '23:59:00'));
+    return now >= new Date(mStart.getTime() - 30 * 60 * 1000) && now <= new Date(mEnd.getTime() + 30 * 60 * 1000);
+  };
+
+  const meetCard = mt => {
+    const joinable = canJoin(mt);
+    const joined   = mt.attendance_status && mt.attendance_status !== 'absent';
+    return `<div class="card card-sm" style="margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;gap:14px">
+        <div style="width:48px;height:48px;border-radius:10px;background:var(--green-lt);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">📅</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px;margin-bottom:2px">${mt.title}</div>
+          <div style="font-size:12px;color:var(--text-3)">${mt.class_name}${mt.subject_name ? ' · ' + mt.subject_name : ''}</div>
+          <div style="font-size:12px;color:var(--text-2);margin-top:4px">${fmtDate(mt.meeting_date)} · ${(mt.start_time||'').slice(0,5)} – ${(mt.end_time||'').slice(0,5)}</div>
+          ${mt.teacher_first ? `<div style="font-size:12px;color:var(--text-3)">Teacher: ${mt.teacher_first} ${mt.teacher_last}</div>` : ''}
+          ${mt.description   ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${mt.description}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+          ${mt.status === 'live' ? '<span class="badge badge-green">🔴 Live now</span>' : ''}
+          ${joined
+            ? (SCHIP[mt.attendance_status] || '')
+            : joinable
+              ? `<button class="btn btn-primary btn-sm" onclick="joinMeeting(${mt.id})">Join Meeting →</button>`
+              : `<span style="font-size:11px;color:var(--text-3)">Opens 30 min before start</span>`}
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const histRow = h => {
+    const now    = new Date();
+    const mStart = new Date(h.meeting_date + 'T' + (h.start_time || '00:00:00'));
+    const isFuture  = mStart > now;
+    const notJoined = !h.joined_at;
+    const statusHtml = (isFuture && notJoined)
+      ? '<span class="badge badge-blue">Upcoming</span>'
+      : SCHIP[h.attendance_status || 'absent'] || '—';
+    return `<tr>
+      <td><b>${h.title}</b><div style="font-size:11px;color:var(--text-3)">${h.class_name||''}</div></td>
+      <td>${h.meeting_date ? fmtDate(h.meeting_date) : '—'}<div style="font-size:11px;color:var(--text-3)">${(h.start_time||'').slice(0,5)}</div></td>
+      <td>${notJoined && isFuture ? '—' : (h.duration_minutes || 0) + ' min'}</td>
+      <td>${statusHtml}</td>
+    </tr>`;
+  };
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Live Classes</div><div class="topbar-sub">Google Meet sessions for your class${SCTX.subject_name ? ` · <span class="badge badge-blue" style="font-size:11px;vertical-align:middle">${SCTX.subject_name}</span>` : ''}</div></div>
+</div>
+<div class="page">
+  <div class="tab-bar" id="lcls-tab-bar">
+    <button class="tab-btn active" onclick="switchLclsTab('upcoming',this)">Upcoming (${upcoming.length})</button>
+    <button class="tab-btn" onclick="switchLclsTab('history',this)">Attendance history</button>
+  </div>
+  <div id="lcls-tab-upcoming">
+    ${upcoming.length
+      ? upcoming.map(meetCard).join('')
+      : `<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">No upcoming live classes</div><div class="empty-desc">Your teacher will schedule sessions here. You'll see a Join button 30 minutes before each session starts.</div></div>`}
+  </div>
+  <div id="lcls-tab-history" style="display:none">
+    ${history.length
+      ? `<div class="card"><table class="data-table">
+           <thead><tr><th>Meeting</th><th>Date</th><th>Duration</th><th>Attendance</th></tr></thead>
+           <tbody>${history.map(histRow).join('')}</tbody>
+         </table></div>`
+      : `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No attendance history yet</div><div class="empty-desc">Your attendance will appear here after joining a session.</div></div>`}
+  </div>
+  <div class="info-box blue" style="margin-top:16px;font-size:12px">
+    Attendance is tracked automatically. Present = 20+ min · Late = 10–19 min · Partial = 1–9 min
+  </div>
+</div>`;
+}
+
+function switchLclsTab(tab, btn) {
+  ['upcoming','history'].forEach(t => {
+    const el = document.getElementById('lcls-tab-' + t);
+    if (el) el.style.display = t === tab ? '' : 'none';
+  });
+  document.querySelectorAll('#lcls-tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+async function joinMeeting(id) {
+  try {
+    const res = await POST('/meetings/' + id + '/join', {});
+    if (res?.meet_link) {
+      startMeetingHeartbeat(id);
+      window.open(res.meet_link, '_blank', 'noopener,noreferrer');
+      // Refresh current view to show updated join status
+      const sm = document.getElementById('s-main');
+      if (sm) {
+        if (_sCurrentView === 'live-classes') loadSLiveClasses(sm);
+        else if (_sCurrentView === 'dashboard') loadDash(sm);
+      }
+    }
+  } catch(e) {
+    alert('Could not join meeting: ' + e.message);
+  }
 }
 </script>
 </body>
