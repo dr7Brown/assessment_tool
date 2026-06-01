@@ -101,16 +101,16 @@ INSERT IGNORE INTO subjects (school_id, name, short_name, category, sort_order) 
   (NULL, 'Kasem',                  'Kasem',    'Languages', 120),
   (NULL, 'Arabic',                 'Arabic',   'Languages', 130);
 
--- ── Humanities & Social Studies ──────────────────────────────
+-- ── General Arts ──────────────────────────────
 INSERT IGNORE INTO subjects (school_id, name, short_name, category, sort_order) VALUES
-  (NULL, 'Government',                        'Government',       'Humanities & Social Studies', 10),
-  (NULL, 'History',                           'History',          'Humanities & Social Studies', 20),
-  (NULL, 'Geography',                         'Geography',        'Humanities & Social Studies', 30),
-  (NULL, 'Economics',                         'Economics',        'Humanities & Social Studies', 40),
-  (NULL, 'Christian Religious Studies (CRS)', 'CRS',              'Humanities & Social Studies', 50),
-  (NULL, 'Islamic Religious Studies (IRS)',   'IRS',              'Humanities & Social Studies', 60),
-  (NULL, 'Sociology',                         'Sociology',        'Humanities & Social Studies', 70),
-  (NULL, 'Psychology',                        'Psychology',       'Humanities & Social Studies', 80);
+  (NULL, 'Government',                        'Government',       'General Arts', 10),
+  (NULL, 'History',                           'History',          'General Arts', 20),
+  (NULL, 'Geography',                         'Geography',        'General Arts', 30),
+  (NULL, 'Economics',                         'Economics',        'General Arts', 40),
+  (NULL, 'Christian Religious Studies (CRS)', 'CRS',              'General Arts', 50),
+  (NULL, 'Islamic Religious Studies (IRS)',   'IRS',              'General Arts', 60),
+  (NULL, 'Sociology',                         'Sociology',        'General Arts', 70),
+  (NULL, 'Psychology',                        'Psychology',       'General Arts', 80);
 -- ── Business Studies ──────────────────────────────────────────
 INSERT IGNORE INTO subjects (school_id, name, short_name, category, sort_order) VALUES
   (NULL, 'Financial Accounting',         'Fin. Acct.',    'Business Studies', 10),

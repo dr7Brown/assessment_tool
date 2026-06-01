@@ -526,6 +526,37 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
         respond($test);
     }
 
+    // GET /tests/{id}/analytics — per-question accuracy for teacher/admin
+    if ($method === 'GET' && $id && $sub === 'analytics') {
+        require_role($auth, 'teacher', 'admin');
+        $questions = DB::fetchAll(
+            "SELECT q.id, LEFT(q.question_text,120) AS question_text, q.type, q.difficulty,
+                    q.sub_strand, q.marks,
+                    COUNT(an.id)                                    AS answer_count,
+                    SUM(IF(an.is_correct=1,1,0))                    AS correct_count,
+                    ROUND(AVG(IF(an.is_correct=1,100,0)),1)         AS accuracy_pct,
+                    tq.sort_order
+             FROM test_questions tq
+             JOIN questions q ON q.id=tq.question_id
+             LEFT JOIN answers an ON an.question_id=q.id
+                  AND an.attempt_id IN (
+                      SELECT id FROM attempts WHERE test_id=? AND status IN ('submitted','marked')
+                  )
+             WHERE tq.test_id=?
+             GROUP BY q.id, q.question_text, q.type, q.difficulty, q.sub_strand, q.marks, tq.sort_order
+             ORDER BY accuracy_pct ASC",
+            [$id, $id]
+        );
+        $overview = DB::fetchOne(
+            "SELECT ROUND(AVG(IF(max_score>0,(score_auto+score_manual)/max_score*100,0)),1) AS avg_pct,
+                    SUM(IF(max_score>0 AND (score_auto+score_manual)/max_score>=0.5,1,0)) AS pass_count,
+                    COUNT(*) AS total_attempts, MAX(submitted_at) AS last_submission
+             FROM attempts WHERE test_id=? AND status IN ('submitted','marked')",
+            [$id]
+        );
+        respond(['questions' => $questions, 'overview' => $overview]);
+    }
+
     // GET /tests/{id}/marking — students+attempts with essay marking status
     if ($method === 'GET' && $id && $sub === 'marking') {
         require_role($auth, 'teacher', 'admin');
@@ -1932,6 +1963,62 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
         );
 
         respond(compact('teachers', 'schoolAvg', 'bySubject', 'semTrend'));
+    }
+
+    // GET /analytics/alerts — pending action alerts for dashboard badge
+    if ($sub === 'alerts') {
+        $alerts = [];
+        if ($role === 'teacher') {
+            $unmarked = (int)(DB::fetchOne(
+                "SELECT COUNT(*) AS n FROM answers an
+                 JOIN questions q ON q.id=an.question_id
+                 JOIN attempts a ON a.id=an.attempt_id
+                 JOIN tests t ON t.id=a.test_id
+                 WHERE t.creator_id=? AND q.type IN ('essay','short') AND an.is_correct IS NULL
+                   AND a.status='submitted'",
+                [(int)$auth['user_id']]
+            )['n'] ?? 0);
+            if ($unmarked) $alerts[] = ['type'=>'warning','icon'=>'✏️',
+                'title'=>$unmarked.' essay'.($unmarked>1?'s':'').' to mark',
+                'desc'=>'Students are waiting for their marks','action'=>'marking'];
+
+            ensureMeetingsSchema();
+            $soonMtg = (int)(DB::fetchOne(
+                "SELECT COUNT(*) AS n FROM meetings WHERE teacher_id=? AND status IN ('scheduled','live')
+                 AND meeting_date=CURDATE() AND start_time >= SUBTIME(NOW(),SEC_TO_TIME(1800))",
+                [(int)$auth['user_id']]
+            )['n'] ?? 0);
+            if ($soonMtg) $alerts[] = ['type'=>'info','icon'=>'📅',
+                'title'=>$soonMtg.' meeting'.($soonMtg>1?'s':'').' today',
+                'desc'=>'Check your meetings schedule','action'=>'meetings'];
+        }
+        if ($role === 'admin') {
+            $unmarkedAll = (int)(DB::fetchOne(
+                "SELECT COUNT(*) AS n FROM answers an
+                 JOIN questions q ON q.id=an.question_id
+                 JOIN attempts a ON a.id=an.attempt_id
+                 JOIN tests t ON t.id=a.test_id JOIN users u ON u.id=t.creator_id
+                 WHERE u.school_id=? AND q.type IN ('essay','short') AND an.is_correct IS NULL
+                   AND a.status='submitted'",
+                [$sid]
+            )['n'] ?? 0);
+            if ($unmarkedAll) $alerts[] = ['type'=>'warning','icon'=>'✏️',
+                'title'=>$unmarkedAll.' essays pending',
+                'desc'=>'School-wide unmarked essays','action'=>'marking'];
+
+            $atRiskCount = (int)(DB::fetchOne(
+                "SELECT COUNT(DISTINCT a.student_id) AS n FROM attempts a JOIN tests t ON t.id=a.test_id
+                 JOIN users u ON u.id=a.student_id WHERE u.school_id=?
+                 AND a.status IN ('submitted','marked')
+                 GROUP BY u.school_id
+                 HAVING ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),0) < 45",
+                [$sid]
+            )['n'] ?? 0);
+            if ($atRiskCount) $alerts[] = ['type'=>'error','icon'=>'🚨',
+                'title'=>'At-risk students detected',
+                'desc'=>'Run the at-risk analysis for details','action'=>'at-risk'];
+        }
+        respond(['alerts'=>$alerts,'count'=>count($alerts)]);
     }
 
     // GET /analytics/wassce — school-wide WASSCE readiness prediction
@@ -5022,34 +5109,38 @@ function handleTermReport(string $method): void {
 // Returns students below threshold or showing declining trend
 // ══════════════════════════════════════════════════════════════
 function handleAtRisk(string $method): void {
-    $auth = require_auth();
+    $auth      = require_auth();
     require_role($auth, 'teacher', 'admin');
     $sid       = $auth['school_id'];
-    $uid       = $auth['user_id'];
+    $uid       = (int)$auth['user_id'];
     $role      = $auth['role'];
     $threshold = max(0, min(100, (int)($_GET['threshold'] ?? 45)));
-    $classId   = (int)($_GET['class_id']      ?? 0);
-    $acYear    = trim($_GET['academic_year']  ?? '');
-    $semNum    = (int)($_GET['semester']      ?? 0);
+    $classId   = (int)($_GET['class_id'] ?? 0);
+    $acYear    = trim($_GET['academic_year'] ?? '');
+    $semNum    = (int)($_GET['semester']    ?? 0);
 
+    // Class filter
     $classWhere  = $classId ? 'AND cs.class_id=?' : '';
     $classParams = $classId ? [$classId] : [];
 
-    // Teacher: only their classes
+    // Teacher restriction: params ONLY for the subquery placeholders (not for u.school_id=?)
+    // Bug fix: $uid was previously merged as the school_id param — now kept separate.
     if ($role === 'teacher') {
-        $teacherClass = 'AND cs.class_id IN (SELECT id FROM classes WHERE school_id=? AND teacher_id=?)';
-        $teacherParams = [$sid, $uid];
+        $teacherWhere      = 'AND cs.class_id IN (SELECT id FROM classes WHERE school_id=? AND teacher_id=?)';
+        $teacherWhereParms = [$sid, $uid];
     } else {
-        $teacherClass  = '';
-        $teacherParams = [$sid];
+        $teacherWhere      = '';
+        $teacherWhereParms = [];
     }
 
-    $acWhere  = $acYear  ? 'AND t.academic_year=?' : '';
-    $semWhere = $semNum  ? 'AND t.semester=?'      : '';
-    $acParam  = $acYear  ? [$acYear]  : [];
-    $semParam = $semNum  ? [$semNum]  : [];
+    // Optional period filters
+    $acWhere  = $acYear ? 'AND t.academic_year=?' : '';
+    $semWhere = $semNum ? 'AND t.semester=?'      : '';
+    $acParam  = $acYear ? [$acYear] : [];
+    $semParam = $semNum ? [$semNum] : [];
 
-    // Students with average below threshold
+    // ── 1. Below-threshold students ──────────────────────────────
+    // Param order: u.school_id, teacherWhere?, classId?, acYear?, semNum?, c.school_id, threshold
     $atRisk = DB::fetchAll(
         "SELECT u.id AS student_id, u.first_name, u.last_name, u.avatar_color,
                 c.name AS class_name, c.id AS class_id,
@@ -5058,56 +5149,68 @@ function handleAtRisk(string $method): void {
                 SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score<0.5,1,0)) AS fail_count
          FROM users u
          JOIN class_students cs ON cs.student_id=u.id
-         JOIN classes c ON c.id=cs.class_id
-         JOIN attempts a ON a.student_id=u.id
-         JOIN tests t ON t.id=a.test_id
-         WHERE u.school_id=? $teacherClass $classWhere $acWhere $semWhere
-           AND a.status IN ('submitted','marked') AND c.school_id=?
+         JOIN classes c         ON c.id = cs.class_id
+         JOIN attempts a        ON a.student_id=u.id AND a.status IN ('submitted','marked')
+         JOIN tests t           ON t.id=a.test_id
+         WHERE u.school_id=? $teacherWhere $classWhere $acWhere $semWhere
+           AND c.school_id=?
          GROUP BY u.id, u.first_name, u.last_name, u.avatar_color, c.name, c.id
          HAVING avg_pct < ? AND test_count >= 2
          ORDER BY avg_pct ASC LIMIT 50",
-        array_merge($teacherParams, $classParams, $acParam, $semParam, [$threshold], [$sid])
+        array_merge([$sid], $teacherWhereParms, $classParams, $acParam, $semParam, [$sid, $threshold])
     );
 
-    // Students with declining trend (last 3 tests getting worse)
+    // ── 2. Declining students ─────────────────────────────────────
+    // Wrapped in a derived table so outer WHERE can reference the aggregate
+    // aliases (overall_avg, recent_avg) — MariaDB forbids this in HAVING.
     $declining = DB::fetchAll(
-        "SELECT u.id AS student_id, u.first_name, u.last_name,
-                c.name AS class_name,
-                ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS recent_avg,
-                COUNT(DISTINCT a.id) AS test_count
-         FROM users u
-         JOIN class_students cs ON cs.student_id=u.id
-         JOIN classes c ON c.id=cs.class_id
-         JOIN attempts a ON a.student_id=u.id AND a.id IN (
-             SELECT a2.id FROM attempts a2 WHERE a2.student_id=u.id
-             AND a2.status IN ('submitted','marked') ORDER BY a2.submitted_at DESC LIMIT 3
-         )
-         JOIN tests t ON t.id=a.test_id
-         WHERE u.school_id=? $classWhere AND c.school_id=?
-         GROUP BY u.id, u.first_name, u.last_name, c.name
-         HAVING recent_avg < ? AND test_count >= 2
-         ORDER BY recent_avg ASC LIMIT 30",
-        array_merge([$sid], $classParams, [$sid, $threshold + 10])
+        "SELECT *
+         FROM (
+             SELECT u.id AS student_id, u.first_name, u.last_name, u.avatar_color,
+                    c.name AS class_name,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1)
+                        AS overall_avg,
+                    ROUND(AVG(IF(a.submitted_at >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND a.max_score>0,
+                        (a.score_auto+a.score_manual)/a.max_score*100, NULL)),1)
+                        AS recent_avg,
+                    SUM(a.submitted_at >= DATE_SUB(NOW(), INTERVAL 60 DAY))
+                        AS recent_count
+             FROM users u
+             JOIN class_students cs ON cs.student_id=u.id
+             JOIN classes c ON c.id=cs.class_id AND c.school_id=?
+             JOIN attempts a ON a.student_id=u.id AND a.status IN ('submitted','marked')
+             WHERE u.school_id=? $teacherWhere $classWhere
+             GROUP BY u.id, u.first_name, u.last_name, u.avatar_color, c.name
+         ) AS sub
+         WHERE sub.recent_count >= 1
+           AND sub.recent_avg   IS NOT NULL
+           AND sub.recent_avg   < sub.overall_avg - 5
+           AND sub.recent_avg   < ?
+         ORDER BY (sub.overall_avg - sub.recent_avg) DESC LIMIT 30",
+        array_merge([$sid, $sid], $teacherWhereParms, $classParams, [$threshold + 10])
     );
 
-    // Missing students (enrolled but zero attempts)
+    // ── 3. Students with zero attempts ───────────────────────────
     $missing = DB::fetchAll(
         "SELECT u.id AS student_id, u.first_name, u.last_name, c.name AS class_name
          FROM users u
          JOIN class_students cs ON cs.student_id=u.id
-         JOIN classes c ON c.id=cs.class_id
-         WHERE u.school_id=? $classWhere AND c.school_id=?
-           AND NOT EXISTS (SELECT 1 FROM attempts a2 WHERE a2.student_id=u.id AND a2.status IN ('submitted','marked'))
+         JOIN classes c ON c.id=cs.class_id AND c.school_id=?
+         WHERE u.school_id=? $teacherWhere $classWhere
+           AND NOT EXISTS (
+               SELECT 1 FROM attempts a2
+               WHERE a2.student_id=u.id AND a2.status IN ('submitted','marked')
+           )
          LIMIT 30",
-        array_merge([$sid], $classParams, [$sid])
+        array_merge([$sid, $sid], $teacherWhereParms, $classParams)
     );
 
     respond([
-        'threshold'  => $threshold,
-        'at_risk'    => $atRisk,
-        'declining'  => $declining,
-        'no_attempts'=> $missing,
-        'summary'    => [
+        'threshold'   => $threshold,
+        'at_risk'     => $atRisk,
+        'declining'   => $declining,
+        'no_attempts' => $missing,
+        'summary'     => [
             'at_risk_count'   => count($atRisk),
             'declining_count' => count($declining),
             'missing_count'   => count($missing),

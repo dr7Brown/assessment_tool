@@ -670,3 +670,50 @@ when i do it on admin dashboard, i get the error
 "Error: Database error: SQLSTATE[42000]: Syntax error or access violation: 1235 This version of MariaDB doesn't yet support 'LIMIT & IN/ALL/ANY/SOME subquery'"
 
 fix all and continue with the upgrades
+
+
+next: done
+error when i run analysis on at risk students on teachers dashboard
+"Error: Database error: SQLSTATE[42S22]: Column not found: 1247 Reference 'overall_avg' not supported (reference to group function)"
+when i do it on admin dashboard, i get the error
+"Error: Database error: SQLSTATE[42S22]: Column not found: 1247 Reference 'overall_avg' not supported (reference to group function)"
+fix all and continue with the upgrades
+
+
+next:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

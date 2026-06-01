@@ -9,6 +9,8 @@
 <meta name="apple-mobile-web-app-title" content="AceICT">
 <title>AceICT — Ghana SHS Assessment Platform</title>
 <link rel="manifest" href="manifest.json">
+<!-- Anti-flash: set theme before first CSS paint so there's no white-flash -->
+<script>(function(){var t=localStorage.getItem('aceict_theme');if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-theme','dark');}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -215,6 +217,224 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 }
 @media(max-width:600px){.hero-roles{flex-direction:column;}.stats-row{grid-template-columns:1fr;}.grid-3{grid-template-columns:1fr 1fr;}.qb-type-grid{grid-template-columns:1fr 1fr;}}
 
+/* ═══════════════════════════════════════════════════════════
+   MOBILE-FIRST ENHANCEMENTS
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Touch targets: larger tap zones ────────────────────── */
+@media(max-width:900px){
+  .btn{min-height:42px;padding-top:9px;padding-bottom:9px;}
+  .btn-sm{min-height:36px;}
+  .nav-item{min-height:44px;padding:10px 8px;}
+}
+
+/* ── Tables: wrap in scroll container ───────────────────── */
+/* All dynamically-generated tables get a scroll wrapper via JS */
+@media(max-width:768px){
+  .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -1px;}
+  /* Any table directly inside .card scrolls horizontally */
+  .card > .data-table,.card > div > .data-table{
+    display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    border-collapse:collapse;width:100%;
+  }
+}
+
+/* ── Tab bar: horizontal scroll, no wrap ────────────────── */
+@media(max-width:900px){
+  .tab-bar{overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;scrollbar-width:none;}
+  .tab-bar::-webkit-scrollbar{display:none;}
+  .tab-btn{flex-shrink:0;white-space:nowrap;}
+}
+
+/* ── Topbar: stack title + actions on small phones ───────── */
+@media(max-width:600px){
+  .topbar{flex-wrap:wrap;gap:8px;padding:52px 12px 12px;}
+  .topbar > *:first-child{flex:1 1 100%;}
+  .topbar-actions{flex-wrap:wrap;gap:6px;width:100%;}
+  .topbar-actions .btn{flex:1 1 auto;justify-content:center;font-size:12px;}
+  .topbar-title{font-size:17px;line-height:1.2;}
+  .topbar-sub{font-size:12px;}
+}
+
+/* ── Card headers: wrap title + action button ───────────── */
+@media(max-width:600px){
+  .card-header{flex-wrap:wrap;gap:8px;}
+  .card-header .btn{flex-shrink:0;}
+  .card-title{font-size:14px;}
+}
+
+/* ── Modal: bottom-sheet on mobile ──────────────────────── */
+@media(max-width:600px){
+  .modal-bg{padding:0 !important;align-items:flex-end;}
+  .modal,.modal-lg{
+    max-width:100% !important;
+    border-radius:20px 20px 0 0;
+    max-height:93vh;
+    animation:mSlideUp .28s cubic-bezier(.4,0,.2,1);
+  }
+  .modal-body{padding:16px 18px;}
+  .modal-footer{padding:12px 18px;}
+  .modal-header{padding:16px 18px;}
+}
+@keyframes mSlideUp{from{transform:translateY(48px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* ── Inline 2-column grids collapse on very small screens ── */
+@media(max-width:480px){
+  [style*="grid-template-columns:1fr 1fr"],[style*="grid-template-columns: 1fr 1fr"]{
+    grid-template-columns:1fr !important;
+  }
+}
+
+/* ── Context filter bars: wrap dropdowns ────────────────── */
+@media(max-width:600px){
+  #t-ctx-bar,#s-ctx-bar{
+    padding:8px 12px !important;
+    flex-wrap:wrap !important;
+    gap:6px !important;
+  }
+  #t-ctx-bar select,#s-ctx-bar select{
+    min-width:0 !important;
+    flex:1 1 calc(50% - 6px);
+    font-size:12px !important;
+  }
+  /* hide separator arrows on mobile */
+  #t-ctx-bar span[style*="rgba(255,255,255,.4)"],
+  #s-ctx-bar span[style*="rgba(255,255,255,.4)"]{display:none;}
+}
+
+/* ── Bar chart labels: responsive ──────────────────────── */
+@media(max-width:600px){
+  .bar-label{
+    min-width:72px !important;
+    max-width:96px !important;
+    font-size:11px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .bar-track{min-width:0;flex:1;}
+  .bar-val{font-size:12px;min-width:34px;text-align:right;}
+}
+
+/* ── Stats cards: tighter padding on phones ─────────────── */
+@media(max-width:480px){
+  .stat-card{padding:12px;}
+  .stat-card .value{font-size:26px;}
+  .stat-card .label{font-size:11px;}
+  .stat-card .trend{font-size:11px;}
+}
+
+/* ── Stat row: 2×2 on tablet, 2×2 on phone already set —
+   Extra: prevent 4-col on mid-range tablets (481-768px)   */
+@media(min-width:481px) and (max-width:768px){
+  .stats-row{grid-template-columns:1fr 1fr;}
+}
+
+/* ── Quiz: better spacing on phones ─────────────────────── */
+@media(max-width:600px){
+  .quiz-shell{padding:12px 12px 80px;}
+  .question-card{padding:16px 14px;border-radius:10px;}
+  .q-actions{padding:10px 0;flex-direction:column;gap:8px;}
+  .q-actions > div{width:100%;justify-content:space-between;}
+  .q-actions .btn{flex:1;}
+  .flag-btn{font-size:13px;padding:8px 14px;}
+  .q-nav{gap:4px;}
+  .qnav-btn{width:28px;height:28px;font-size:10px;border-radius:6px;}
+}
+
+/* ── Landing page: tighten up on phones ─────────────────── */
+@media(max-width:480px){
+  .landing-nav{padding:14px 16px;}
+  .landing-nav-links{gap:4px;}
+  .nav-btn{padding:6px 12px;font-size:12px;}
+  .hero-desc{font-size:14px;}
+  .role-card{min-width:130px;padding:14px 16px;}
+  .hero-title{letter-spacing:-.5px;}
+}
+
+/* ── Data table action columns: scrollable not hidden ───── */
+/* Tables scroll horizontally — all columns preserved */
+/* Only hide truly redundant columns if needed per-page via inline style */
+
+/* ── Page: ensure comfortable padding on smallest screens ─ */
+@media(max-width:480px){
+  .page{padding:12px 10px;}
+}
+
+/* ── Floating elements: above mobile nav bar ─────────────── */
+@media(max-width:900px){
+  #sync-badge{bottom:72px !important;right:12px !important;}
+  #pwa-install-bar{bottom:72px !important;left:8px !important;right:8px !important;max-width:none !important;}
+}
+@media(max-width:600px){
+  #offline-bar,#online-toast{font-size:12px;padding:8px 12px;}
+}
+
+/* ── Sidebar user chip: compact on mobile ────────────────── */
+@media(max-width:900px){
+  .user-name{font-size:13px;}
+  .user-role{font-size:11px;}
+  .user-chip{gap:8px;}
+}
+
+/* ── Forms inside modals: full-width inputs on mobile ───── */
+@media(max-width:600px){
+  .form-control,.form-select,.form-input,.form-textarea{font-size:16px;} /* prevents iOS auto-zoom */
+}
+
+/* ── Report card print layout: readable on mobile screen ─── */
+@media(max-width:600px){
+  .report-card-print{padding:14px !important;}
+  .report-card-print table{font-size:11px;}
+}
+
+/* ── Meeting cards: stack on mobile ─────────────────────── */
+@media(max-width:480px){
+  .card.card-sm [style*="display:flex;align-items:flex-start"]{
+    flex-wrap:wrap;
+  }
+}
+
+/* ── Badges row: wrap properly ──────────────────────────── */
+@media(max-width:600px){
+  .badge{font-size:10px;padding:2px 7px;}
+}
+
+/* ── Messages & Chat: WhatsApp-style two-pane layout ─────
+   Wide: list panel + detail panel side by side
+   Mobile (≤768px): full-width list; detail slides in from right
+   ─────────────────────────────────────────────────────── */
+.msg-layout{display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 120px);position:relative;overflow:hidden;}
+.msg-list-pane{overflow-y:auto;border-right:1px solid var(--border);background:#fff;min-width:0;}
+.msg-detail-pane{overflow-y:auto;background:#f9f8f5;display:flex;flex-direction:column;min-width:0;}
+.msg-back-btn{display:none;} /* hidden on desktop */
+
+@media(max-width:768px){
+  .msg-layout{display:block;height:calc(100vh - 60px);position:relative;overflow:hidden;}
+  .msg-list-pane{width:100%;height:100%;overflow-y:auto;border-right:none;}
+  .msg-detail-pane{
+    position:absolute;inset:0;z-index:30;background:#f9f8f5;
+    transform:translateX(105%);
+    transition:transform .28s cubic-bezier(.4,0,.2,1);
+    overflow-y:auto;overflow-x:hidden;
+    display:flex;flex-direction:column;
+  }
+  .msg-detail-pane.msg-open{
+    transform:translateX(0);
+    box-shadow:-4px 0 20px rgba(0,0,0,.12);
+  }
+  .msg-back-btn{
+    display:flex !important;
+    align-items:center;gap:8px;
+    background:#fff;border:none;border-bottom:1px solid var(--border);
+    color:var(--green-dk);font-size:14px;font-weight:700;
+    padding:12px 16px;cursor:pointer;font-family:inherit;
+    position:sticky;top:0;z-index:2;width:100%;text-align:left;
+    flex-shrink:0;
+  }
+  .msg-back-btn:active{background:var(--bg);}
+}
+
 /* ── Mobile sidebar toggle button & backdrop ── */
 .sidebar-toggle{
   display:none;position:fixed;top:12px;left:12px;z-index:600;
@@ -238,6 +458,181 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 @media(max-width:900px){
   .sidebar-toggle{display:flex;}
   .sidebar-close{display:block;}
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DARK MODE
+   Activated by  data-theme="dark"  on <html>.
+   Only CSS variables and targeted overrides — no layout changes.
+   Print styles always render light regardless of theme.
+   ═══════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+  /* Core palette — brighter/lighter tones for dark backgrounds */
+  --green:      #4ADE80;
+  --green-dk:   #16A34A;
+  --green-lt:   rgba(74,222,128,.13);
+  --green-mid:  #86EFAC;
+  --amber:      #FCD34D;
+  --amber-lt:   rgba(252,211,77,.13);
+  --coral:      #FC8181;
+  --coral-lt:   rgba(252,129,129,.13);
+  --blue:       #60A5FA;
+  --blue-lt:    rgba(96,165,250,.13);
+  --purple:     #C4B5FD;
+  --purple-lt:  rgba(196,181,253,.13);
+  --teal:       #34D399;
+  --teal-lt:    rgba(52,211,153,.13);
+  --slate:      #94A3B8;
+  --slate-lt:   rgba(148,163,184,.13);
+
+  /* Surface & background */
+  --bg:         #0D1117;
+  --surface:    #161B22;
+
+  /* Text */
+  --text:       #E6EDF3;
+  --text-2:     #8B949E;
+  --text-3:     #484F58;
+
+  /* Borders & shadows */
+  --border:     rgba(255,255,255,.08);
+  --border-2:   rgba(255,255,255,.16);
+  --shadow:     0 1px 6px rgba(0,0,0,.5), 0 4px 20px rgba(0,0,0,.4);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,.7);
+
+  color-scheme: dark;
+}
+
+/* ── Global dark overrides ─────────────────────────────────── */
+[data-theme="dark"] body { background:var(--bg); color:var(--text); }
+
+/* Sidebars */
+[data-theme="dark"] .sidebar { background:var(--surface); }
+[data-theme="dark"] .sidebar-footer { border-color:var(--border); }
+
+/* Topbar */
+[data-theme="dark"] .topbar { background:var(--surface); border-color:var(--border); }
+
+/* Cards */
+[data-theme="dark"] .card { background:var(--surface); }
+[data-theme="dark"] .card-title { color:var(--text); }
+[data-theme="dark"] .card-sub { color:var(--text-2); }
+
+/* Modals */
+[data-theme="dark"] .modal { background:var(--surface); }
+[data-theme="dark"] .modal-header { background:var(--surface); border-color:var(--border); }
+[data-theme="dark"] .modal-body { background:var(--surface); }
+[data-theme="dark"] .modal-footer { background:var(--surface); border-color:var(--border); }
+[data-theme="dark"] .modal-bg { background:rgba(0,0,0,.75); }
+
+/* Stat cards */
+[data-theme="dark"] .stat-card { background:var(--surface); }
+[data-theme="dark"] .stat-card .label { color:var(--text-3); }
+[data-theme="dark"] .stat-card .value { color:var(--text); }
+
+/* Tables */
+[data-theme="dark"] .data-table th { color:var(--text-3); border-color:var(--border); background:var(--bg); }
+[data-theme="dark"] .data-table td { border-color:var(--border); color:var(--text-2); }
+[data-theme="dark"] .data-table tr:hover td { background:rgba(255,255,255,.03); }
+
+/* Forms */
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea,
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .form-textarea {
+  background:#1E2433;
+  color:var(--text);
+  border-color:var(--border-2);
+}
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder { color:var(--text-3); }
+[data-theme="dark"] input:focus,
+[data-theme="dark"] select:focus,
+[data-theme="dark"] textarea:focus { border-color:var(--green); outline:none; }
+
+/* Buttons */
+[data-theme="dark"] .btn-secondary { background:var(--surface); color:var(--text); border-color:var(--border-2); }
+[data-theme="dark"] .btn-secondary:hover { background:#1E2433; }
+[data-theme="dark"] .btn-ghost { color:var(--text-2); }
+[data-theme="dark"] .btn-ghost:hover { background:rgba(255,255,255,.06); }
+
+/* Info boxes */
+[data-theme="dark"] .info-box { background:rgba(255,255,255,.05); border-color:var(--border-2); }
+[data-theme="dark"] .info-box.blue  { background:rgba(96,165,250,.10); border-color:var(--blue); color:var(--blue); }
+[data-theme="dark"] .info-box.amber { background:rgba(252,211,77,.10); border-color:var(--amber); color:var(--amber); }
+[data-theme="dark"] .info-box.coral { background:rgba(252,129,129,.10); border-color:var(--coral); color:var(--coral); }
+[data-theme="dark"] .info-box.green { background:var(--green-lt); border-color:var(--green); color:var(--green); }
+
+/* Tags / pills */
+[data-theme="dark"] .tag { background:rgba(255,255,255,.07); color:var(--text-2); }
+[data-theme="dark"] .tag.active { background:var(--green-lt); color:var(--green); border-color:var(--green); }
+
+/* Tab bar */
+[data-theme="dark"] .tab-bar { border-color:var(--border); }
+[data-theme="dark"] .tab-btn { color:var(--text-3); }
+[data-theme="dark"] .tab-btn.active { color:var(--green); border-color:var(--green); }
+
+/* Nav items */
+[data-theme="dark"] .nav-item { color:var(--text-2); }
+[data-theme="dark"] .nav-item:hover { background:rgba(255,255,255,.05); }
+[data-theme="dark"] .nav-item.active { background:var(--green-lt); color:var(--green); }
+[data-theme="dark"] .sidebar-section-label { color:var(--text-3); }
+[data-theme="dark"] .sidebar-logo .logo-name { color:var(--text); }
+
+/* Quiz */
+[data-theme="dark"] .question-card { background:var(--surface); }
+[data-theme="dark"] .quiz-header { background:var(--bg); }
+[data-theme="dark"] .option-btn { background:var(--surface); color:var(--text); border-color:var(--border-2); }
+[data-theme="dark"] .option-btn:hover { background:#1E2433; border-color:var(--green); }
+[data-theme="dark"] .option-btn.selected { background:var(--green-lt); border-color:var(--green); color:var(--green); }
+
+/* Messages & chat */
+[data-theme="dark"] .msg-list-pane { background:var(--surface); }
+[data-theme="dark"] .msg-detail-pane { background:var(--bg); }
+[data-theme="dark"] #chat-panel { background:var(--bg); }
+
+/* Mobile nav */
+[data-theme="dark"] .mobile-nav { background:var(--surface); border-color:var(--border); }
+[data-theme="dark"] .mobile-nav-item { color:var(--text-3); }
+[data-theme="dark"] .mobile-nav-item.active { color:var(--green); }
+
+/* Misc */
+[data-theme="dark"] .divider { border-color:var(--border); }
+[data-theme="dark"] .notif { background:#1E2433; color:var(--text); }
+[data-theme="dark"] .sidebar-toggle { background:var(--surface); border-color:var(--border-2); color:var(--text); }
+[data-theme="dark"] .sidebar-backdrop { background:rgba(0,0,0,.7); }
+[data-theme="dark"] #offline-bar { background:#7F1D1D; }
+[data-theme="dark"] #online-toast { background:#14532D; }
+[data-theme="dark"] .msg-back-btn { background:var(--surface); border-color:var(--border); color:var(--green); }
+
+/* Empty states */
+[data-theme="dark"] .empty-state { color:var(--text-3); }
+
+/* Inline hardcoded #fff / #f9f8f5 backgrounds in chat generated HTML */
+[data-theme="dark"] #chat-group-list { background:var(--surface) !important; }
+[data-theme="dark"] #chat-group-list > div { background:var(--surface) !important; }
+[data-theme="dark"] #chat-group-list > div:hover { background:#1E2433 !important; }
+
+/* Theme toggle button */
+.theme-toggle {
+  width:32px;height:32px;padding:0;font-size:16px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:8px;flex-shrink:0;line-height:1;
+}
+
+/* Print: always render light */
+@media print {
+  [data-theme="dark"] *,
+  [data-theme="dark"] *::before,
+  [data-theme="dark"] *::after {
+    background:#fff !important;
+    color:#000 !important;
+    border-color:#ddd !important;
+    box-shadow:none !important;
+  }
 }
 
 </style>
@@ -302,6 +697,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="user-chip">
           <div class="user-avatar" style="background:var(--teal)">KM</div>
           <div><div class="user-name">Kofi Mensah</div><div class="user-role">SHS2A · Student</div></div>
+          <button class="theme-toggle btn btn-ghost" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
           <button class="logout-btn" onclick="doLogout()" title="Sign out">←</button>
         </div>
       </div>
@@ -371,6 +767,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="user-chip">
           <div class="user-avatar" style="background:var(--amber)">AK</div>
           <div><div class="user-name">Ama Kyereh</div><div class="user-role">ICT Teacher</div></div>
+          <button class="theme-toggle btn btn-ghost" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
           <button class="logout-btn" onclick="doLogout()" title="Sign out">←</button>
         </div>
       </div>
@@ -440,6 +837,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="user-chip">
           <div class="user-avatar" style="background:var(--blue)">PB</div>
           <div><div class="user-name">Prof. Baah</div><div class="user-role">Headmaster</div></div>
+          <button class="theme-toggle btn btn-ghost" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
           <button class="logout-btn" onclick="doLogout()" title="Sign out">←</button>
         </div>
       </div>
@@ -1010,6 +1408,43 @@ function showOfflineCacheNotice() {
 const GET    = (ep, p)  => api('GET',    ep, p);
 const POST   = (ep, b)  => api('POST',   ep, b);
 const PATCH  = (ep, b)  => api('PATCH',  ep, b);
+
+// ── Dark mode ────────────────────────────────────────────────
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const next   = isDark ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('aceict_theme', next);
+  document.querySelectorAll('.theme-toggle').forEach(b => {
+    b.textContent = next === 'dark' ? '☀️' : '🌙';
+    b.title = next === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  });
+}
+
+// Sync toggle icon with current theme on load
+(function syncThemeIcon() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  // Buttons are not yet in the DOM at this point — they get updated
+  // in updateSidebarUser() after login. Static placeholder buttons
+  // in the HTML start as 🌙; we correct them once DOM is ready.
+  document.addEventListener('DOMContentLoaded', () => {
+    if (isDark) {
+      document.querySelectorAll('.theme-toggle').forEach(b => {
+        b.textContent = '☀️';
+        b.title = 'Switch to light mode';
+      });
+    }
+  });
+  // Also listen for system-level theme changes
+  window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', e => {
+    if (!localStorage.getItem('aceict_theme')) {
+      document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+      document.querySelectorAll('.theme-toggle').forEach(b => {
+        b.textContent = e.matches ? '☀️' : '🌙';
+      });
+    }
+  });
+})();
 const PUT    = (ep, b)  => api('PUT',    ep, b);
 const DELETE = (ep, b)  => api('DELETE', ep, b);
 
@@ -1313,6 +1748,7 @@ function updateSidebarUser(role) {
     footer.innerHTML = `
       <div class="user-avatar" style="background:${u.avatar_color||'var(--teal)'}">${initials}</div>
       <div><div class="user-name">${fullName}</div><div class="user-role">${sub}</div></div>
+      <button class="theme-toggle btn btn-ghost" onclick="toggleTheme()" title="Toggle dark mode">${document.documentElement.getAttribute('data-theme')==='dark'?'☀️':'🌙'}</button>
       <button class="logout-btn" onclick="doLogout()" title="Sign out">←</button>`;
   }
 }
@@ -2368,6 +2804,7 @@ async function loadPerformance(m) {
     <div class="topbar-sub">${subjName?`<span class="badge badge-blue" style="font-size:11px">${subjName}</span>`:''} ${SCTX.period_label && SCTX.period_label!=='Current period'?`<span class="badge badge-amber" style="font-size:11px">${SCTX.period_label}</span>`:''}</div>
   </div>
   <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="generateStudentSelfReport()">📄 My Report</button>
     <button class="btn btn-secondary" onclick="printCurrentPage('My Performance','perf-page')">🖨 Print</button>
   </div>
 </div>
@@ -3768,6 +4205,7 @@ async function loadTDash(m){
   </div>
 </div>
 <div class="page">
+  <div id="t-dash-alerts" style="display:none"></div>
   <div class="stats-row">
     <div class="stat-card"><div class="label">Students</div><div class="value">${analytics?.overview?.student_count||(students||[]).length||0}</div><div class="trend">${subjName?'in your classes':'in your classes'}</div></div>
     <div class="stat-card"><div class="label">Active tests</div><div class="value">${active.length}</div><div class="trend">${subjName?subjName:'all subjects'}</div></div>
@@ -3810,6 +4248,7 @@ async function loadTDash(m){
       <td style="display:flex;gap:4px">
         <button class="btn btn-ghost btn-sm" onclick="previewTest(${t.id},true)">Preview</button>
         <button class="btn btn-ghost btn-sm" onclick="viewTestResults(${t.id})">Results</button>
+        <button class="btn btn-ghost btn-sm" onclick="openTestAnalytics(${t.id},${JSON.stringify(t.title||'Test')})">📊</button>
         <button class="btn btn-ghost btn-sm" onclick="editExistingTest(${t.id})">Edit</button>
         <button class="btn btn-ghost btn-sm" onclick="duplicateTest(${t.id})">Copy</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="deleteTest(${t.id},'${(t.title||'').replace(/'/g,"\\'")}')">Delete</button>
@@ -3818,6 +4257,8 @@ async function loadTDash(m){
     `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No tests yet${subjName?' for '+subjName:''}</div><div class="empty-desc">Create your first test to get started.</div></div>`}
   </div>
 </div>`;
+  // Load action alerts non-blocking
+  loadDashboardAlerts('t-dash-alerts', 'tNav');
 }
 
 async function loadTBank(m){
@@ -5691,39 +6132,63 @@ function aAnalyticsPeriod(sem, year) {
 
 function renderTeacherAnalytics(data) {
   if (!data) return '<div class="info-box blue">Loading teacher analytics…</div>';
-  const teachers = data.teachers || [];
-  const school   = data.schoolAvg || {};
-  const schoolAvg = Math.round(parseFloat(school.avg_pct)||0);
+  const teachers  = data.teachers  || [];
+  const school    = data.schoolAvg || {};
+  const schoolAvg = Math.round(parseFloat(school.avg_pct) || 0);
   if (!teachers.length) return '<div class="info-box blue">No teacher analytics yet. Teachers need to publish tests and have students attempt them.</div>';
-  const rows = teachers.map(t => {
-    const avg = Math.round(parseFloat(t.avg_pct)||0);
-    const pr  = t.pass_count && t.total_attempts ? Math.round(t.pass_count/t.total_attempts*100) : 0;
-    const ini = (t.teacher_name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    const vsSchool = avg - schoolAvg;
+
+  // ── Accountability Index: composite 0-100 score ──────────────
+  // Weighted: student avg (40%) + pass rate (25%) + test count (20%) + question bank (15%)
+  const maxTests = Math.max(...teachers.map(t => t.test_count || 0), 1);
+  const maxQs    = Math.max(...teachers.map(t => t.question_count || 0), 1);
+  const accountabilityScore = t => {
+    const avg  = Math.round(parseFloat(t.avg_pct) || 0);
+    const pr   = t.pass_count && t.total_attempts ? Math.round(t.pass_count/t.total_attempts*100) : 0;
+    const tc   = Math.round(Math.min((t.test_count||0)/maxTests, 1) * 100);
+    const qc   = Math.round(Math.min((t.question_count||0)/maxQs, 1) * 100);
+    return Math.round(avg*0.40 + pr*0.25 + tc*0.20 + qc*0.15);
+  };
+
+  const sorted = [...teachers].sort((a,b) => accountabilityScore(b) - accountabilityScore(a));
+
+  const rows = sorted.map((t, rank) => {
+    const avg   = Math.round(parseFloat(t.avg_pct) || 0);
+    const pr    = t.pass_count && t.total_attempts ? Math.round(t.pass_count/t.total_attempts*100) : 0;
+    const score = accountabilityScore(t);
+    const ini   = (t.teacher_name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    const vs    = avg - schoolAvg;
+    const medal = rank===0?'🥇':rank===1?'🥈':rank===2?'🥉':'';
     return `<tr>
       <td>
         <div style="display:flex;align-items:center;gap:8px">
           <div style="width:30px;height:30px;border-radius:50%;background:${t.avatar_color||'var(--green-dk)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${ini}</div>
           <div>
-            <div style="font-weight:600">${t.teacher_name}</div>
+            <div style="font-weight:600">${medal} ${t.teacher_name}</div>
             <div style="font-size:11px;color:var(--text-3)">${t.department_name||'—'}</div>
           </div>
         </div>
       </td>
       <td style="text-align:center">${t.test_count||0}</td>
       <td style="text-align:center">${t.students_tested||0}</td>
-      <td style="text-align:center">${t.total_attempts||0}</td>
       <td>
         <div style="display:flex;align-items:center;gap:6px">
           <div style="width:70px;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
-            <div style="width:${avg}%;height:100%;background:${avg>=65?'var(--green)':avg>=50?'var(--amber)':'var(--coral)'};border-radius:3px"></div>
+            <div style="width:${avg}%;height:100%;background:${col(avg)};border-radius:3px"></div>
           </div>
           <b style="color:${col(avg)}">${avg}%</b>
-          <span style="font-size:10px;color:${vsSchool>=0?'var(--green)':'var(--coral)'}">${vsSchool>=0?'+':''}${vsSchool}%</span>
+          <span style="font-size:10px;color:${vs>=0?'var(--green)':'var(--coral)'}">${vs>=0?'+':''}${vs}%</span>
         </div>
       </td>
       <td><span class="badge badge-${pr>=50?'green':'coral'}" style="font-size:10px">${pr}%</span></td>
-      <td style="font-size:11px;color:var(--text-3)">${t.question_count||0} questions</td>
+      <td style="text-align:center;font-size:12px;color:var(--text-3)">${t.question_count||0}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:60px;height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+            <div style="width:${score}%;height:100%;background:${score>=70?'var(--green)':score>=50?'var(--amber)':'var(--coral)'};border-radius:4px"></div>
+          </div>
+          <b style="font-size:13px;color:${score>=70?'var(--green)':score>=50?'var(--amber)':'var(--coral)'}">${score}</b>
+        </div>
+      </td>
     </tr>`;
   }).join('');
 
@@ -5738,12 +6203,19 @@ function renderTeacherAnalytics(data) {
   <div class="card">
     <div class="card-header">
       <div class="card-title">Teacher performance · ${teachers.length} teachers</div>
-      <div style="font-size:11px;color:var(--text-3)">vs school avg shown as ±%</div>
+      <div style="font-size:11px;color:var(--text-3)">Ranked by Accountability Index (0–100)</div>
     </div>
     <table class="data-table">
-      <thead><tr><th>Teacher</th><th>Tests</th><th>Students</th><th>Attempts</th><th>Avg score</th><th>Pass rate</th><th>Questions</th></tr></thead>
+      <thead><tr>
+        <th>Teacher</th><th>Tests</th><th>Students</th>
+        <th>Avg score</th><th>Pass rate</th><th>Questions</th>
+        <th title="Weighted: avg score 40% + pass rate 25% + test activity 20% + question bank 15%">Index ⓘ</th>
+      </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    <div style="font-size:11px;color:var(--text-3);padding:10px 0">
+      ⓘ Accountability Index = avg score (40%) + pass rate (25%) + test activity (20%) + question bank size (15%)
+    </div>
   </div>`;
 }
 
@@ -9942,6 +10414,20 @@ function renderMessageList(msgs, isInbox, onReply) {
   }).join('');
 }
 
+// ── Mobile: slide back to list pane ──────────────────────────
+function closeMsgDetail() {
+  const panel = document.getElementById('msg-detail-panel');
+  if (panel) panel.classList.remove('msg-open');
+}
+function closeChatPanel() {
+  const panel = document.getElementById('chat-panel');
+  if (panel) panel.classList.remove('msg-open');
+  // Clear active group highlight
+  document.querySelectorAll('[id^="cg-row-"]').forEach(el => el.style.outline = 'none');
+  _chatState.groupId = null;
+  stopChatPoll();
+}
+
 function linkifyMsg(text) {
   // Escape HTML, then turn URLs into blue clickable links, then newlines → <br>
   return (text || '')
@@ -9965,12 +10451,17 @@ async function viewMessage(msgId, rowEl) {
     const panel = document.getElementById('msg-detail-panel');
     if (!panel) return;
     // Switch from placeholder state to reading state
-    panel.style.display         = 'block';
     panel.style.alignItems      = 'unset';
     panel.style.justifyContent  = 'unset';
     panel.style.background      = '#fff';
+    panel.style.display         = 'flex';
+    panel.style.flexDirection   = 'column';
+    // Mobile: slide in the detail pane
+    panel.classList.add('msg-open');
+    // Inject back button (only visible on mobile via CSS)
+    const backBtn = `<button class="msg-back-btn" onclick="closeMsgDetail()">‹ Back to messages</button>`;
     const senderInit = (msg.sender_name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    panel.innerHTML = `
+    panel.innerHTML = backBtn + `
       <div style="padding:24px 28px 18px;border-bottom:1px solid var(--border);background:#fff;position:sticky;top:0;z-index:1">
         <div style="font-size:19px;font-weight:700;color:var(--text-1);margin-bottom:14px;line-height:1.3">
           ${msg.subject}
@@ -10187,9 +10678,9 @@ async function loadGroupChat(m, role) {
   ${isAdmin ? `<div class="topbar-actions"><button class="btn btn-primary" onclick="openCreateGroupModal()">+ New group</button></div>` : ''}
 </div>
 <div class="page" style="padding:0">
-  <div style="display:grid;grid-template-columns:280px 1fr;height:calc(100vh - 120px)">
+  <div class="msg-layout">
     <!-- Group list -->
-    <div style="overflow-y:auto;border-right:1px solid var(--border);background:#fff" id="chat-group-list">
+    <div class="msg-list-pane" id="chat-group-list">
       ${!groups.length
         ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-3);padding:30px;text-align:center">
              <div style="font-size:40px;margin-bottom:12px;opacity:.4">💬</div>
@@ -10199,11 +10690,11 @@ async function loadGroupChat(m, role) {
         : groups.map(g => renderGroupRow(g)).join('')}
     </div>
     <!-- Chat panel -->
-    <div id="chat-panel" style="display:flex;flex-direction:column;background:#f9f8f5">
+    <div id="chat-panel" class="msg-detail-pane">
       <div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-3);font-size:14px">
         <div style="text-align:center"><div style="font-size:40px;margin-bottom:12px;opacity:.4">💬</div>
           <div style="font-weight:600;margin-bottom:4px">Select a group</div>
-          <div style="font-size:12px">Choose a group from the left to start chatting</div>
+          <div style="font-size:12px">Choose a group from the list to start chatting</div>
         </div>
       </div>
     </div>
@@ -10277,9 +10768,11 @@ async function openChatGroup(groupId) {
     _chatState.myCanSend   = me ? !!me.can_send : true;
   } catch(e) { _chatState.myGroupRole = 'member'; _chatState.myCanSend = true; }
 
+  panel.classList.add('msg-open'); // mobile: slides in from right
   panel.style.display = 'flex';
   panel.style.flexDirection = 'column';
   panel.innerHTML = `
+    <button class="msg-back-btn" onclick="closeChatPanel()">‹ Back to groups</button>
     <div style="padding:14px 20px;border-bottom:1px solid var(--border);background:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0">
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:36px;height:36px;border-radius:8px;background:var(--green-dk);display:flex;align-items:center;justify-content:center;font-size:16px">${TYPE_ICON[group.type]||'💬'}</div>
@@ -10555,14 +11048,14 @@ async function loadStudentMessages(m) {
   <div><div class="topbar-title">Messages</div><div class="topbar-sub">${unread} unread</div></div>
 </div>
 <div class="page" style="padding:0">
-  <div style="display:grid;grid-template-columns:340px 1fr;height:calc(100vh - 120px)">
-    <div style="overflow-y:auto;border-right:1px solid var(--border)">
+  <div class="msg-layout">
+    <div class="msg-list-pane">
       ${renderMessageList(msgs, true, null)}
     </div>
-    <div id="msg-detail-panel" style="overflow-y:auto;background:#f9f8f5;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:14px;border-left:1px solid var(--border)">
+    <div id="msg-detail-panel" class="msg-detail-pane" style="align-items:center;justify-content:center;color:var(--text-3);font-size:14px">
       <div style="text-align:center"><div style="font-size:40px;margin-bottom:12px;opacity:.4">✉️</div>
         <div style="font-weight:600;margin-bottom:4px">Open a message</div>
-        <div style="font-size:12px">Click any message on the left to read it</div>
+        <div style="font-size:12px">Tap any message to read it</div>
       </div>
     </div>
   </div>
@@ -10582,8 +11075,8 @@ async function loadTMessages(m) {
   <div class="topbar-actions"><button class="btn btn-primary" onclick="openComposeModal()">✉️ Compose</button></div>
 </div>
 <div class="page" style="padding:0">
-  <div style="display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 120px)">
-    <div style="overflow-y:auto;border-right:1px solid var(--border);background:#fff">
+  <div class="msg-layout">
+    <div class="msg-list-pane">
       <div class="tab-bar" style="margin:0;padding:0 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:1">
         <button class="tab-btn active" onclick="switchTab(this,'tmsg-inbox')" style="font-size:12px">Inbox (${inbox.filter(x=>!x.read_at).length})</button>
         <button class="tab-btn" onclick="switchTab(this,'tmsg-sent')" style="font-size:12px">Sent (${sent.length})</button>
@@ -10591,10 +11084,10 @@ async function loadTMessages(m) {
       <div id="tmsg-inbox" class="tab-pane active" style="display:block">${renderMessageList(inbox, true, null)}</div>
       <div id="tmsg-sent"  class="tab-pane" style="display:none">${renderMessageList(sent, false, null)}</div>
     </div>
-    <div id="msg-detail-panel" style="overflow-y:auto;background:#f9f8f5;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:14px;border-left:1px solid var(--border)">
+    <div id="msg-detail-panel" class="msg-detail-pane" style="align-items:center;justify-content:center;color:var(--text-3);font-size:14px">
       <div style="text-align:center"><div style="font-size:40px;margin-bottom:12px;opacity:.4">✉️</div>
         <div style="font-weight:600;margin-bottom:4px">Open a message</div>
-        <div style="font-size:12px">Click any message on the left to read it</div>
+        <div style="font-size:12px">Tap any message to read it</div>
       </div>
     </div>
   </div>
@@ -10614,8 +11107,8 @@ async function loadAMessages(m) {
   <div class="topbar-actions"><button class="btn btn-primary" onclick="openComposeModal()">✉️ Compose</button></div>
 </div>
 <div class="page" style="padding:0">
-  <div style="display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 120px)">
-    <div style="overflow-y:auto;border-right:1px solid var(--border);background:#fff">
+  <div class="msg-layout">
+    <div class="msg-list-pane">
       <div class="tab-bar" style="margin:0;padding:0 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:1">
         <button class="tab-btn active" onclick="switchTab(this,'amsg-sent')" style="font-size:12px">Sent (${sent.length})</button>
         <button class="tab-btn" onclick="switchTab(this,'amsg-inbox')" style="font-size:12px">Inbox</button>
@@ -10623,10 +11116,10 @@ async function loadAMessages(m) {
       <div id="amsg-sent"  class="tab-pane active" style="display:block">${renderMessageList(sent, false, null)}</div>
       <div id="amsg-inbox" class="tab-pane" style="display:none">${renderMessageList(inbox, true, null)}</div>
     </div>
-    <div id="msg-detail-panel" style="overflow-y:auto;background:#f9f8f5;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:14px;border-left:1px solid var(--border)">
+    <div id="msg-detail-panel" class="msg-detail-pane" style="align-items:center;justify-content:center;color:var(--text-3);font-size:14px">
       <div style="text-align:center"><div style="font-size:40px;margin-bottom:12px;opacity:.4">✉️</div>
         <div style="font-weight:600;margin-bottom:4px">Open a message</div>
-        <div style="font-size:12px">Click any message on the left to read it</div>
+        <div style="font-size:12px">Tap any message to read it</div>
       </div>
     </div>
   </div>
@@ -14585,10 +15078,258 @@ window.addEventListener('appinstalled', () => {
 // ── Init: show badge if there are queued items from last session
 window.addEventListener('DOMContentLoaded', () => {
   updateSyncBadge();
+  initMobileTableObserver();
 });
+
+// ── Mobile: wrap dynamically-inserted tables in scroll div ──
+// Runs once and observes all future DOM mutations.
+function initMobileTableObserver() {
+  if (window.innerWidth > 768) return; // desktop: no wrapping needed
+
+  function wrapTable(table) {
+    if (!table || table.parentElement?.classList.contains('tbl-scroll')) return;
+    if (table.closest('.tbl-scroll')) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'tbl-scroll';
+    table.parentNode.insertBefore(wrap, table);
+    wrap.appendChild(table);
+  }
+
+  // Wrap existing tables
+  document.querySelectorAll('.data-table').forEach(wrapTable);
+
+  // Watch for new tables inserted by JS rendering
+  const obs = new MutationObserver(mutations => {
+    mutations.forEach(m => {
+      m.addedNodes.forEach(node => {
+        if (node.nodeType !== 1) return;
+        if (node.classList?.contains('data-table')) wrapTable(node);
+        node.querySelectorAll?.('.data-table').forEach(wrapTable);
+      });
+    });
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+}
 </script>
 
 <script>
+// ════════════════════════════════════════════════════════════
+// TEST QUESTION ANALYTICS
+// ════════════════════════════════════════════════════════════
+
+async function openTestAnalytics(testId, testTitle) {
+  adminModal(
+    `📊 ${testTitle || 'Test'} — Question Analytics`,
+    '<div style="padding:20px;text-align:center;color:var(--text-3)">Loading analytics…</div>',
+    null, 'Close'
+  );
+  let data = null;
+  try { data = await GET('/tests/' + testId + '/analytics'); }
+  catch(e) {
+    adminModal('Error', `<div class="info-box coral">${e.message}</div>`, null, 'Close');
+    return;
+  }
+
+  const ov  = data.overview || {};
+  const qs  = data.questions || [];
+  const avg = Math.round(parseFloat(ov.avg_pct) || 0);
+  const pr  = ov.pass_count && ov.total_attempts
+    ? Math.round(ov.pass_count / ov.total_attempts * 100) : 0;
+
+  const DIFF_COLOR = { Easy: 'var(--green)', Medium: 'var(--amber)', Hard: 'var(--coral)' };
+  const hardest   = qs.slice(0, 5);   // already sorted by accuracy ASC
+  const easiest   = [...qs].sort((a,b)=>parseFloat(b.accuracy_pct)-parseFloat(a.accuracy_pct)).slice(0,3);
+
+  const qRow = (q, rank) => {
+    const acc = Math.round(parseFloat(q.accuracy_pct) || 0);
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:18px;width:28px;text-align:center">${rank}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${q.question_text}</div>
+          <div style="font-size:10px;color:var(--text-3);margin-top:2px">
+            <span style="color:${DIFF_COLOR[q.difficulty]||'inherit'}">${q.difficulty||'—'}</span>
+            · ${q.sub_strand||'—'} · ${q.answer_count||0} answers
+          </div>
+        </div>
+        <div style="text-align:center;min-width:48px">
+          <div style="font-size:16px;font-weight:800;color:${col(acc)}">${acc}%</div>
+          <div style="font-size:10px;color:var(--text-3)">accuracy</div>
+        </div>
+        <div style="width:60px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;flex-shrink:0">
+          <div style="width:${acc}%;height:100%;background:${col(acc)};border-radius:3px"></div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const body = `
+    <div class="stats-row" style="margin-bottom:14px">
+      <div class="stat-card" style="padding:10px"><div class="label" style="font-size:10px">Students</div><div style="font-size:18px;font-weight:800">${ov.total_attempts||0}</div></div>
+      <div class="stat-card" style="padding:10px"><div class="label" style="font-size:10px">Avg score</div><div style="font-size:18px;font-weight:800;color:${col(avg)}">${avg}%</div></div>
+      <div class="stat-card" style="padding:10px"><div class="label" style="font-size:10px">Pass rate</div><div style="font-size:18px;font-weight:800;color:${pr>=50?'var(--green)':'var(--coral)'}">${pr}%</div></div>
+      <div class="stat-card" style="padding:10px"><div class="label" style="font-size:10px">Questions</div><div style="font-size:18px;font-weight:800">${qs.length}</div></div>
+    </div>
+    ${hardest.length ? `
+    <div style="font-size:12px;font-weight:700;color:var(--coral);margin-bottom:6px">🔴 Hardest questions (lowest accuracy)</div>
+    ${hardest.map((q,i)=>qRow(q,['🥵','😟','😐','🤔','😕'][i]||'•')).join('')}` : ''}
+    ${easiest.length ? `
+    <div style="font-size:12px;font-weight:700;color:var(--green);margin-top:14px;margin-bottom:6px">🟢 Easiest questions (highest accuracy)</div>
+    ${easiest.map((q,i)=>qRow(q,['😄','🙂','😊'][i]||'•')).join('')}` : ''}
+    ${!qs.length ? '<div class="info-box blue">No attempts yet — analytics will appear once students submit this test.</div>' : ''}`;
+
+  document.getElementById('adm-modal-body').innerHTML = body;
+}
+
+// Hook into teacher test list — add Analytics button
+const _origLoadTTests = typeof loadTTests === 'function' ? loadTTests : null;
+
+// ════════════════════════════════════════════════════════════
+// AUTO-ALERT DASHBOARD BADGES
+// ════════════════════════════════════════════════════════════
+
+async function loadDashboardAlerts(targetElId, navFn) {
+  if (!CURRENT_USER || CURRENT_USER.role === 'student') return;
+  let data = null;
+  try { data = await GET('/analytics/alerts'); } catch(e) { return; }
+  if (!data?.alerts?.length) return;
+
+  const el = document.getElementById(targetElId);
+  if (!el) return;
+
+  const ALERT_COLORS = { warning:'var(--amber)', error:'var(--coral)', info:'var(--blue)' };
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:20px;border-left:4px solid var(--amber)">
+      <div class="card-title" style="margin-bottom:10px">⚠️ Action required</div>
+      ${data.alerts.map(a=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer"
+             onclick="${navFn}('${a.action}',null)">
+          <span style="font-size:22px">${a.icon}</span>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px;color:${ALERT_COLORS[a.type]||'inherit'}">${a.title}</div>
+            <div style="font-size:11px;color:var(--text-3)">${a.desc}</div>
+          </div>
+          <span style="color:var(--text-3);font-size:16px">›</span>
+        </div>`).join('')}
+    </div>`;
+  el.style.display = '';
+}
+
+// ════════════════════════════════════════════════════════════
+// STUDENT SELF-REPORT (printable personal performance card)
+// ════════════════════════════════════════════════════════════
+
+async function generateStudentSelfReport() {
+  const m = document.getElementById('s-main');
+  if (!m) return;
+  const prev = m.innerHTML;
+  m.innerHTML = panelLoader();
+
+  let data = null, badges = null;
+  try {
+    [data, badges] = await Promise.all([
+      GET('/students/dashboard'),
+      GET('/analytics/badges').catch(() => null)
+    ]);
+  } catch(e) {
+    m.innerHTML = prev;
+    notify('Could not generate report: ' + e.message, 'error');
+    return;
+  }
+
+  const u         = CURRENT_USER || {};
+  const stats     = data?.stats || {};
+  const avgPct    = Math.round(stats.avg_pct || 0);
+  const streak    = data?.streak?.current_streak || 0;
+  const rank      = data?.class_rank;
+  const wPct      = data?.substrand_avg?.length
+    ? wassceReadiness({a:data.substrand_avg[0]?.avg_pct||0,b:data.substrand_avg[1]?.avg_pct||0,c:data.substrand_avg[2]?.avg_pct||0,d:data.substrand_avg[3]?.avg_pct||0,e:data.substrand_avg[4]?.avg_pct||0}) : 0;
+  const wGrade    = wassceGrade(wPct);
+  const today     = new Date().toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const badgeList = badges?.badges || [];
+
+  const subRows = (data?.subject_avg || []).map(r => {
+    const v = Math.round(r.avg_pct || 0);
+    return `<tr>
+      <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:12px">${r.subject_name}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-size:13px;font-weight:700;color:${v>=65?'#15803d':v>=50?'#a16207':'#b91c1c'}">${v}%</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:12px;color:#666">${v>=80?'Excellent':v>=65?'Good':v>=50?'Pass':'Needs work'}</td>
+    </tr>`;
+  }).join('');
+
+  const histRows = (data?.test_history || []).slice(-8).reverse().map(h => {
+    const v = Math.round(h.pct_score || 0);
+    return `<tr>
+      <td style="padding:4px 8px;font-size:11px;border-bottom:1px solid #f0f0f0">${h.title}</td>
+      <td style="padding:4px 8px;text-align:center;font-size:12px;font-weight:700;color:${col(v)}">${v}%</td>
+      <td style="padding:4px 8px;font-size:11px;color:#999">${h.submitted_at ? fmtDate(h.submitted_at) : ''}</td>
+    </tr>`;
+  }).join('');
+
+  m.innerHTML = `
+<div class="topbar" id="sr-topbar">
+  <div><div class="topbar-title">My Performance Report</div></div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="sNav('performance',null)">← Back</button>
+    <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save PDF</button>
+  </div>
+</div>
+<style>@media print{#sr-topbar,#offline-bar,#sync-badge,#pwa-install-bar,.btn{display:none!important}}</style>
+<div class="page" id="sr-report" style="max-width:680px;margin:0 auto">
+  <div style="background:#1A7A4A;color:#fff;border-radius:10px;padding:20px 24px;margin-bottom:20px">
+    <div style="font-size:22px;font-weight:800;margin-bottom:4px">${u.first_name} ${u.last_name}</div>
+    <div style="opacity:.85;font-size:13px">${u.class_name||'—'} · Generated ${today}</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+    ${[
+      ['Average', avgPct+'%', col(avgPct)],
+      ['Tests done', stats.tests_done||0, 'inherit'],
+      ['Study streak', streak+' days 🔥', 'var(--purple)'],
+      ['Class rank', rank ? '#'+rank.rank+' / '+rank.total : '—', 'inherit'],
+    ].map(([l,v,c])=>`<div style="background:var(--bg);border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase">${l}</div>
+      <div style="font-size:20px;font-weight:800;margin-top:2px;color:${c}">${v}</div>
+    </div>`).join('')}
+  </div>
+
+  ${wPct > 0 ? `<div style="background:${wGrade.c}22;border:1px solid ${wGrade.c};border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+    <div style="font-size:28px;font-weight:800;color:${wGrade.c}">${wGrade.g}</div>
+    <div><div style="font-weight:700;font-size:13px">Predicted WASSCE grade · ${wPct}% readiness</div>
+      <div style="font-size:12px;color:var(--text-2)">${wGrade.tip}</div></div>
+  </div>` : ''}
+
+  ${subRows ? `<div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="margin-bottom:10px">Performance by subject</div>
+    <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#1A7A4A;color:#fff">
+      <th style="padding:6px 8px;text-align:left;font-size:11px">Subject</th>
+      <th style="padding:6px 8px;font-size:11px">Score</th>
+      <th style="padding:6px 8px;text-align:left;font-size:11px">Remarks</th>
+    </tr></thead><tbody>${subRows}</tbody></table>
+  </div>` : ''}
+
+  ${histRows ? `<div class="card" style="margin-bottom:16px">
+    <div class="card-title" style="margin-bottom:10px">Recent test history</div>
+    <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#1A4F8A;color:#fff">
+      <th style="padding:5px 8px;text-align:left;font-size:11px">Test</th>
+      <th style="padding:5px 8px;font-size:11px">Score</th>
+      <th style="padding:5px 8px;text-align:left;font-size:11px">Date</th>
+    </tr></thead><tbody>${histRows}</tbody></table>
+  </div>` : ''}
+
+  ${badgeList.length ? `<div class="card">
+    <div class="card-title" style="margin-bottom:10px">Achievements (${badgeList.length})</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      ${badgeList.map(b=>`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600">${b.icon} ${b.name}</div>`).join('')}
+    </div>
+  </div>` : ''}
+
+  <div style="text-align:center;color:var(--text-3);font-size:11px;margin-top:20px">
+    Generated by AceICT · Ghana SHS Assessment Platform
+  </div>
+</div>`;
+}
+
 // ════════════════════════════════════════════════════════════
 // WASSCE READINESS DASHBOARD
 // ════════════════════════════════════════════════════════════
