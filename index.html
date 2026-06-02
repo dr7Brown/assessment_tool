@@ -640,6 +640,29 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
 <body>
 <div class="notif" id="notif"></div>
 
+<!-- ═══ COMMAND PALETTE (Ctrl+K / Cmd+K) ═══ -->
+<div id="cmd-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:flex-start;justify-content:center;padding-top:80px;backdrop-filter:blur(2px)" onclick="if(event.target===this)closeCmd()">
+  <div style="width:100%;max-width:580px;background:var(--surface);border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.35);overflow:hidden;margin:0 16px">
+    <!-- Search input -->
+    <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)">
+      <span style="font-size:18px;opacity:.5">🔍</span>
+      <input id="cmd-input" type="text" placeholder="Search students, tests, sections…"
+        style="flex:1;border:none;outline:none;font-size:15px;background:transparent;color:var(--text);font-family:inherit"
+        oninput="cmdSearch(this.value)"
+        onkeydown="cmdKey(event)">
+      <kbd style="font-size:11px;color:var(--text-3);background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-family:inherit">Esc</kbd>
+    </div>
+    <!-- Results list -->
+    <div id="cmd-results" style="max-height:420px;overflow-y:auto;padding:6px 0"></div>
+    <!-- Footer hint -->
+    <div style="padding:8px 18px;border-top:1px solid var(--border);display:flex;gap:16px;font-size:11px;color:var(--text-3)">
+      <span><kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px">↑↓</kbd> Navigate</span>
+      <span><kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px">↵</kbd> Open</span>
+      <span><kbd style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px">Esc</kbd> Close</span>
+    </div>
+  </div>
+</div>
+
 <div class="screen active" id="landing">
   <nav class="landing-nav">
     <div class="logo"><div class="logo-mark">A</div><div class="logo-name">Ace<span>ICT</span></div></div>
@@ -687,6 +710,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="sidebar-section-label">Progress</div>
         <div class="nav-item" onclick="sNav('performance',this)"><div class="ni-icon">📈</div>My performance</div>
         <div class="nav-item" onclick="sNav('history',this)"><div class="ni-icon">✅</div>Results history</div>
+        <div class="nav-item" onclick="sNav('leaderboard',this)"><div class="ni-icon">🏆</div>Leaderboard</div>
       </div>
       <div class="sidebar-section">
         <div class="sidebar-section-label">Communication</div>
@@ -752,6 +776,8 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="nav-item" onclick="tNav('tests',this)"><div class="ni-icon">📋</div>Tests</div>
         <div class="nav-item" onclick="tNav('live',this)"><div class="ni-icon">⚡</div>Live quiz</div>
         <div class="nav-item" onclick="tNav('meetings',this)"><div class="ni-icon">📅</div>Meetings</div>
+        <div class="nav-item" onclick="tNav('gradebook',this)"><div class="ni-icon">📗</div>Gradebook</div>
+        <div class="nav-item" onclick="tNav('leaderboard',this)"><div class="ni-icon">🏆</div>Leaderboard</div>
         <div class="nav-item" onclick="tNav('report-cards',this)"><div class="ni-icon">🗒️</div>Report cards</div>
         <div class="nav-item" onclick="tNav('at-risk',this)"><div class="ni-icon">🚨</div>At-risk students</div>
       </div>
@@ -819,6 +845,8 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="nav-item" onclick="openSemesterResultSheet()"><div class="ni-icon">📄</div>Result sheets</div>
         <div class="nav-item" onclick="aNav('analytics',this)"><div class="ni-icon">📈</div>Analytics</div>
         <div class="nav-item" onclick="aNav('meetings',this)"><div class="ni-icon">📅</div>Meetings</div>
+        <div class="nav-item" onclick="aNav('gradebook',this)"><div class="ni-icon">📗</div>Gradebook</div>
+        <div class="nav-item" onclick="aNav('leaderboard',this)"><div class="ni-icon">🏆</div>Leaderboard</div>
         <div class="nav-item" onclick="aNav('report-cards',this)"><div class="ni-icon">🗒️</div>Report cards</div>
         <div class="nav-item" onclick="aNav('at-risk',this)"><div class="ni-icon">🚨</div>At-risk students</div>
       </div>
@@ -1044,10 +1072,17 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
       <div id="qb-blank-hint" style="display:none;margin-bottom:8px">
         <div class="info-box blue" style="font-size:12px">Use <code>____</code> in the question text to mark where the blank goes. (fill-in type) e.g. <em>"The process of converting data into unreadable format is called ____."</em></div>
       </div>
-      <div class="grid-2" style="margin-top:8px">
+      <!-- Subject first — strands depend on it -->
+      <div class="grid-3" style="margin-top:8px">
+        <div class="form-group">
+          <label class="form-label">Subject <span style="font-size:11px;color:var(--text-3)">(optional)</span></label>
+          <select class="form-select" id="qb-subject" onchange="qbOnSubjectChange(this.value)">
+            <option value="">— General / unspecified —</option>
+          </select>
+        </div>
         <div class="form-group">
           <label class="form-label">Year group</label>
-          <select class="form-select" id="qb-year" onchange="refreshStrandSelect('qb-year','qb-strand','qb-substrand')">
+          <select class="form-select" id="qb-year">
             <option value="">All years</option>
             <option value="1">Year 1</option>
             <option value="2">Year 2</option>
@@ -1055,18 +1090,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Strand</label>
-          <select class="form-select" id="qb-strand" onchange="refreshSubSelect('qb-year','qb-strand','qb-substrand')">
-            <option value="">All strands</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Sub-strand</label>
-          <select class="form-select" id="qb-substrand">
-            <option value="">All sub-strands</option>
-          </select>
-        </div>
-        <div class="form-group"><label class="form-label">Difficulty</label>
+          <label class="form-label">Difficulty</label>
           <select class="form-select" id="qb-diff">
             <option value="Easy">Easy — Remember</option>
             <option value="Medium">Medium — Apply</option>
@@ -1074,14 +1098,22 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
           </select>
         </div>
       </div>
-      <div class="grid-2" style="margin-top:4px">
-        <div class="form-group"><label class="form-label">Marks</label><input class="form-input" id="qb-marks" type="number" value="1" min="1" max="25" style="width:80px"></div>
-        <div class="form-group">
-          <label class="form-label">Subject <span style="font-size:11px;color:var(--text-3)">(optional)</span></label>
-          <select class="form-select" id="qb-subject">
-            <option value="">— General / unspecified —</option>
-          </select>
+      <!-- Dynamic strand/sub-strand (subject-specific from DB, or free-text fallback) -->
+      <div id="qb-strand-container" style="margin-top:4px">
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Strand <span style="font-size:11px;color:var(--text-3)">(topic area)</span></label>
+            <input class="form-input" id="qb-strand-free" placeholder="e.g. Number and Algebra">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sub-strand <span style="font-size:11px;color:var(--text-3)">(specific topic)</span></label>
+            <input class="form-input" id="qb-substrand-free" placeholder="e.g. Fractions and Decimals">
+          </div>
         </div>
+      </div>
+      <div class="form-group" style="margin-top:4px">
+        <label class="form-label">Marks</label>
+        <input class="form-input" id="qb-marks" type="number" value="1" min="1" max="25" style="width:80px">
       </div>
       <div class="form-group"><label class="form-label">Explanation (shown after submission)</label><textarea class="form-textarea" rows="2" placeholder="Explain why the correct answer is correct and why the distractors are wrong..."></textarea></div>
     </div>
@@ -1197,7 +1229,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
       <div id="bulk-template" class="tab-pane">
         <p style="font-size:13px;color:var(--text-2);margin-bottom:16px;line-height:1.7">
           Fill the template with your questions then upload in the CSV tab.<br>
-          Sub-strand: S1/SS1, S1/SS2, S1/SS3, S2/SS1 or S2/SS2<br>
+          Sub-strand: any code you defined for your subject (e.g. S1/SS1, or Fractions/Decimals)<br>
           Difficulty: Easy, Medium or Hard<br>
           Correct: A, B, C or D
         </p>
@@ -1544,6 +1576,8 @@ function doLogout() {
   localStorage.removeItem('aceict_token');
   localStorage.removeItem('aceict_user');
   // Clear all cached data so a new user doesn't see the previous user's data
+  _cmdIndex    = null;  // force command palette index rebuild on next login
+  _cmdLastRole = null;
   AceDB.cacheClear().catch(() => {});
   AceDB.clearQueue().catch(() => {});
   AceDB.setMeta('lastSync',   0).catch(() => {});
@@ -1779,7 +1813,6 @@ async function getSubjectList() {
 async function populateSubjectDropdowns(selectedId = null) {
   let subjects;
   if (CURRENT_USER?.role === 'teacher') {
-    // Show only assigned subjects — same list as the context bar
     subjects = TCTX.subjects?.length ? TCTX.subjects : await getSubjectList();
   } else {
     subjects = await getSubjectList();
@@ -1792,6 +1825,150 @@ async function populateSubjectDropdowns(selectedId = null) {
     if (!selectedId && cur) el.value = cur;
     if (selectedId) el.value = selectedId;
   });
+  // Reload strand section whenever subject is set
+  const subjectDropdown = document.getElementById('qb-subject');
+  if (subjectDropdown && selectedId) {
+    qbReloadStrandSection(parseInt(selectedId));
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// SUBJECT-SPECIFIC STRAND / SUB-STRAND SYSTEM
+// Each subject configures its own strands in the DB.
+// The question builder loads them dynamically; falls back to free-text.
+// ══════════════════════════════════════════════════════════════
+const _subjStrandsCache = {};   // subjectId → [{strand_code, strand_label, sub_strand_code, sub_strand_label}]
+window._qbStrandMap = {};       // current strand → {label, subs[]} for the open modal
+
+async function fetchSubjectStrands(subjectId) {
+  if (!subjectId) return [];
+  const k = String(subjectId);
+  if (_subjStrandsCache[k] !== undefined) return _subjStrandsCache[k];
+  try {
+    const rows = await GET(`/subjects/${subjectId}/strands`);
+    _subjStrandsCache[k] = Array.isArray(rows) ? rows : [];
+  } catch(e) { _subjStrandsCache[k] = []; }
+  return _subjStrandsCache[k];
+}
+
+function clearSubjectStrandsCache(subjectId) {
+  if (subjectId) delete _subjStrandsCache[String(subjectId)];
+  else Object.keys(_subjStrandsCache).forEach(k => delete _subjStrandsCache[k]);
+}
+
+async function qbOnSubjectChange(subjectId) {
+  await qbReloadStrandSection(subjectId ? parseInt(subjectId) : null);
+}
+
+async function qbReloadStrandSection(subjectId) {
+  const container = document.getElementById('qb-strand-container');
+  if (!container) return;
+
+  const strands = subjectId ? await fetchSubjectStrands(subjectId) : [];
+
+  if (!strands.length) {
+    window._qbStrandMap = {};
+    container.innerHTML = `
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Strand <span style="font-size:11px;color:var(--text-3)">(topic area)</span></label>
+          <input class="form-input" id="qb-strand-free" placeholder="e.g. Number and Algebra">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sub-strand <span style="font-size:11px;color:var(--text-3)">(specific topic)</span></label>
+          <input class="form-input" id="qb-substrand-free" placeholder="e.g. Fractions and Decimals">
+        </div>
+      </div>
+      ${subjectId ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">
+        No strands configured for this subject yet.
+        <a href="#" onclick="event.preventDefault();aNav('subjects',null)" style="color:var(--green)">Admin → Subjects → Manage strands</a>.
+      </div>` : ''}`;
+    return;
+  }
+
+  // Build strand → sub-strand map
+  window._qbStrandMap = {};
+  strands.forEach(s => {
+    if (!window._qbStrandMap[s.strand_code]) {
+      window._qbStrandMap[s.strand_code] = { label: s.strand_label, subs: [] };
+    }
+    window._qbStrandMap[s.strand_code].subs.push({ code: s.sub_strand_code, label: s.sub_strand_label });
+  });
+
+  const strandOpts = Object.entries(window._qbStrandMap)
+    .map(([code, s]) => `<option value="${code}">${s.label}</option>`).join('');
+
+  container.innerHTML = `
+    <div class="grid-2">
+      <div class="form-group">
+        <label class="form-label">Strand</label>
+        <select class="form-select" id="qb-strand-sel" onchange="qbUpdateSubSel(this.value)">
+          <option value="">— Select strand —</option>
+          ${strandOpts}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Sub-strand</label>
+        <select class="form-select" id="qb-substrand-sel">
+          <option value="">— select strand first —</option>
+        </select>
+      </div>
+    </div>`;
+}
+
+function qbUpdateSubSel(strandCode) {
+  const subEl = document.getElementById('qb-substrand-sel');
+  if (!subEl) return;
+  const subs = (window._qbStrandMap||{})[strandCode]?.subs || [];
+  subEl.innerHTML = `<option value="">All sub-strands</option>` +
+    subs.map(s => `<option value="${s.code}">${s.label}</option>`).join('');
+}
+
+// Read the active sub_strand value from whichever UI is shown
+function qbGetSubStrand() {
+  // Structured select (DB strands configured)
+  const subSel = document.getElementById('qb-substrand-sel');
+  if (subSel) {
+    const strandSel = document.getElementById('qb-strand-sel');
+    // Use substrand code if picked; otherwise fall back to strand code
+    return subSel.value || strandSel?.value || '';
+  }
+  // Free-text inputs
+  const freeStrand = (document.getElementById('qb-strand-free')?.value || '').trim();
+  const freeSub    = (document.getElementById('qb-substrand-free')?.value || '').trim();
+  if (freeSub && freeStrand) return `${freeStrand} / ${freeSub}`;
+  return freeSub || freeStrand || 'General';
+}
+
+// Restore strand values when editing an existing question
+function qbSetStrandValues(savedSubStrand) {
+  if (!savedSubStrand) return;
+  // Try structured select
+  const subSel = document.getElementById('qb-substrand-sel');
+  if (subSel) {
+    // Look for the saved code in all strand options
+    const strandSel = document.getElementById('qb-strand-sel');
+    // Find which strand this sub-strand belongs to
+    for (const [strandCode, strandData] of Object.entries(window._qbStrandMap||{})) {
+      const found = strandData.subs.find(s => s.code === savedSubStrand);
+      if (found) {
+        if (strandSel) { strandSel.value = strandCode; qbUpdateSubSel(strandCode); }
+        setTimeout(() => { const s2=document.getElementById('qb-substrand-sel'); if(s2) s2.value=savedSubStrand; }, 50);
+        return;
+      }
+    }
+    return;
+  }
+  // Free-text: parse "Strand / Sub-strand" or just put it all in substrand
+  const parts = savedSubStrand.split(' / ');
+  const freeStrand = document.getElementById('qb-strand-free');
+  const freeSub    = document.getElementById('qb-substrand-free');
+  if (parts.length >= 2) {
+    if (freeStrand) freeStrand.value = parts.slice(0,-1).join(' / ');
+    if (freeSub)    freeSub.value    = parts[parts.length-1];
+  } else {
+    if (freeSub) freeSub.value = savedSubStrand;
+  }
 }
 
 async function loadQBCache(force = false) {
@@ -2335,6 +2512,7 @@ function sRender(v){
   else if(v==='quiz')       renderQuizPanel(m);
   else if(v==='results')    renderResultsPanel(m);
   else if(v==='live-classes') loadSLiveClasses(m);
+  else if(v==='leaderboard')  loadLeaderboard(m);
   else if(v==='messages')   loadStudentMessages(m);
   else if(v==='chat')       loadGroupChat(m,'s');
 }
@@ -2398,7 +2576,11 @@ async function loadDash(m) {
   const wPct = !subjName && data?.substrand_avg?.length
     ? wassceReadiness({a:data.substrand_avg[0]?.avg_pct||0,b:data.substrand_avg[1]?.avg_pct||0,c:data.substrand_avg[2]?.avg_pct||0,d:data.substrand_avg[3]?.avg_pct||0,e:data.substrand_avg[4]?.avg_pct||0})
     : 0;
-  const wGrade = wassceGrade(wPct);
+  const wGrade      = wassceGrade(wPct);
+  const testHistory = data?.test_history || [];
+  const classRank   = data?.class_rank;
+  const compRate    = data?.completion_rate || 0;
+  const typeStats   = data?.type_stats || [];
 
   m.innerHTML = `
 <div class="topbar">
@@ -2413,6 +2595,7 @@ async function loadDash(m) {
       </button>
       <div id="notif-dd" style="display:none;position:absolute;top:calc(100%+8px);right:0;width:340px;max-height:420px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-lg);z-index:100"></div>
     </div>
+    <button class="btn btn-ghost" onclick="openCmd()" title="Search (Ctrl+K)" style="padding:8px 10px">🔍</button>
     <button class="btn btn-secondary" onclick="openJoinLiveModal()">⚡ Join live</button>
     <button class="btn btn-primary" onclick="startPractice()">Practice now →</button>
   </div>
@@ -2425,6 +2608,7 @@ async function loadDash(m) {
       `<div class="stat-card"><div class="label">Best score</div><div class="value" style="color:${pctCol(Math.round(stats.best_pct||0))}">${Math.round(stats.best_pct||0)}%</div><div class="trend">in ${subjName}</div></div>`}
     <div class="stat-card"><div class="label">Study streak</div><div class="value" style="color:var(--purple)">${streak}</div><div class="trend">days 🔥</div></div>
   </div>
+  <div style="margin-bottom:16px">${buildInsightsStripHTML(classRank, compRate, typeStats, streak)}</div>
   <div id="s-dash-meetings-card" style="display:none;margin-bottom:20px"></div>
   <div id="s-dash-badges" style="display:none;margin-bottom:20px"></div>
   <div class="grid-2" style="margin-bottom:20px">
@@ -2453,15 +2637,22 @@ async function loadDash(m) {
     <div class="card">
       <div class="card-header"><div class="card-title">${perfTitle}</div></div>
       <div class="bar-chart">${subBars || '<div style="color:var(--text-3);font-size:13px;padding:8px 0">Complete tests to see your performance breakdown.</div>'}</div>
+      ${buildSmartRecsHTML(data?.subject_avg, data?.type_stats, data?.test_history, subjName)}
       <div class="divider"></div>
-      <button class="btn btn-primary" style="width:100%" onclick="startPractice()">Practice to improve →</button>
+      <button class="btn btn-primary" style="width:100%" onclick="startPractice()">Practice now →</button>
     </div>
   </div>
   <div class="card">
-    <div class="card-header">
-      <div><div class="card-title">Recent results</div>${subjName?`<div class="card-sub">${subjName} only</div>`:''}</div>
-      <button class="btn btn-ghost" onclick="sNav('history',null)">View all</button>
+    <div class="card-header" style="margin-bottom:12px">
+      <div><div class="card-title">Performance timeline</div>
+      <div class="card-sub">${testHistory.length} test${testHistory.length!==1?'s':''} completed${subjName?' · '+subjName:''}</div></div>
+      <button class="btn btn-ghost btn-sm" onclick="sNav('history',null)">Full history →</button>
     </div>
+    ${svgLineChart(testHistory.map((t,i)=>({y:Math.round(parseFloat(t.pct_score)||0),label:t.subject_short||('T'+(i+1))})))}
+    ${testHistory.length>1?`<div style="margin-top:4px;display:flex;gap:16px;justify-content:flex-end;font-size:10px;color:var(--text-3)">
+      <span style="color:var(--coral)">─ 50% pass line</span><span style="color:var(--green)">─ 65% credit line</span></div>`:''}
+    <div class="divider" style="margin:12px 0"></div>
+    <div style="font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:8px">Recent results</div>
     ${buildRecentResults(data?.recent)}
   </div>
 </div>`;
@@ -2483,6 +2674,132 @@ function buildRecentResults(apiRecent) {
       </tr>`;
     }).join('')}
   </tbody></table>`;
+}
+
+// ── SVG line chart (student performance timeline) ────────────────
+function svgLineChart(pts, h=130) {
+  if (!pts?.length) return '<div style="text-align:center;color:var(--text-3);padding:24px;font-size:13px">Complete tests to see your progress chart.</div>';
+  const n=pts.length, vw=200, padX=3, padY=10;
+  const py = v => padY + (h-2*padY)*(1-Math.max(0,Math.min(100,v))/100);
+  const px = i => padX + (n===1?(vw-2*padX)/2:(vw-2*padX)*i/(n-1));
+  const plines = pts.map((p,i)=>`${px(i).toFixed(2)},${py(p.y).toFixed(2)}`).join(' ');
+  const area   = `${px(0).toFixed(2)},${h-padY} ${plines} ${px(n-1).toFixed(2)},${h-padY}`;
+  const passY  = py(50).toFixed(2);
+  const credY  = py(65).toFixed(2);
+  const dots   = pts.map((p,i)=>{
+    const c=p.y>=65?'#16a34a':p.y>=50?'#f59e0b':'#ef4444';
+    return `<circle cx="${px(i).toFixed(2)}" cy="${py(p.y).toFixed(2)}" r="${n>15?2.5:3.5}" fill="${c}" stroke="#fff" stroke-width="1.5"><title>${p.label||'#'+(i+1)}: ${p.y}%</title></circle>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${vw} ${h}" preserveAspectRatio="none" width="100%" height="${h}" style="display:block;overflow:visible">
+    <defs><linearGradient id="slcg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#16a34a" stop-opacity=".3"/>
+      <stop offset="100%" stop-color="#16a34a" stop-opacity="0"/>
+    </linearGradient></defs>
+    <line x1="${padX}" x2="${vw-padX}" y1="${passY}" y2="${passY}" stroke="#ef4444" stroke-width="0.7" stroke-dasharray="3,3" opacity=".65"/>
+    <line x1="${padX}" x2="${vw-padX}" y1="${credY}" y2="${credY}" stroke="#16a34a" stroke-width="0.7" stroke-dasharray="3,3" opacity=".65"/>
+    <polygon points="${area}" fill="url(#slcg)"/>
+    <polyline points="${plines}" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+  </svg>`;
+}
+
+// ── Insights strip (class rank + completion ring + type accuracy) ─
+function buildInsightsStripHTML(classRank, compRate, typeStats, streak) {
+  // Class rank card
+  const rankCard = classRank
+    ? `<div class="stat-card" style="flex:1;min-width:130px">
+        <div class="label">Class rank</div>
+        <div class="value" style="font-size:24px;line-height:1">#${classRank.rank}<span style="font-size:14px;font-weight:400;color:var(--text-3)"> / ${classRank.total}</span></div>
+        <div class="trend" style="color:${classRank.percentile>=70?'var(--green)':classRank.percentile>=40?'var(--amber)':'var(--coral)'}">Top ${100-classRank.percentile}% of class</div>
+      </div>`
+    : `<div class="stat-card" style="flex:1;min-width:130px">
+        <div class="label">Class rank</div>
+        <div class="value" style="color:var(--text-3);font-size:20px">—</div>
+        <div class="trend">Submit tests to rank</div>
+      </div>`;
+
+  // Completion rate ring
+  const r=18, circ=(2*Math.PI*r).toFixed(2), dash=(circ*(compRate/100)).toFixed(2);
+  const ringCol = compRate>=75?'var(--green)':compRate>=40?'var(--amber)':'var(--coral)';
+  const compCard = `<div class="stat-card" style="flex:1;min-width:130px;display:flex;align-items:center;gap:12px">
+    <div style="position:relative;flex-shrink:0">
+      <svg width="50" height="50" viewBox="0 0 50 50" style="transform:rotate(-90deg)">
+        <circle cx="25" cy="25" r="${r}" fill="none" stroke="var(--border)" stroke-width="6"/>
+        <circle cx="25" cy="25" r="${r}" fill="none" stroke="${ringCol}" stroke-width="6"
+          stroke-dasharray="${dash} ${circ}" stroke-linecap="round"/>
+      </svg>
+      <span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:10px;font-weight:800;color:var(--text-1)">${compRate}%</span>
+    </div>
+    <div>
+      <div class="label">Completion</div>
+      <div style="font-size:15px;font-weight:800;color:${ringCol}">${compRate}%</div>
+      <div style="font-size:11px;color:var(--text-3)">of assigned tests</div>
+    </div>
+  </div>`;
+
+  // Question type accuracy
+  const TNAME = {mcq:'MCQ',multi:'Multi-select',tf:'True/False','fill-in':'Fill-in',short:'Short answer',essay:'Essay'};
+  const TORDER= ['mcq','multi','tf','fill-in','short','essay'];
+  const typeRows = (typeStats||[])
+    .sort((a,b)=>TORDER.indexOf(a.type)-TORDER.indexOf(b.type))
+    .slice(0,4)
+    .map(t=>{const v=Math.round(t.accuracy_pct||0);return`
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <div style="width:60px;font-size:10px;font-weight:600;color:var(--text-2);white-space:nowrap">${TNAME[t.type]||t.type}</div>
+      <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
+        <div style="width:${v}%;height:100%;background:${col(v)};border-radius:3px"></div>
+      </div>
+      <div style="width:28px;text-align:right;font-size:10px;font-weight:700;color:${col(v)}">${v}%</div>
+    </div>`;}).join('');
+  const typeCard = `<div class="stat-card" style="flex:1;min-width:160px">
+    <div class="label" style="margin-bottom:8px">Accuracy by question type</div>
+    ${typeRows||'<div style="font-size:12px;color:var(--text-3)">Complete tests to see accuracy breakdown.</div>'}
+  </div>`;
+
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap">${rankCard}${compCard}${typeCard}</div>`;
+}
+
+// ── Smart study recommendations ──────────────────────────────────
+function buildSmartRecsHTML(subjectAvg, typeStats, testHistory, subjName) {
+  const recs = [];
+  const gradeOf = v=>v>=80?'A1':v>=70?'B2':v>=60?'B3':v>=55?'C4':v>=50?'C5':v>=45?'C6':v>=40?'D7':v>=35?'E8':'F9';
+  const TNAME = {mcq:'MCQ',multi:'Multi-select',tf:'True/False','fill-in':'Fill-in',short:'Short answer',essay:'Essay'};
+
+  // At-risk subjects (below 50%)
+  (subjectAvg||[]).filter(s=>Math.round(s.avg_pct||0)<50).slice(0,2).forEach(s=>{
+    recs.push({icon:'⚠️',col:'var(--coral)',text:`Focus on <b>${s.subject_name}</b> — currently ${Math.round(s.avg_pct||0)}% (${gradeOf(Math.round(s.avg_pct||0))}). You need 50% to pass.`});
+  });
+
+  // Weakest question type (below 60%)
+  const weakType = (typeStats||[]).filter(t=>Math.round(t.accuracy_pct||0)<60).sort((a,b)=>a.accuracy_pct-b.accuracy_pct)[0];
+  if (weakType) recs.push({icon:'📝',col:'var(--amber)',text:`Practice <b>${TNAME[weakType.type]||weakType.type}</b> questions — only ${Math.round(weakType.accuracy_pct||0)}% accuracy.`});
+
+  // Improving trend
+  const hist = (testHistory||[]);
+  if (hist.length>=3) {
+    const recent = hist.slice(-3).map(t=>parseFloat(t.pct_score)||0);
+    const older  = hist.slice(0,Math.max(1,hist.length-3)).map(t=>parseFloat(t.pct_score)||0);
+    const rAvg   = recent.reduce((a,b)=>a+b,0)/recent.length;
+    const oAvg   = older.reduce((a,b)=>a+b,0)/older.length;
+    if (rAvg > oAvg+5) recs.push({icon:'📈',col:'var(--green)',text:`Great progress! Your recent average is <b>${Math.round(rAvg)}%</b> — up ${Math.round(rAvg-oAvg)}% from before.`});
+    else if (rAvg < oAvg-5) recs.push({icon:'📉',col:'var(--coral)',text:`Your scores have dropped by ${Math.round(oAvg-rAvg)}% recently. Review the topics you've been struggling with.`});
+  }
+
+  // No recent activity
+  if (hist.length === 0) recs.push({icon:'🚀',col:'var(--purple)',text:'Start your first test to unlock personalised study recommendations.'});
+  else if (hist.length < 3) recs.push({icon:'💡',col:'var(--purple)',text:'Complete a few more tests to get personalised insights and topic recommendations.'});
+
+  // Credit pass encouragement
+  const avg = (subjectAvg||[]).reduce((s,x)=>s+(parseFloat(x.avg_pct)||0),0)/(subjectAvg?.length||1);
+  if (avg>=65&&avg<80) recs.push({icon:'🎯',col:'var(--green)',text:`You're at <b>${Math.round(avg)}%</b> — just ${Math.round(80-avg)}% away from an A1. Push for excellence!`});
+
+  if (!recs.length) return '';
+  return `<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">
+    ${recs.slice(0,3).map(r=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:7px 10px;border-left:3px solid ${r.col};background:var(--surface-2,var(--border));border-radius:0 6px 6px 0;font-size:12px;line-height:1.5">
+      <span style="flex-shrink:0">${r.icon}</span>
+      <span>${r.text}</span>
+    </div>`).join('')}
+  </div>`;
 }
 
 // ── My Tests ───────────────────────────────────────────────────
@@ -2585,6 +2902,34 @@ async function loadMyTests(m) {
       </div>
     </div>`;
     el.style.display = '';
+  }).catch(()=>{});
+
+  // Async inject class leaderboard teaser (top 5 peers)
+  GET('/analytics/leaderboard', { limit: 5 }).then(lb => {
+    const anchor = document.getElementById('s-dash-meetings-card');
+    if (!lb?.top_students?.length || !anchor) return;
+    const myId  = CURRENT_USER?.id;
+    const myPos = lb.top_students.findIndex(s => s.student_id == myId);
+    const MEDALS = ['🥇','🥈','🥉'];
+    const chip = (s,i) => {
+      const isMe = s.student_id == myId;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:${i<3?'16px':'12px'};width:24px;text-align:center">${i<3?MEDALS[i]:i+1}</span>
+        <div style="flex:1;font-size:13px;font-weight:${isMe?800:600};color:${isMe?'var(--green-dk)':'var(--text)'}">${s.first_name} ${s.last_name}${isMe?' (you)':''}</div>
+        <div style="font-size:13px;font-weight:700;color:${col(Math.round(parseFloat(s.avg_pct)||0))}">${Math.round(parseFloat(s.avg_pct)||0)}%</div>
+      </div>`;
+    };
+    const div = document.createElement('div');
+    div.style.marginBottom = '20px';
+    div.innerHTML = `<div class="card">
+      <div class="card-header">
+        <div><div class="card-title">🏆 Class leaderboard</div>
+          <div class="card-sub">${myPos>=0?`You\'re #${myPos+1} in your class`:'Top performers in your class'}</div></div>
+        <button class="btn btn-ghost" onclick="sNav('leaderboard',null)">Full board →</button>
+      </div>
+      ${lb.top_students.slice(0,5).map(chip).join('')}
+    </div>`;
+    anchor.parentNode?.insertBefore(div, anchor);
   }).catch(()=>{});
 
   GET('/meetings', SCTX.subject_id ? { subject_id: SCTX.subject_id } : {}).then(meets => {
@@ -3356,6 +3701,8 @@ function tRender(v){
   else if(v==='marking')   loadTMarking(m);
   else if(v==='analytics') loadTAnalytics(m);
   else if(v==='meetings')    loadTMeetings(m);
+  else if(v==='gradebook')   loadTGradebook(m);
+  else if(v==='leaderboard') loadLeaderboard(m);
   else if(v==='at-risk')     loadAAtRisk(m);
   else if(v==='report-cards')loadAReportCards(m);
   else if(v==='messages')  loadTMessages(m);
@@ -4200,6 +4547,7 @@ async function loadTDash(m){
     </div>
   </div>
   <div class="topbar-actions">
+    <button class="btn btn-ghost" onclick="openCmd()" title="Search (Ctrl+K)" style="padding:8px 10px">🔍</button>
     <button class="btn btn-secondary" onclick="tNav('questions',null)">Question bank</button>
     <button class="btn btn-primary" onclick="tNav('create',null)">+ Create test</button>
   </div>
@@ -4234,30 +4582,64 @@ async function loadTDash(m){
       ${(analytics?.by_substrand||[]).some(r=>r.avg_pct<50)?'<div class="info-box coral" style="margin-top:12px">One or more topics below 50%. Consider reteaching these areas.</div>':''}
     </div>
   </div>
+  <!-- Marking queue -->
+  ${(marking||[]).length ? `
+  <div class="card" style="margin-bottom:20px;border-left:3px solid var(--coral)">
+    <div class="card-header" style="margin-bottom:12px">
+      <div>
+        <div class="card-title" style="color:var(--coral)">Marking queue — action required</div>
+        <div class="card-sub">${(marking||[]).reduce((s,m)=>s+(+m.essays_pending||0),0)} essay${(marking||[]).reduce((s,m)=>s+(+m.essays_pending||0),0)!==1?'s':''} waiting across ${(marking||[]).length} test${(marking||[]).length!==1?'s':''}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="tNav('analytics',null)">View queue →</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${(marking||[]).slice(0,5).map(mq=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface-2,var(--border));border-radius:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mq.title}</div>
+          <div style="font-size:11px;color:var(--text-3)">${mq.subject_name||'—'} · ${mq.students_attempted||0} students</div>
+        </div>
+        <span class="badge badge-coral" style="flex-shrink:0">${mq.essays_pending} pending</span>
+        <button class="btn btn-sm btn-primary" style="flex-shrink:0" onclick="viewTestResults(${mq.test_id})">Mark now →</button>
+      </div>`).join('')}
+    </div>
+  </div>` : ''}
+
   <div class="card">
     <div class="card-header">
-      <div><div class="card-title">My tests</div>${subjName?`<div class="card-sub">${subjName}</div>`:''}</div>
-      <button class="btn btn-ghost" onclick="tNav('create',null)">+ New test</button>
+      <div>
+        <div class="card-title">My tests</div>
+        ${subjName?`<div class="card-sub">${subjName}</div>`:''}
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="tNav('results',null)">View results</button>
+        <button class="btn btn-primary btn-sm" onclick="tNav('create',null)">+ New test</button>
+      </div>
     </div>
-    ${filteredTests.length?`<table class="data-table"><thead><tr><th>Test</th><th>Type</th><th>Status</th><th>Due</th><th>Actions</th></tr></thead><tbody>
-    ${filteredTests.slice(0,6).map(t=>`<tr>
+    ${filteredTests.length?`<table class="data-table"><thead><tr><th>Test</th><th>Type</th><th>Status</th><th>Due</th><th>Qs</th><th>Actions</th></tr></thead><tbody>
+    ${filteredTests.slice(0,6).map(t=>{
+      const hasPending=(marking||[]).find(mq=>mq.test_id===t.id);
+      return`<tr>
       <td><b>${t.title}</b>${t.academic_year?`<div style="font-size:10px;color:var(--text-3);margin-top:1px">${t.academic_year} · Sem ${t.semester||'—'}</div>`:''}</td>
       <td>${testTypeBadge(t.type)}</td>
-      <td><span class="badge badge-${t.status==='published'?'green':t.status==='draft'?'amber':'gray'}">${t.status}</span></td>
+      <td>
+        <span class="badge badge-${t.status==='published'?'green':t.status==='draft'?'amber':'gray'}">${t.status}</span>
+        ${hasPending?`<span class="badge badge-coral" style="font-size:9px;margin-left:3px">${hasPending.essays_pending} to mark</span>`:''}
+      </td>
       <td style="color:var(--text-3)">${t.due_at?fmtDate(t.due_at):'—'}</td>
+      <td style="color:var(--text-2);font-size:12px;text-align:center">${t.question_count||0}</td>
       <td style="display:flex;gap:4px">
-        <button class="btn btn-ghost btn-sm" onclick="previewTest(${t.id},true)">Preview</button>
         <button class="btn btn-ghost btn-sm" onclick="viewTestResults(${t.id})">Results</button>
         <button class="btn btn-ghost btn-sm" onclick="openTestAnalytics(${t.id},${JSON.stringify(t.title||'Test')})">📊</button>
         <button class="btn btn-ghost btn-sm" onclick="editExistingTest(${t.id})">Edit</button>
         <button class="btn btn-ghost btn-sm" onclick="duplicateTest(${t.id})">Copy</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="deleteTest(${t.id},'${(t.title||'').replace(/'/g,"\\'")}')">Delete</button>
       </td>
-    </tr>`).join('')}</tbody></table>`:
-    `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No tests yet${subjName?' for '+subjName:''}</div><div class="empty-desc">Create your first test to get started.</div></div>`}
+    </tr>`}).join('')}</tbody></table>`:
+    `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No tests yet${subjName?' for '+subjName:''}</div><div class="empty-desc">Create your first test to get started.</div>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="tNav('create',null)">+ Create test</button></div>`}
   </div>
 </div>`;
-  // Load action alerts non-blocking
   loadDashboardAlerts('t-dash-alerts', 'tNav');
 }
 
@@ -4816,7 +5198,8 @@ async function taChange(classId) {
 
 function taSelectClass(classId) {
   const sel = document.getElementById('ta-cls-sel');
-  if (sel) { sel.value = classId; taChange(classId); }
+  if (sel) sel.value = classId;   // update dropdown when on teacher analytics
+  taChange(classId);              // always drill in — works for admin too
 }
 
 async function taRender(classId, classes, analytics) {
@@ -5082,7 +5465,6 @@ async function loadTCreate(m, prefill) {
             </select>
             <select class="form-select" id="create-bank-sub" style="width:auto" onchange="loadBankForCreate()">
               <option value="">All sub-strands</option>
-              ${getAllSubstrands().map(s => `<option value="${s.code}">${s.code} — ${s.label.split('—')[1]?.trim()||s.label}</option>`).join('')}
             </select>
             <select class="form-select" id="create-bank-diff" style="width:auto" onchange="loadBankForCreate()">
               <option value="">All difficulty</option><option>Easy</option><option>Medium</option><option>Hard</option>
@@ -5239,9 +5621,18 @@ async function loadTCreate(m, prefill) {
 
   renderTestQList();
   setTimeout(() => {
-    refreshStrandSelect('ai-year','ai-strand','ai-sub');
-    updateClsState(); // initialise the "All classes" checkbox state + summary line
-    populateSubjectDropdowns(t.subject_id || TCTX.subject_id || null); // fill subject selects
+    aiLoadStrands(); // load subject-specific strands for AI generator
+    updateClsState();
+    populateSubjectDropdowns(t.subject_id || TCTX.subject_id || null);
+    // Populate create-bank-sub with subject strands
+    const subjectId = t.subject_id || TCTX.subject_id;
+    if (subjectId) fetchSubjectStrands(subjectId).then(strands => {
+      const cbs = document.getElementById('create-bank-sub');
+      if (cbs && strands.length) {
+        cbs.innerHTML = '<option value="">All sub-strands</option>' +
+          strands.map(s=>`<option value="${s.sub_strand_code}">${s.sub_strand_code} — ${s.sub_strand_label}</option>`).join('');
+      }
+    });
   }, 50);
 }
 
@@ -5689,6 +6080,8 @@ function aRender(v){
   else if(v==='chat')        loadGroupChat(m,'a');
   else if(v==='promotion')   loadAPromotion(m);
   else if(v==='meetings')      loadAMeetings(m);
+  else if(v==='gradebook')     loadTGradebook(m);
+  else if(v==='leaderboard')   loadLeaderboard(m);
   else if(v==='report-cards')  loadAReportCards(m);
   else if(v==='at-risk')       loadAAtRisk(m);
 }
@@ -6247,31 +6640,59 @@ function renderSubjectAnalytics(bySubject) {
 }
 
 async function loadAOverview(m) {
-  let analytics = null, classes = [], students = [];
+  let analytics = null, classes = [], students = [], teacherData = null;
   try {
-    [analytics, classes, students] = await Promise.all([
+    [analytics, classes, students, teacherData] = await Promise.all([
       GET('/analytics/school'),
       GET('/classes'),
       GET('/students'),
+      GET('/analytics/teachers').catch(()=>null),
     ]);
   } catch(e) {}
 
-  const ov   = analytics?.overview || {};
-  const byS  = analytics?.by_substrand || [];
-  const atR  = analytics?.at_risk || [];
-  const cls  = classes || [];
-  const s    = students || [];
+  const ov        = analytics?.overview     || {};
+  const byS       = analytics?.by_substrand || [];
+  const atR       = analytics?.at_risk      || [];
+  const perClass  = analytics?.per_class    || [];
+  const cls       = classes || [];
+  const s         = students || [];
+  const semTrend  = teacherData?.semTrend   || [];
+  const teachers  = teacherData?.teachers   || [];
 
   const schoolAvg  = Math.round(ov.school_avg || 0);
   const grade      = wassceGrade(schoolAvg);
   const atRiskCnt  = atR.length || s.filter(x=>(x.avg_pct||0)<50).length;
+  const testCount  = ov.test_count || 0;
   const u          = CURRENT_USER || {};
+
+  // School health score (composite: avg 50%, pass rate 30%, at-risk inverse 20%)
+  const passRate   = s.length ? Math.round(s.filter(x=>(x.avg_pct||0)>=50).length/s.length*100) : 0;
+  const atRiskRate = s.length ? Math.round(atRiskCnt/s.length*100) : 0;
+  const healthScore = Math.round(schoolAvg*0.5 + passRate*0.3 + Math.max(0,100-atRiskRate*3)*0.2);
+  const healthLabel = healthScore>=75?'Excellent':healthScore>=60?'Good':healthScore>=45?'Fair':'Needs attention';
+  const healthCol   = healthScore>=75?'var(--green)':healthScore>=60?'var(--amber)':'var(--coral)';
+
+  // Semester trend direction
+  const sortedTrend = [...semTrend].sort((a,b)=>a.academic_year.localeCompare(b.academic_year)||a.semester-b.semester);
+  const trendDiff = sortedTrend.length>=2
+    ? Math.round((parseFloat(sortedTrend[sortedTrend.length-1]?.avg_pct)||0)-(parseFloat(sortedTrend[0]?.avg_pct)||0))
+    : null;
+
+  // Year group breakdown
+  const byYear = {};
+  perClass.forEach(c => { const y=c.year_group||'?'; (byYear[y]=byYear[y]||[]).push(c); });
+  const yearSummary = Object.entries(byYear).sort((a,b)=>a[0]-b[0]).map(([yr,cls])=>{
+    const avg = cls.length ? Math.round(cls.reduce((s,c)=>s+(parseFloat(c.class_avg)||0),0)/cls.length) : 0;
+    const sts = cls.reduce((s,c)=>s+(parseInt(c.student_count)||0),0);
+    return {yr,avg,sts,cls:cls.length};
+  });
 
   m.innerHTML = `
 <div class="topbar">
   <div><div class="topbar-title">School overview</div>
   <div class="topbar-sub">${u.first_name ? u.first_name + ' · ' : ''}Administrator dashboard</div></div>
   <div class="topbar-actions">
+    <button class="btn btn-ghost" onclick="openCmd()" title="Search (Ctrl+K)" style="padding:8px 10px">🔍</button>
     <button class="btn btn-secondary" onclick="aNav('reports',null)">📊 Reports</button>
     <button class="btn btn-secondary" onclick="printCurrentPage('School Overview','ao-page')">🖨 Print</button>
     <button class="btn btn-primary" onclick="aOpenStudentModal(null,${JSON.stringify(cls).replace(/"/g,'&quot;')})">+ Add student</button>
@@ -6284,31 +6705,52 @@ async function loadAOverview(m) {
     <div class="stat-card" style="cursor:pointer" onclick="aNav('students',null)">
       <div class="label">Total students</div>
       <div class="value">${ov.student_count || s.length}</div>
-      <div class="trend">Click to manage</div>
-    </div>
-    <div class="stat-card" style="cursor:pointer" onclick="aNav('classes',null)">
-      <div class="label">Classes</div>
-      <div class="value">${ov.class_count || cls.length}</div>
-      <div class="trend">Click to manage</div>
+      <div class="trend">${cls.length} class${cls.length!==1?'es':''}</div>
     </div>
     <div class="stat-card">
       <div class="label">School average</div>
       <div class="value" style="color:${col(schoolAvg)}">${schoolAvg || '—'}%</div>
       <div class="trend">WASSCE: <b style="color:${grade.c}">${grade.g}</b></div>
     </div>
-    <div class="stat-card" style="cursor:pointer" onclick="aNav('students',null)">
+    <div class="stat-card">
+      <div class="label">Pass rate</div>
+      <div class="value" style="color:${passRate>=50?'var(--green)':'var(--coral)'}">${passRate}%</div>
+      <div class="trend">students above 50%</div>
+    </div>
+    <div class="stat-card" style="cursor:pointer" onclick="aNav('at-risk',null)">
       <div class="label">At-risk students</div>
       <div class="value" style="color:${atRiskCnt>0?'var(--coral)':'var(--green)'}">${atRiskCnt}</div>
       <div class="trend trend-${atRiskCnt>0?'down':'up'}">${atRiskCnt>0?'Need intervention':'All passing 🎉'}</div>
     </div>
+    <div class="stat-card">
+      <div class="label">Tests conducted</div>
+      <div class="value">${testCount}</div>
+      <div class="trend">${teachers.length} teacher${teachers.length!==1?'s':''} active</div>
+    </div>
+    <div class="stat-card" style="cursor:pointer" onclick="aNav('reports',null)">
+      <div class="label">School health</div>
+      <div class="value" style="color:${healthCol}">${healthScore}</div>
+      <div class="trend" style="color:${healthCol}">${healthLabel}</div>
+    </div>
   </div>
+
+  <!-- Year group performance strip -->
+  ${yearSummary.length ? `
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+    ${yearSummary.map(y=>`
+    <div class="stat-card" style="flex:1;min-width:100px;cursor:pointer" onclick="aNav('reports',null)">
+      <div class="label">Year ${y.yr}</div>
+      <div class="value" style="font-size:22px;color:${col(y.avg)}">${y.avg||'—'}%</div>
+      <div class="trend">${y.sts} student${y.sts!==1?'s':''} · ${y.cls} class${y.cls!==1?'es':''}</div>
+    </div>`).join('')}
+  </div>` : ''}
 
   <!-- Main content grid -->
   <div class="grid-2" style="margin-bottom:20px">
 
     <!-- Sub-strand performance -->
     <div class="card">
-      <div class="card-header"><div class="card-title">Sub-strand performance</div><div class="card-sub">School-wide averages</div></div>
+      <div class="card-header"><div class="card-title">Sub-strand performance</div><div class="card-sub">School-wide averages · click a topic to see details</div></div>
       ${byS.length ? `<div class="bar-chart">
         ${byS.map(row=>{const v=Math.round(row.avg_pct||0);return`
         <div class="bar-row"><div class="bar-label">${row.sub_strand}</div>
@@ -6317,13 +6759,13 @@ async function loadAOverview(m) {
       </div>` : '<div style="color:var(--text-3);font-size:13px;padding:16px 0">No test data yet — assign tests to classes to see performance.</div>'}
     </div>
 
-    <!-- At-risk students -->
+    <!-- At-risk students + trend -->
     <div class="card">
       <div class="card-header">
         <div><div class="card-title">At-risk students</div><div class="card-sub">Below 50% — need intervention</div></div>
-        <button class="btn btn-ghost btn-sm" onclick="aNav('students',null)">View all</button>
+        <button class="btn btn-ghost btn-sm" onclick="aNav('at-risk',null)">View all →</button>
       </div>
-      ${atR.slice(0,6).map(s2=>`
+      ${atR.slice(0,5).map(s2=>`
       <div class="student-row" style="cursor:pointer" onclick="openStudentDetail(${s2.id})">
         <div class="student-avatar" style="background:var(--coral);font-size:11px;width:32px;height:32px">${((s2.first_name||'?')[0]+(s2.last_name||'?')[0]).toUpperCase()}</div>
         <div><div class="student-name">${s2.first_name} ${s2.last_name}</div><div class="student-class">${s2.class_name||'—'}</div></div>
@@ -6331,6 +6773,17 @@ async function loadAOverview(m) {
       </div>`).join('') || '<div style="color:var(--text-3);font-size:13px;padding:12px 0">No at-risk students 🎉</div>'}
     </div>
   </div>
+
+  <!-- Semester trend -->
+  ${semTrend.length >= 2 ? `
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header" style="margin-bottom:12px">
+      <div><div class="card-title">School performance trend</div>
+      <div class="card-sub">Average score across semesters</div></div>
+      ${trendDiff!==null?`<span style="font-size:13px;font-weight:700;color:${trendDiff>=0?'var(--green)':'var(--coral)'}">${trendDiff>=0?'↑ Improving':'↓ Declining'} ${Math.abs(trendDiff)}%</span>`:''}
+    </div>
+    ${svgLineChart(sortedTrend.map(s=>({y:Math.round(parseFloat(s.avg_pct)||0),label:`${s.academic_year} S${s.semester}`})), 120)}
+  </div>` : ''}
 
   <!-- Quick actions -->
   <div class="card-title" style="margin-bottom:12px">Quick actions</div>
@@ -7145,12 +7598,13 @@ async function loadASubjects(m, embedded = false) {
     const catEnabled = subjects.filter(s => s.is_enabled == 1).length;
     const icon = CATEGORY_ICONS[cat] || '📚';
     const rows = subjects.map(s => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);gap:10px">
+        <div style="flex:1;min-width:0">
           <span style="font-size:13px;font-weight:600">${s.name}</span>
           ${s.short_name ? `<span style="font-size:11px;color:var(--text-3);margin-left:6px">(${s.short_name})</span>` : ''}
         </div>
-        <label class="switch" title="${s.is_enabled==1?'Enabled — click to disable':'Disabled — click to enable'}">
+        <button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:11px" onclick="openSubjectStrandsModal(${s.id},'${(s.name||'').replace(/'/g,"\\'")}')">Strands</button>
+        <label class="switch" title="${s.is_enabled==1?'Enabled — click to disable':'Disabled — click to enable'}" style="flex-shrink:0">
           <input type="checkbox" ${s.is_enabled==1?'checked':''}
             onchange="toggleSubject(${s.id},this)">
           <span class="switch-slider"></span>
@@ -7220,6 +7674,7 @@ async function loadASubjects(m, embedded = false) {
             <td style="color:var(--text-3)">${s.short_name||'—'}</td>
             <td><span class="badge badge-gray">${s.category}</span></td>
             <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openSubjectStrandsModal(${s.id},'${s.name.replace(/'/g,"\\'")}')">Strands</button>
               <button class="btn btn-ghost btn-sm" onclick='aOpenSubjectModal(${JSON.stringify(s).replace(/"/g,"&quot;")})'>Edit</button>
               <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="aDeleteSubject(${s.id},'${s.name.replace(/'/g,"\\'")}')">Delete</button>
             </td>
@@ -7327,6 +7782,107 @@ async function aDeleteSubject(id, name) {
     const stPane = document.getElementById('st-subjects');
     const m = stPane?.dataset?.loaded ? stPane : document.getElementById('a-main');
     if (m) loadASubjects(m, !!stPane?.dataset?.loaded);
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+// ── Subject strand management modal ───────────────────────────
+async function openSubjectStrandsModal(subjectId, subjectName) {
+  adminModal(
+    `📚 ${subjectName} — Strands & Sub-strands`,
+    '<div style="padding:20px;text-align:center;color:var(--text-3)">Loading…</div>',
+    null, 'Close'
+  );
+  document.getElementById('adm-modal-save').style.display = 'none';
+
+  const renderStrandsModal = async () => {
+    const rows = await fetchSubjectStrands(subjectId);
+    clearSubjectStrandsCache(subjectId); // force re-fetch on next use
+
+    // Group by strand for display
+    const strandGroups = {};
+    rows.forEach(r => {
+      if (!strandGroups[r.strand_code]) strandGroups[r.strand_code] = { label: r.strand_label, subs: [] };
+      strandGroups[r.strand_code].subs.push(r);
+    });
+
+    const strandTable = rows.length ? `
+      <table class="data-table" style="margin-bottom:16px">
+        <thead><tr><th>Strand</th><th>Sub-strand code</th><th>Sub-strand label</th><th></th></tr></thead>
+        <tbody>
+          ${Object.entries(strandGroups).map(([sCode, sData]) =>
+            sData.subs.map((sub, i) => `<tr>
+              <td>${i===0?`<b>${sData.label}</b><div style="font-size:10px;color:var(--text-3)">${sCode}</div>`:''}</td>
+              <td><code style="font-size:11px">${sub.sub_strand_code}</code></td>
+              <td>${sub.sub_strand_label}</td>
+              <td><button class="btn btn-ghost btn-sm" style="color:var(--coral);padding:2px 6px" onclick="deleteSubjectStrand(${subjectId},'${subjectName.replace(/'/g,"\\'")}',${sub.id})">×</button></td>
+            </tr>`).join('')
+          ).join('')}
+        </tbody>
+      </table>` : `<div class="info-box blue" style="margin-bottom:16px;font-size:13px">
+        No strands configured yet. Add your first strand below.<br>
+        <span style="color:var(--text-3)">Example — ICT: Strand code <code>S1</code>, label <code>Strand 1 — ICTs in Society</code>, sub-strand code <code>S1/SS1</code>, label <code>Productivity Tools</code>.</span>
+      </div>`;
+
+    const body = document.getElementById('adm-modal-body');
+    if (!body) return;
+    body.innerHTML = `
+      ${strandTable}
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">Add new sub-strand</div>
+      <div class="grid-2" style="margin-bottom:8px">
+        <div class="form-group">
+          <label class="form-label">Strand code <span style="font-size:10px;color:var(--text-3)">(e.g. S1 or Strand1)</span></label>
+          <input class="form-input" id="ss-strand-code" placeholder="e.g. S1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Strand label</label>
+          <input class="form-input" id="ss-strand-label" placeholder="e.g. Strand 1 — ICTs in Society">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sub-strand code <span style="font-size:10px;color:var(--text-3)">(e.g. S1/SS1)</span></label>
+          <input class="form-input" id="ss-sub-code" placeholder="e.g. S1/SS1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sub-strand label</label>
+          <input class="form-input" id="ss-sub-label" placeholder="e.g. Productivity Tools">
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addSubjectStrand(${subjectId},'${subjectName.replace(/'/g,"\\'")}')">Add sub-strand →</button>`;
+  };
+
+  await renderStrandsModal();
+
+  window._renderStrandsModal = renderStrandsModal;
+}
+
+async function addSubjectStrand(subjectId, subjectName) {
+  const strandCode  = (document.getElementById('ss-strand-code')?.value||'').trim();
+  const strandLabel = (document.getElementById('ss-strand-label')?.value||'').trim();
+  const subCode     = (document.getElementById('ss-sub-code')?.value||'').trim();
+  const subLabel    = (document.getElementById('ss-sub-label')?.value||'').trim();
+  if (!strandCode||!strandLabel||!subCode||!subLabel) {
+    notify('Fill in all 4 fields', 'error'); return;
+  }
+  try {
+    await POST(`/subjects/${subjectId}/strands`, {
+      strand_code: strandCode, strand_label: strandLabel,
+      sub_strand_code: subCode, sub_strand_label: subLabel,
+    });
+    clearSubjectStrandsCache(subjectId);
+    notify('Sub-strand added', 'success');
+    if (window._renderStrandsModal) await window._renderStrandsModal();
+  } catch(e) { notify(e.message, 'error'); }
+}
+
+async function deleteSubjectStrand(subjectId, subjectName, strandRowId) {
+  try {
+    await fetch(`${API_BASE}/subjects/${subjectId}/strands?strand_id=${strandRowId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strand_id: strandRowId }),
+    });
+    clearSubjectStrandsCache(subjectId);
+    notify('Sub-strand removed', 'success');
+    if (window._renderStrandsModal) await window._renderStrandsModal();
   } catch(e) { notify(e.message, 'error'); }
 }
 
@@ -7554,171 +8110,506 @@ async function csSetStudentGroup(studentId, groupTag) {
 
 async function loadAReports(m) {
   m.innerHTML = panelLoader();
-  // Fetch data needed for reports
-  let analytics = null, teachers = [], classes = [], apData = null;
+  let analytics = null, teacherData = null, classes = [], apData = null;
   try {
-    [analytics, teachers, classes, apData] = await Promise.all([
+    [analytics, teacherData, classes, apData] = await Promise.all([
       GET('/analytics/school').catch(()=>null),
-      GET('/teachers').catch(()=>[]),
+      GET('/analytics/teachers').catch(()=>null),
       GET('/classes').catch(()=>[]),
       GET('/academic-periods').catch(()=>null),
     ]);
   } catch(e) {}
-  const ov       = analytics?.overview    || {};
-  const atRisk   = analytics?.at_risk     || [];
-  const bySubj   = analytics?.by_subject  || [];
-  const perClass = analytics?.per_class   || [];
-  const allPeriods = apData?.available   || [];
-
+  const teachers   = teacherData?.teachers || [];
+  const semTrend   = teacherData?.semTrend || [];
+  const ov         = analytics?.overview   || {};
+  const atRisk     = analytics?.at_risk    || [];
+  const bySubj     = analytics?.by_subject || [];
+  const perClass   = analytics?.per_class  || [];
+  const allPeriods = apData?.available     || [];
   const schoolName = CURRENT_USER?.school_name || 'School';
-  const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GH',{day:'numeric',month:'short',year:'numeric'}) : '—';
 
-  // Report filter state
-  if (!window._rptFilter) window._rptFilter = { semester: '', academic_year: '', subject: '', teacher: '', class_id: '' };
+  window._rptData = { analytics, teachers, semTrend, classes, perClass, bySubj, atRisk, ov, schoolName };
+  window._rptMatrixLoaded = false;
+  window._rptActiveTab    = 0;
+  if (!window._rptFilter) window._rptFilter = {};
 
-  const periodOpts = [`<option value="">All periods</option>`,
-    ...allPeriods.map(p=>`<option value="${p.academic_year}|${p.semester}">${p.academic_year} · Sem ${p.semester}</option>`)
+  const f = window._rptFilter;
+  const periodVal = (f.academic_year && f.semester) ? `${f.academic_year}|${f.semester}` : '';
+
+  const periodOpts = [`<option value="" ${!periodVal?'selected':''}>All periods</option>`,
+    ...allPeriods.map(p=>{const v=`${p.academic_year}|${p.semester}`;return`<option value="${v}" ${v===periodVal?'selected':''}>${p.academic_year} · Sem ${p.semester}</option>`;})
   ].join('');
-  const teacherOpts = [`<option value="">All teachers</option>`,
-    ...(teachers||[]).map(t=>`<option value="${t.teacher_id}">${t.teacher_name}</option>`)
+  const teacherOpts = [`<option value="" ${!f.teacher_id?'selected':''}>All teachers</option>`,
+    ...(teachers||[]).map(t=>{const id=String(t.id||t.teacher_id||'');const n=t.first_name&&t.last_name?t.first_name+' '+t.last_name:t.teacher_name||'—';return`<option value="${id}" ${id===String(f.teacher_id||'')?'selected':''}>${n}</option>`;})
   ].join('');
-  const classOpts = [`<option value="">All classes</option>`,
-    ...(classes||[]).map(c=>`<option value="${c.id}">${c.name} (Year ${c.year_group})</option>`)
+  const classOpts = [`<option value="" ${!f.class_id?'selected':''}>All classes</option>`,
+    ...(classes||[]).map(c=>`<option value="${c.id}" ${String(c.id)===String(f.class_id||'')?'selected':''}>${c.name} (Year ${c.year_group})</option>`)
   ].join('');
-  const subjOpts = [`<option value="">All subjects</option>`,
-    ...bySubj.map(s=>`<option value="${s.subject_id}">${s.subject_name}</option>`)
+  const subjOpts = [`<option value="" ${!f.subject_id?'selected':''}>All subjects</option>`,
+    ...bySubj.map(s=>`<option value="${s.subject_id}" ${String(s.subject_id)===String(f.subject_id||'')?'selected':''}>${s.subject_name}</option>`)
   ].join('');
+
+  const tSorted = [...semTrend].sort((a,b)=>a.academic_year.localeCompare(b.academic_year)||a.semester-b.semester);
+  const tFirst=tSorted[0], tLast=tSorted[tSorted.length-1];
+  const trendDiff = tSorted.length>=2 ? Math.round((parseFloat(tLast?.avg_pct)||0)-(parseFloat(tFirst?.avg_pct)||0)) : null;
 
   m.innerHTML = `
 <div class="topbar">
-  <div><div class="topbar-title">Reports</div>
-  <div class="topbar-sub">${schoolName} · ${new Date().toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div>
+  <div>
+    <div class="topbar-title">Reports</div>
+    <div class="topbar-sub">${schoolName} · ${new Date().toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+  </div>
   <div class="topbar-actions">
-    <button class="btn btn-secondary" onclick="printCurrentPage('Reports','rpt-page')">🖨 Print all</button>
+    <button class="btn btn-secondary btn-sm" onclick="rptSwitchTab(4)">⬇ Exports</button>
+    <button class="btn btn-primary btn-sm" onclick="printCurrentPage('Reports','rpt-page')">🖨 Print</button>
   </div>
 </div>
 <div class="page" id="rpt-page">
 
-  <!-- ── FILTERS ── -->
-  <div class="card" style="padding:16px;margin-bottom:20px">
-    <div style="font-size:12px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Report filters</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-      <div><label class="form-label" style="font-size:11px">Period</label>
-        <select class="form-select" style="min-width:180px" onchange="rptApplyFilter('period',this.value)">${periodOpts}</select></div>
-      <div><label class="form-label" style="font-size:11px">Subject</label>
-        <select class="form-select" style="min-width:160px" onchange="rptApplyFilter('subject',this.value)">${subjOpts}</select></div>
-      <div><label class="form-label" style="font-size:11px">Teacher</label>
-        <select class="form-select" style="min-width:170px" onchange="rptApplyFilter('teacher',this.value)">${teacherOpts}</select></div>
-      <div><label class="form-label" style="font-size:11px">Class</label>
-        <select class="form-select" style="min-width:160px" onchange="rptApplyFilter('class',this.value)">${classOpts}</select></div>
-      <button class="btn btn-ghost btn-sm" onclick="rptClearFilters()">Clear</button>
-      <button class="btn btn-primary btn-sm" onclick="rptRefresh()">Apply →</button>
+  <!-- ── FILTER BAR (auto-apply on change) ── -->
+  <div class="card" style="padding:12px 16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap">Filters:</span>
+      <select class="form-select" style="min-width:170px;font-size:12px" onchange="rptApplyFilter('period',this.value)">${periodOpts}</select>
+      <select class="form-select" style="min-width:148px;font-size:12px" onchange="rptApplyFilter('subject',this.value)">${subjOpts}</select>
+      <select class="form-select" style="min-width:148px;font-size:12px" onchange="rptApplyFilter('teacher',this.value)">${teacherOpts}</select>
+      <select class="form-select" style="min-width:148px;font-size:12px" onchange="rptApplyFilter('class',this.value)">${classOpts}</select>
+      <button class="btn btn-ghost btn-sm" onclick="rptClearFilters()">✕ Clear</button>
+      <span id="rpt-filter-indicator" style="font-size:11px;color:var(--text-3);margin-left:auto"></span>
     </div>
   </div>
 
-  <!-- ── SUMMARY STATS ── -->
-  <div class="stats-row" style="margin-bottom:20px">
-    <div class="stat-card"><div class="label">Total students</div><div class="value">${ov.student_count||0}</div></div>
-    <div class="stat-card"><div class="label">School average</div><div class="value" style="color:${col(Math.round(parseFloat(ov.school_avg)||0))}">${Math.round(parseFloat(ov.school_avg)||0)}%</div></div>
-    <div class="stat-card"><div class="label">Active classes</div><div class="value">${ov.class_count||0}</div></div>
-    <div class="stat-card"><div class="label">Tests conducted</div><div class="value">${ov.test_count||0}</div></div>
-    <div class="stat-card"><div class="label">At-risk students</div><div class="value" style="color:var(--coral)">${atRisk.length}</div></div>
+  <!-- ── TAB BAR ── -->
+  <div id="rpt-tabs" class="tab-bar" style="margin-bottom:16px">
+    <button class="tab-btn active" onclick="rptSwitchTab(0)">Overview</button>
+    <button class="tab-btn" onclick="rptSwitchTab(1)">By Class</button>
+    <button class="tab-btn" onclick="rptSwitchTab(2)">Subject Matrix</button>
+    <button class="tab-btn" onclick="rptSwitchTab(3)">At-Risk</button>
+    <button class="tab-btn" onclick="rptSwitchTab(4)">Exports</button>
   </div>
 
-  <div class="grid-2" style="margin-bottom:20px">
-    <!-- Class performance -->
+  <!-- ══ TAB 0: OVERVIEW ══ -->
+  <div id="rpt-tab-0" class="rpt-tab-pane">
+
+    <div id="rpt-stats" class="stats-row" style="margin-bottom:20px">
+      ${rptStatsHTML(ov, atRisk)}
+    </div>
+
+    <div class="grid-2" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-header" style="margin-bottom:12px">
+          <div><div class="card-title">Class comparison</div>
+          <div class="card-sub">By average score · click to open gradebook</div></div>
+        </div>
+        <div id="rpt-chart-section">${rptClassChartHTML(perClass)}</div>
+      </div>
+      <div class="card">
+        <div class="card-header" style="margin-bottom:12px">
+          <div><div class="card-title">Subject performance</div>
+          <div class="card-sub" id="rpt-subj-sub">${bySubj.length} subject${bySubj.length!==1?'s':''}</div></div>
+          <button class="btn btn-ghost btn-sm" onclick="rptExportSubject()">⬇</button>
+        </div>
+        <div id="rpt-subj-section">${rptSubjectHTML(bySubj)}</div>
+      </div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-header" style="margin-bottom:8px">
+          <div><div class="card-title">Grade distribution</div>
+          <div style="font-size:11px;color:var(--text-3)">Predicted WASSCE grades by class average</div></div>
+        </div>
+        <div id="rpt-donut-section">${rptGradeDonutHTML(perClass)}</div>
+      </div>
+      <div class="card">
+        <div class="card-header" style="margin-bottom:12px">
+          <div><div class="card-title">Performance trend</div>
+          <div class="card-sub">School average by semester</div></div>
+          ${trendDiff!==null?`<span style="font-size:12px;font-weight:700;color:${trendDiff>=0?'var(--green)':'var(--coral)'}">${trendDiff>=0?'↑':'↓'} ${Math.abs(trendDiff)}%</span>`:''}
+        </div>
+        <div id="rpt-trend-section">${rptTrendHTML(semTrend)}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header" style="margin-bottom:12px">
+        <div><div class="card-title">WASSCE readiness snapshot</div>
+        <div class="card-sub">Predicted grade distribution by class average</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="aNav('analytics',null);setTimeout(()=>{const t=document.querySelector('#mtg-tab-bar .tab-btn:last-child');if(t){t.click();loadWASSCEDashboard();}},400)">Full dashboard →</button>
+      </div>
+      ${rptWASSCESummaryHTML(perClass)}
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-header">
+        <div><div class="card-title">Teacher activity &amp; accountability</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="rptExportTeachers()">⬇ Export</button>
+      </div>
+      <div id="rpt-teacher-section">${rptTeacherHTML(teachers)}</div>
+    </div>
+
+  </div><!-- /tab-0 -->
+
+  <!-- ══ TAB 1: BY CLASS ══ -->
+  <div id="rpt-tab-1" class="rpt-tab-pane" style="display:none">
     <div class="card">
       <div class="card-header">
-        <div><div class="card-title">Class performance</div><div class="card-sub">${perClass.length} classes</div></div>
+        <div><div class="card-title">Class performance</div>
+        <div class="card-sub" id="rpt-class-sub">${perClass.length} class${perClass.length!==1?'es':''}</div></div>
         <button class="btn btn-ghost btn-sm" onclick="rptExportClass()">⬇ Export</button>
       </div>
-      ${perClass.length ? `<table class="data-table">
-        <thead><tr><th>Class</th><th>Year</th><th>Students</th><th>Avg</th><th>Pass count</th></tr></thead>
-        <tbody>${perClass.map(c=>{const avg=Math.round(parseFloat(c.class_avg)||0);return`<tr>
-          <td><b>${c.class_name}</b></td>
-          <td><span class="badge badge-gray" style="font-size:10px">Year ${c.year_group}</span></td>
-          <td>${c.student_count||0}</td>
-          <td><span style="font-weight:700;color:${col(avg)}">${avg}%</span></td>
-          <td>${c.pass_count||0}</td>
-        </tr>`;}).join('')}</tbody>
-      </table>` : '<div style="padding:16px;color:var(--text-3)">No data. Publish tests and have students submit.</div>'}
+      <div id="rpt-class-section">${rptClassTableHTML(perClass)}</div>
     </div>
+  </div><!-- /tab-1 -->
 
-    <!-- Subject performance -->
+  <!-- ══ TAB 2: SUBJECT MATRIX ══ -->
+  <div id="rpt-tab-2" class="rpt-tab-pane" style="display:none">
+    <div class="card">
+      <div class="card-header" style="margin-bottom:16px">
+        <div><div class="card-title">Subject × Class heat map</div>
+        <div class="card-sub">Average score per subject per class · colour-coded by performance</div></div>
+      </div>
+      <div id="rpt-matrix-section">
+        <div style="padding:40px;text-align:center;color:var(--text-3)">Loading heat map…</div>
+      </div>
+    </div>
+  </div><!-- /tab-2 -->
+
+  <!-- ══ TAB 3: AT-RISK ══ -->
+  <div id="rpt-tab-3" class="rpt-tab-pane" style="display:none">
     <div class="card">
       <div class="card-header">
-        <div><div class="card-title">Subject performance</div><div class="card-sub">${bySubj.length} subjects</div></div>
-        <button class="btn btn-ghost btn-sm" onclick="rptExportSubject()">⬇ Export</button>
+        <div><div class="card-title">At-risk students</div>
+        <div class="card-sub" id="rpt-atrisk-sub">Below 50% · ${atRisk.length} students</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="rptExportAtRisk()">⬇ Export</button>
       </div>
-      ${bySubj.length ? `<div class="bar-chart">${bySubj.map(s=>{const v=Math.round(parseFloat(s.avg_pct)||0);return`
-        <div class="bar-row">
-          <div class="bar-label" style="width:140px">${s.subject_short||s.subject_name}</div>
-          <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
-          <div class="bar-val" style="color:${col(v)}">${v}%</div>
-          <span style="font-size:10px;color:var(--text-3);margin-left:6px">${s.test_count}t · ${s.student_count}s</span>
-        </div>`;}).join('')}</div>`
-        : '<div style="padding:16px;color:var(--text-3)">No subject data yet.</div>'}
+      <div id="rpt-atrisk-section">${rptAtRiskHTML(atRisk)}</div>
     </div>
-  </div>
+  </div><!-- /tab-3 -->
 
-  <!-- At-risk students -->
-  <div class="card" style="margin-bottom:20px">
-    <div class="card-header">
-      <div><div class="card-title">At-risk students</div><div class="card-sub">Below 50% · ${atRisk.length} students</div></div>
-      <button class="btn btn-ghost btn-sm" onclick="rptExportAtRisk()">⬇ Export</button>
+  <!-- ══ TAB 4: EXPORTS ══ -->
+  <div id="rpt-tab-4" class="rpt-tab-pane" style="display:none">
+    <div class="card-title" style="margin-bottom:14px">Quick exports</div>
+    <div class="grid-3">
+      ${[
+        {i:'📊',t:'School performance',d:'Full breakdown: class, subject, teacher averages',fn:'rptExportSchool'},
+        {i:'🎓',t:'Student progress list',d:'All students ranked by average score with GES grade',fn:'rptExportStudents'},
+        {i:'⚠️',t:'At-risk intervention list',d:'Students below threshold with action recommendations',fn:'rptExportAtRisk'},
+        {i:'📈',t:'WASSCE readiness forecast',d:'Predicted A1–F9 distribution from current performance',fn:'rptExportWassce'},
+        {i:'📋',t:'Test completion report',d:'All tests: title, class, subject, status, period',fn:'rptExportCompletion'},
+        {i:'📄',t:'Semester result sheet',d:'Printable class report sheet with GES grades per student',fn:'openSemesterResultSheet'},
+        {i:'🇬🇭',t:'GES district return',d:'Formatted school summary for Ghana Education Service',fn:'rptExportGES'},
+      ].map(r=>`
+      <div class="report-card" onclick="${r.fn}()" style="cursor:pointer">
+        <div style="font-size:28px;margin-bottom:10px">${r.i}</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">${r.t}</div>
+        <div style="font-size:12px;color:var(--text-3);line-height:1.5">${r.d}</div>
+        <div style="margin-top:12px"><span class="badge badge-green" style="font-size:10px">Export →</span></div>
+      </div>`).join('')}
     </div>
-    ${atRisk.length ? `<table class="data-table" id="rpt-atrisk-tbl">
-      <thead><tr><th>Student</th><th>Class</th><th>Average</th><th>Status</th><th></th></tr></thead>
-      <tbody>${atRisk.map(s=>{const avg=Math.round(parseFloat(s.avg_pct)||0);return`<tr>
-        <td><b>${s.first_name} ${s.last_name}</b></td>
-        <td>${s.class_name||'—'}</td>
-        <td><span style="font-weight:700;color:var(--coral)">${avg}%</span></td>
-        <td><span class="badge badge-coral" style="font-size:10px">At risk</span></td>
-        <td><button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${s.id})">View</button></td>
-      </tr>`;}).join('')}</tbody>
-    </table>` : '<div style="padding:16px;color:var(--green)">✓ No at-risk students currently.</div>'}
-  </div>
+  </div><!-- /tab-4 -->
 
-  <!-- Teacher activity -->
-  <div class="card" style="margin-bottom:20px">
-    <div class="card-header">
-      <div><div class="card-title">Teacher assessment activity</div></div>
-      <button class="btn btn-ghost btn-sm" onclick="rptExportTeachers()">⬇ Export</button>
-    </div>
-    ${teachers.length ? `<table class="data-table">
-      <thead><tr><th>Teacher</th><th>Department</th><th>Tests created</th><th>Questions</th><th>Students assessed</th></tr></thead>
-      <tbody>${teachers.map(t=>`<tr>
-        <td><b>${t.teacher_name||t.first_name+' '+t.last_name}</b></td>
-        <td style="color:var(--text-3)">${t.department_name||'—'}</td>
-        <td>${t.test_count||0}</td>
-        <td>${t.question_count||0}</td>
-        <td>${t.students_tested||t.class_count||0}</td>
-      </tr>`).join('')}</tbody>
-    </table>` : '<div style="padding:16px;color:var(--text-3)">No teacher data available.</div>'}
-  </div>
-
-  <!-- Quick export cards -->
-  <div class="grid-3">
-    ${[
-      {i:'📊',t:'School performance report',d:'Full school breakdown by class, subject, teacher',fn:'rptExportSchool'},
-      {i:'🎓',t:'Student progress report',d:'Individual performance and WASSCE readiness',fn:'rptExportStudents'},
-      {i:'⚠️',t:'At-risk intervention list',d:'Students needing support with suggested actions',fn:'rptExportAtRisk'},
-      {i:'📈',t:'WASSCE readiness forecast',d:'Grade distribution prediction based on current data',fn:'rptExportWassce'},
-      {i:'📋',t:'Test completion report',d:'Submitted vs assigned per class and subject',fn:'rptExportCompletion'},
-      {i:'📄',t:'Semester result sheet',d:'Full class result sheet with GES A1–F9 grades per student per subject',fn:'openSemesterResultSheet'},
-      {i:'🇬🇭',t:'GES annual return data',d:'Formatted for Ghana Education Service reporting',fn:'rptExportGES'},
-    ].map(r=>`
-    <div class="report-card" onclick="${r.fn}()" style="cursor:pointer">
-      <div style="font-size:28px;margin-bottom:10px">${r.i}</div>
-      <div style="font-size:14px;font-weight:700;margin-bottom:4px">${r.t}</div>
-      <div style="font-size:12px;color:var(--text-3);line-height:1.5">${r.d}</div>
-      <div style="margin-top:12px"><span class="badge badge-green" style="font-size:10px">Export →</span></div>
-    </div>`).join('')}
-  </div>
 </div>`;
 
-  // Store data for exports
-  window._rptData = { analytics, teachers, classes, bySubj, perClass, atRisk, schoolName, apData };
+  rptLoadMatrix();
+}
+
+// ── Reports render helpers (used by both initial render and refresh) ─
+
+// ── NEW visual helper functions ───────────────────────────────
+
+function rptClassChartHTML(perClass) {
+  const sorted = [...(perClass||[])].sort((a,b)=>parseFloat(b.class_avg||0)-parseFloat(a.class_avg||0));
+  return `<div style="display:flex;flex-direction:column;gap:10px">${sorted.map(c=>{
+    const v  = Math.round(parseFloat(c.class_avg)||0);
+    const pr = c.pass_count&&c.student_count ? Math.round(c.pass_count/c.student_count*100) : 0;
+    return `<div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="openRptClassDrill(${c.class_id})">
+      <div style="width:120px;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${c.class_name}">${c.class_name}</div>
+      <div style="flex:1;height:24px;background:var(--border);border-radius:5px;overflow:hidden;position:relative">
+        <div style="width:${v}%;height:100%;background:${v>=65?'var(--green)':v>=50?'var(--amber)':'var(--coral)'};border-radius:5px;transition:width .6s ease"></div>
+        <div style="position:absolute;left:8px;top:4px;font-size:11px;color:#fff;font-weight:700;mix-blend-mode:difference;white-space:nowrap">
+          ${v}% · ${pr}% pass · ${c.student_count||0} students
+        </div>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function rptTrendHTML(semTrend) {
+  if (!semTrend?.length) return '';
+  const sorted = [...semTrend].sort((a,b)=>a.academic_year.localeCompare(b.academic_year)||a.semester-b.semester);
+  const maxVal = Math.max(...sorted.map(s=>parseFloat(s.avg_pct)||0), 1);
+  return `<div style="display:flex;flex-direction:column;gap:10px">${sorted.map((s,i)=>{
+    const v    = Math.round(parseFloat(s.avg_pct)||0);
+    const prev = i>0 ? Math.round(parseFloat(sorted[i-1]?.avg_pct)||0) : null;
+    const diff = prev!==null ? v-prev : null;
+    const pct  = Math.round(v/maxVal*100);
+    return `<div style="display:flex;align-items:center;gap:10px">
+      <div style="width:110px;font-size:11px;color:var(--text-2);line-height:1.3">
+        ${s.academic_year}<br><b>Semester ${s.semester}</b>
+      </div>
+      <div style="flex:1;height:22px;background:var(--border);border-radius:4px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${col(v)};border-radius:4px;transition:width .6s ease"></div>
+      </div>
+      <div style="text-align:right;min-width:80px">
+        <span style="font-size:14px;font-weight:800;color:${col(v)}">${v}%</span>
+        ${diff!==null?`<span style="font-size:10px;color:${diff>=0?'var(--green)':'var(--coral)'};margin-left:4px">${diff>=0?'▲':'▼'}${Math.abs(diff)}%</span>`:''}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function rptWASSCESummaryHTML(perClass) {
+  if (!perClass?.length) return '<div style="color:var(--text-3);font-size:13px;padding:12px 0">No class data available.</div>';
+  const gradeOf = avg => avg>=80?'A1':avg>=70?'B2':avg>=60?'B3':avg>=55?'C4':avg>=50?'C5':avg>=45?'C6':avg>=40?'D7':avg>=35?'E8':'F9';
+  const isCredit = g => ['A1','B2','B3','C4','C5','C6'].includes(g);
+  const GRADE_BG = {A1:'var(--green-lt)',B2:'var(--green-lt)',B3:'var(--green-lt)',C4:'var(--amber-lt)',C5:'var(--amber-lt)',C6:'var(--amber-lt)',D7:'var(--coral-lt)',E8:'var(--coral-lt)',F9:'var(--coral-lt)'};
+  const GRADE_COL = {A1:'var(--green-dk)',B2:'var(--green-dk)',B3:'var(--green)',C4:'var(--amber)',C5:'var(--amber)',C6:'var(--amber)',D7:'var(--coral)',E8:'var(--coral)',F9:'var(--coral)'};
+
+  const rows = perClass.map(c => {
+    const avg   = Math.round(parseFloat(c.class_avg)||0);
+    const grade = gradeOf(avg);
+    const ready = isCredit(grade) ? '✓ Credit pass' : '✗ Not credit';
+    return `<tr>
+      <td><b>${c.class_name}</b></td>
+      <td><span class="badge badge-gray" style="font-size:10px">Year ${c.year_group}</span></td>
+      <td><span style="font-weight:700;color:${col(avg)}">${avg}%</span></td>
+      <td><span style="font-weight:800;font-size:15px;color:${GRADE_COL[grade]};background:${GRADE_BG[grade]};padding:2px 8px;border-radius:5px">${grade}</span></td>
+      <td style="font-size:12px;color:${isCredit(grade)?'var(--green)':'var(--coral)'}">${ready}</td>
+      <td>${c.student_count||0}</td>
+    </tr>`;
+  }).join('');
+
+  const creditClasses = perClass.filter(c=>isCredit(gradeOf(Math.round(parseFloat(c.class_avg)||0)))).length;
+  return `
+    <div class="info-box ${creditClasses===perClass.length?'green':'blue'}" style="margin-bottom:12px;font-size:12px">
+      ${creditClasses} of ${perClass.length} classes predicted to achieve a credit pass (A1–C6) based on current average scores.
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Class</th><th>Year</th><th>Avg Score</th><th>Predicted Grade</th><th>WASSCE Status</th><th>Students</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function rptStatsHTML(ov, atRisk) {
+  const avg = Math.round(parseFloat(ov.school_avg)||0);
+  return `
+    <div class="stat-card"><div class="label">Total students</div><div class="value">${ov.student_count||0}</div></div>
+    <div class="stat-card"><div class="label">School average</div><div class="value" style="color:${col(avg)}">${avg}%</div></div>
+    <div class="stat-card"><div class="label">Active classes</div><div class="value">${ov.class_count||0}</div></div>
+    <div class="stat-card"><div class="label">Tests conducted</div><div class="value">${ov.test_count||0}</div></div>
+    <div class="stat-card"><div class="label">At-risk students</div><div class="value" style="color:var(--coral)">${(atRisk||[]).length}</div></div>`;
+}
+
+function rptClassTableHTML(perClass) {
+  if (!perClass?.length) return '<div style="padding:16px;color:var(--text-3)">No data. Publish tests and have students submit.</div>';
+  const rows = perClass.map(c => {
+    const avg = Math.round(parseFloat(c.class_avg)||0);
+    const pr  = c.pass_count&&c.student_count ? Math.round(c.pass_count/c.student_count*100) : 0;
+    return `<tr>
+      <td><b style="cursor:pointer;color:var(--green)" onclick="openRptClassDrill(${c.class_id})">${c.class_name}</b></td>
+      <td><span class="badge badge-gray" style="font-size:10px">Year ${c.year_group}</span></td>
+      <td>${c.student_count||0}</td>
+      <td><span style="font-weight:700;color:${col(avg)}">${avg}%</span></td>
+      <td>${c.pass_count||0} <span style="font-size:11px;color:var(--text-3)">(${pr}%)</span></td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-ghost btn-sm" onclick="aNav('analytics',null);setTimeout(()=>taSelectClass(${c.class_id}),300)">Analytics</button>
+        <button class="btn btn-ghost btn-sm" onclick="openRptClassDrill(${c.class_id})">Gradebook</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<table class="data-table">
+    <thead><tr><th>Class</th><th>Year</th><th>Students</th><th>Avg</th><th>Pass rate</th><th>Actions</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function rptSubjectHTML(bySubj) {
+  if (!bySubj?.length) return '<div style="padding:16px;color:var(--text-3)">No subject data yet.</div>';
+  return `<div class="bar-chart">${bySubj.map(s=>{const v=Math.round(parseFloat(s.avg_pct)||0);return`
+    <div class="bar-row">
+      <div class="bar-label" style="width:130px">${s.subject_short||s.subject_name}</div>
+      <div class="bar-track"><div class="bar-fill ${v<50?'coral':v<65?'amber':''}" style="width:${v}%"></div></div>
+      <div class="bar-val" style="color:${col(v)}">${v}%</div>
+      <span style="font-size:10px;color:var(--text-3);margin-left:6px">${s.test_count}t · ${s.student_count}s</span>
+    </div>`;}).join('')}</div>`;
+}
+
+function rptAtRiskHTML(atRisk) {
+  if (!atRisk?.length) return '<div style="padding:16px;color:var(--green)">✓ No at-risk students currently.</div>';
+  const rows = atRisk.map(s=>{const avg=Math.round(parseFloat(s.avg_pct)||0);return`<tr>
+    <td><b>${s.first_name} ${s.last_name}</b></td>
+    <td>${s.class_name||'—'}</td>
+    <td><span style="font-weight:700;color:var(--coral)">${avg}%</span></td>
+    <td><span class="badge badge-coral" style="font-size:10px">At risk</span></td>
+    <td><button class="btn btn-ghost btn-sm" onclick="openStudentDetail(${s.id})">View</button></td>
+  </tr>`;}).join('');
+  return `<table class="data-table">
+    <thead><tr><th>Student</th><th>Class</th><th>Average</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function rptTeacherHTML(teachers) {
+  if (!teachers?.length) return '<div style="padding:16px;color:var(--text-3)">No teacher data available.</div>';
+  const schoolAvg = teachers.length ? Math.round(teachers.reduce((s,t)=>s+(parseFloat(t.avg_pct)||0),0)/teachers.length) : 0;
+  const maxTests  = Math.max(...teachers.map(t=>t.test_count||0), 1);
+  const scoreOf   = t => {
+    const avg=Math.round(parseFloat(t.avg_pct)||0);
+    const pr=t.pass_count&&t.total_attempts?Math.round(t.pass_count/t.total_attempts*100):0;
+    const tc=Math.round(Math.min((t.test_count||0)/maxTests,1)*100);
+    const qc=Math.round(Math.min((t.question_count||0)/100,1)*100);
+    return Math.round(avg*0.40+pr*0.25+tc*0.20+qc*0.15);
+  };
+  const rows = teachers.map(t => {
+    const avg    = Math.round(parseFloat(t.avg_pct)||0);
+    const pr     = t.pass_count&&t.total_attempts?Math.round(t.pass_count/t.total_attempts*100):0;
+    const vs     = avg - schoolAvg;
+    const score  = scoreOf(t);
+    const name   = t.teacher_name || `${t.first_name||''} ${t.last_name||''}`.trim() || '—';
+    return `<tr>
+      <td><b>${name}</b><div style="font-size:11px;color:var(--text-3)">${t.department_name||'—'}</div></td>
+      <td style="text-align:center">${t.test_count||0}</td>
+      <td style="text-align:center">${t.students_tested||0}</td>
+      <td><span style="font-weight:700;color:${col(avg)}">${avg}%</span> <span style="font-size:10px;color:${vs>=0?'var(--green)':'var(--coral)'}">${vs>=0?'+':''}${vs}%</span></td>
+      <td><span class="badge badge-${pr>=50?'green':'coral'}" style="font-size:10px">${pr}%</span></td>
+      <td style="text-align:center">${t.question_count||0}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:48px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="width:${score}%;height:100%;background:${score>=70?'var(--green)':score>=50?'var(--amber)':'var(--coral)'};border-radius:3px"></div>
+          </div>
+          <b style="font-size:12px;color:${score>=70?'var(--green)':score>=50?'var(--amber)':'var(--coral)'}">${score}</b>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<table class="data-table">
+    <thead><tr><th>Teacher</th><th>Tests</th><th>Students</th><th>Avg score</th><th>Pass rate</th><th>Questions</th><th title="Weighted accountability score 0–100">Index</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function openRptClassDrill(classId) {
+  aNav('gradebook', null);
+  const tryLoad = (n=0) => {
+    const sel = document.getElementById('gb-class');
+    if (sel) { sel.value = classId; loadGradebookData(); }
+    else if (n < 15) setTimeout(() => tryLoad(n+1), 150);
+  };
+  setTimeout(() => tryLoad(), 250);
+}
+
+// ── Reports: tabs, debounce, matrix, SVG donut, heat map ─────────
+function rptSwitchTab(n) {
+  document.querySelectorAll('.rpt-tab-pane').forEach((el,i)=>el.style.display=i===n?'':'none');
+  document.querySelectorAll('#rpt-tabs .tab-btn').forEach((b,i)=>b.classList.toggle('active',i===n));
+  window._rptActiveTab = n;
+  if (n===2 && !window._rptMatrixLoaded) rptLoadMatrix();
+}
+
+let _rptDebounceTimer = null;
+function rptDebouncedRefresh() {
+  clearTimeout(_rptDebounceTimer);
+  _rptDebounceTimer = setTimeout(rptRefresh, 600);
+}
+
+async function rptLoadMatrix() {
+  const matSec = document.getElementById('rpt-matrix-section');
+  if (!matSec) return;
+  matSec.innerHTML = '<div style="padding:36px;text-align:center;color:var(--text-3)">Loading heat map…</div>';
+  const f = window._rptFilter || {};
+  const params = {};
+  if (f.academic_year) params.academic_year = f.academic_year;
+  if (f.semester)      params.semester      = f.semester;
+  if (f.subject_id)    params.subject_id    = f.subject_id;
+  try {
+    const res = await GET('/analytics/matrix', params);
+    const rows = res?.matrix || [];
+    window._rptData = { ...(window._rptData||{}), matrix: rows };
+    window._rptMatrixLoaded = true;
+    matSec.innerHTML = rptHeatMapHTML(rows);
+  } catch(e) {
+    matSec.innerHTML = `<div style="padding:16px;color:var(--coral)">Matrix load error: ${e.message}</div>`;
+  }
+}
+
+function svgDonut(segments, size=110) {
+  const total = segments.reduce((s,g)=>s+(g.value||0), 0);
+  if (!total) return '<div style="text-align:center;color:var(--text-3);padding:20px;font-size:13px">No data yet</div>';
+  const r=40, cx=60, cy=60, circ=2*Math.PI*r;
+  let cum=0;
+  const slices = segments.map(seg=>{
+    const frac=(seg.value||0)/total;
+    const dash=circ*frac, gap=circ*(1-frac), off=circ-cum;
+    cum+=dash;
+    return `<circle r="${r}" cx="${cx}" cy="${cy}" fill="none" stroke="${seg.color}" stroke-width="20"
+      stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"/>`;
+  });
+  return `<svg viewBox="0 0 120 120" width="${size}" height="${size}" style="transform:rotate(-90deg);display:block">
+    ${slices.join('')}<circle r="25" cx="60" cy="60" fill="var(--surface)"/></svg>`;
+}
+
+function rptGradeDonutHTML(perClass) {
+  if (!perClass?.length) return '<div style="color:var(--text-3);padding:20px;text-align:center;font-size:13px">No class data yet.</div>';
+  const gradeOf = v=>v>=80?'A1':v>=70?'B2':v>=60?'B3':v>=55?'C4':v>=50?'C5':v>=45?'C6':v>=40?'D7':v>=35?'E8':'F9';
+  const COLORS = {A1:'#16a34a',B2:'#22c55e',B3:'#4ade80',C4:'#f59e0b',C5:'#fb923c',C6:'#f97316',D7:'#ef4444',E8:'#dc2626',F9:'#991b1b'};
+  const ORDER  = ['A1','B2','B3','C4','C5','C6','D7','E8','F9'];
+  const counts = {};
+  perClass.forEach(c=>{const g=gradeOf(Math.round(parseFloat(c.class_avg)||0));counts[g]=(counts[g]||0)+1;});
+  const segs = ORDER.filter(g=>counts[g]).map(g=>({label:g,value:counts[g],color:COLORS[g]}));
+  const legend = segs.map(s=>`<div style="display:flex;align-items:center;gap:5px;font-size:11px;line-height:2">
+    <span style="width:10px;height:10px;border-radius:50%;background:${s.color};flex-shrink:0;display:inline-block"></span>
+    <b>${s.label}</b><span style="color:var(--text-3)">${s.value} class${s.value!==1?'es':''}</span></div>`).join('');
+  return `<div style="display:flex;align-items:center;gap:20px;justify-content:center;padding:4px 0">
+    ${svgDonut(segs,100)}<div>${legend}</div></div>`;
+}
+
+function rptHeatMapHTML(matrixRows) {
+  if (!matrixRows?.length) return `<div style="padding:28px;color:var(--text-3);text-align:center">
+    No matrix data yet.<br><span style="font-size:12px">Tests must be published and students must submit attempts before the matrix can be generated.</span></div>`;
+  const subjects=[], classMap={}, cell={};
+  matrixRows.forEach(r=>{
+    if (!subjects.find(s=>s.id===r.subject_id)) subjects.push({id:r.subject_id,name:r.subject_name,short:r.subject_short||r.subject_name});
+    classMap[r.class_id]={id:r.class_id,name:r.class_name,year:r.year_group};
+    cell[`${r.subject_id}_${r.class_id}`]=parseFloat(r.avg_pct)||0;
+  });
+  const classes=Object.values(classMap).sort((a,b)=>a.year-b.year||a.name.localeCompare(b.name));
+  const cellBg=v=>v>=80?'#16a34a':v>=70?'#22c55e':v>=65?'#4ade80':v>=55?'#fbbf24':v>=45?'#f97316':'#ef4444';
+  const colW=Math.max(55,Math.min(90,Math.floor(560/Math.max(classes.length,1))));
+  const hCells=classes.map(c=>`<th style="font-size:10px;font-weight:600;text-align:center;padding:6px 2px;min-width:${colW}px;white-space:normal;line-height:1.3;color:var(--text-2)">${c.name.length>10?c.name.slice(0,9)+'…':c.name}<br><span style="font-weight:400;color:var(--text-3);font-size:9px">Yr${c.year}</span></th>`).join('');
+  const bodyRows=subjects.map(s=>{
+    const cells=classes.map(c=>{
+      const k=`${s.id}_${c.id}`;
+      if(!(k in cell)) return `<td style="background:var(--border);text-align:center;font-size:10px;color:var(--text-3);padding:5px 2px">—</td>`;
+      const v=Math.round(cell[k]);
+      return `<td style="background:${cellBg(v)};color:#fff;text-align:center;font-size:11px;font-weight:700;padding:6px 2px" title="${s.name} · ${c.name}: ${v}%">${v}%</td>`;
+    }).join('');
+    const sn=s.short.length>14?s.short.slice(0,13)+'…':s.short;
+    return `<tr><td style="font-size:11px;font-weight:600;white-space:nowrap;padding:6px 10px;position:sticky;left:0;background:var(--surface);z-index:1;border-right:2px solid var(--border)">${sn}</td>${cells}</tr>`;
+  }).join('');
+  const avgRow=subjects.map(s=>{
+    const vals=classes.map(c=>cell[`${s.id}_${c.id}`]).filter(v=>v>0);
+    return vals.length?`<td style="text-align:center;font-size:10px;font-weight:800;color:${col(Math.round(vals.reduce((a,b)=>a+b,0)/vals.length))}">${Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)}%</td>`:'<td style="text-align:center;font-size:10px;color:var(--text-3)">—</td>';
+  }).join('');
+  return `<div style="margin-bottom:10px;font-size:11px;color:var(--text-3);display:flex;gap:8px;flex-wrap:wrap">
+    <span style="background:#16a34a;color:#fff;padding:1px 7px;border-radius:3px">A1 ≥80%</span>
+    <span style="background:#4ade80;color:#fff;padding:1px 7px;border-radius:3px">B2-B3 65–79%</span>
+    <span style="background:#fbbf24;color:#fff;padding:1px 7px;border-radius:3px">C4-C6 50–64%</span>
+    <span style="background:#ef4444;color:#fff;padding:1px 7px;border-radius:3px">D7-F9 &lt;50%</span>
+  </div>
+  <div class="tbl-scroll"><table class="data-table" style="min-width:${110+classes.length*colW}px;border-collapse:collapse">
+    <thead><tr>
+      <th style="min-width:110px;position:sticky;left:0;background:var(--surface);z-index:2;border-right:2px solid var(--border)">Subject</th>
+      ${hCells}
+    </tr></thead>
+    <tbody>${bodyRows}
+      <tr style="border-top:2px solid var(--border)">
+        <td style="font-size:11px;font-weight:700;padding:6px 10px;position:sticky;left:0;background:var(--surface-2,var(--surface));z-index:1;border-right:2px solid var(--border)">Avg →</td>
+        ${avgRow}
+      </tr>
+    </tbody>
+  </table></div>`;
 }
 
 function rptApplyFilter(type, val) {
@@ -7729,6 +8620,7 @@ function rptApplyFilter(type, val) {
   } else if (type === 'subject')  window._rptFilter.subject_id = val || '';
   else if (type === 'teacher')    window._rptFilter.teacher_id  = val || '';
   else if (type === 'class')      window._rptFilter.class_id    = val || '';
+  rptDebouncedRefresh();
 }
 
 function rptClearFilters() {
@@ -7738,23 +8630,64 @@ function rptClearFilters() {
 }
 
 async function rptRefresh() {
-  // Re-fetch with filters applied
   const f = window._rptFilter || {};
   const params = {};
   if (f.academic_year) params.academic_year = f.academic_year;
   if (f.semester)      params.semester      = f.semester;
   if (f.subject_id)    params.subject_id    = f.subject_id;
-  let analytics = null;
-  try { analytics = await GET('/analytics/school', params); } catch(e) {}
-  if (!analytics) { notify('No data for selected filters', 'warn'); return; }
+  if (f.class_id)      params.class_id      = f.class_id;
 
-  const d = window._rptData || {};
-  const perClass = analytics?.per_class || d.perClass || [];
-  const bySubj   = analytics?.by_subject || d.bySubj || [];
-  const atRisk   = analytics?.at_risk || [];
-  const ov       = analytics?.overview || {};
-  window._rptData = {...d, analytics, perClass, bySubj, atRisk, ov};
-  notify('Filters applied — export buttons now use filtered data', 'success');
+  const ind = document.getElementById('rpt-filter-indicator');
+  if (ind) ind.textContent = '⟳ Refreshing…';
+
+  let analytics = null, teacherData = null;
+  try {
+    [analytics, teacherData] = await Promise.all([
+      GET('/analytics/school', params).catch(()=>null),
+      GET('/analytics/teachers', params).catch(()=>null),
+    ]);
+  } catch(e) {}
+
+  if (!analytics) {
+    if (ind) ind.textContent = 'No data for these filters';
+    notify('No data for selected filters', 'warn');
+    return;
+  }
+
+  const teachers  = teacherData?.teachers  || window._rptData?.teachers  || [];
+  const semTrend  = teacherData?.semTrend  || window._rptData?.semTrend  || [];
+  const perClass  = analytics?.per_class   || [];
+  const bySubj    = analytics?.by_subject  || [];
+  const atRisk    = analytics?.at_risk     || [];
+  const ov        = analytics?.overview    || {};
+
+  window._rptData = { ...window._rptData, analytics, teachers, semTrend, perClass, bySubj, atRisk, ov };
+  window._rptMatrixLoaded = false;
+
+  const sections = {
+    'rpt-stats':          ()=>rptStatsHTML(ov, atRisk),
+    'rpt-chart-section':  ()=>rptClassChartHTML(perClass),
+    'rpt-subj-section':   ()=>rptSubjectHTML(bySubj),
+    'rpt-teacher-section':()=>rptTeacherHTML(teachers),
+    'rpt-class-section':  ()=>rptClassTableHTML(perClass),
+    'rpt-atrisk-section': ()=>rptAtRiskHTML(atRisk),
+    'rpt-donut-section':  ()=>rptGradeDonutHTML(perClass),
+    'rpt-trend-section':  ()=>rptTrendHTML(window._rptData?.semTrend||[]),
+  };
+  Object.entries(sections).forEach(([id,fn])=>{const el=document.getElementById(id);if(el)el.innerHTML=fn();});
+
+  const clsSub  = document.getElementById('rpt-class-sub');
+  const subjSub = document.getElementById('rpt-subj-sub');
+  const atSub   = document.getElementById('rpt-atrisk-sub');
+  if (clsSub)  clsSub.textContent  = `${perClass.length} class${perClass.length!==1?'es':''}`;
+  if (subjSub) subjSub.textContent = `${bySubj.length} subject${bySubj.length!==1?'s':''}`;
+  if (atSub)   atSub.textContent   = `Below 50% · ${atRisk.length} students`;
+
+  if (window._rptActiveTab === 2) rptLoadMatrix();
+
+  const active = Object.values(f).filter(v=>v).length;
+  if (ind) ind.textContent = active ? `${active} filter${active!==1?'s':''} active · ${perClass.length} class${perClass.length!==1?'es':''}` : '';
+  notify(`Updated · ${atRisk.length} at-risk`, 'success');
 }
 
 // ── Report exports ────────────────────────────────────────────
@@ -7786,10 +8719,67 @@ function rptExportTeachers() {
   exportToXLS(`teacher_activity_${new Date().toISOString().slice(0,10)}`,headers,rows,'Teacher Activity',{school:d.schoolName,rows:[['Report:','Teacher Assessment Activity'],['Date:',new Date().toLocaleDateString('en-GH')]]});
 }
 
-function rptExportStudents() { notify('Run "At-risk students" export and use student details for individual reports.',''); }
-function rptExportWassce()   { notify('WASSCE readiness available in Analytics → Student Performance.',''); }
-function rptExportCompletion(){ notify('Test completion data available in Analytics → Teacher Analytics.',''); }
-function rptExportGES()      { notify('GES export: use class performance export — includes all required fields.',''); rptExportSchool(); }
+async function rptExportStudents() {
+  showLoader('Fetching student data…');
+  let students = [];
+  try { students = await GET('/students') || []; } catch(e) {}
+  hideLoader();
+  if (!students.length) { notify('No student data available', 'error'); return; }
+  const d = window._rptData || {};
+  const gradeOf = avg => avg>=80?'A1':avg>=70?'B2':avg>=60?'B3':avg>=55?'C4':avg>=50?'C5':avg>=45?'C6':avg>=40?'D7':avg>=35?'E8':'F9';
+  const headers = ['#','Student','Class','Year Group','Avg Score %','Grade','Tests Done','Pass Count','Status'];
+  const sorted  = [...students].sort((a,b)=>(parseFloat(b.avg_pct)||0)-(parseFloat(a.avg_pct)||0));
+  const rows = sorted.map((s,i) => {
+    const avg = Math.round(parseFloat(s.avg_pct)||0);
+    return [i+1, `${s.first_name} ${s.last_name}`, s.class_name||'—', s.year_group||'—', avg, gradeOf(avg),
+            s.tests_done||0, s.pass_count||0,
+            avg>=65?'Good':avg>=50?'Pass':s.tests_done>0?'At risk':'No attempts'];
+  });
+  exportToXLS(`student_progress_${new Date().toISOString().slice(0,10)}`, headers, rows, 'Student Progress',
+    {school:d.schoolName, rows:[['Report:','Student Progress Report'],['Date:',new Date().toLocaleDateString('en-GH')],
+     ['Total Students:',String(students.length)],['School Average:',`${Math.round(parseFloat(d.ov?.school_avg)||0)}%`]]});
+}
+
+async function rptExportWassce() {
+  const d = window._rptData || {};
+  const perClass = d.perClass || [];
+  if (!perClass.length) { notify('No class data to export', 'error'); return; }
+  const gradeOf = avg => avg>=80?'A1':avg>=70?'B2':avg>=60?'B3':avg>=55?'C4':avg>=50?'C5':avg>=45?'C6':avg>=40?'D7':avg>=35?'E8':'F9';
+  const isCredit = g => ['A1','B2','B3','C4','C5','C6'].includes(g);
+  const headers = ['Class','Year Group','Avg Score %','Predicted WASSCE Grade','Credit Pass?','Students'];
+  const rows = perClass.map(c => {
+    const avg = Math.round(parseFloat(c.class_avg)||0);
+    const grade = gradeOf(avg);
+    return [c.class_name, `Year ${c.year_group}`, avg, grade, isCredit(grade)?'Yes — Credit':'No — Below credit', c.student_count||0];
+  });
+  exportToXLS(`wassce_readiness_${new Date().toISOString().slice(0,10)}`, headers, rows, 'WASSCE Readiness',
+    {school:d.schoolName, rows:[['Report:','WASSCE Readiness Forecast'],['Date:',new Date().toLocaleDateString('en-GH')],
+     ['Note:','Based on current class averages. Actual results may vary.']]});
+}
+
+async function rptExportCompletion() {
+  showLoader('Fetching test data…');
+  let tests = [];
+  try { tests = await GET('/tests') || []; } catch(e) {}
+  hideLoader();
+  if (!tests.length) { notify('No test data available', 'error'); return; }
+  const d = window._rptData || {};
+  const headers = ['Test Title','Subject','Class(es)','Academic Year','Semester','Status','Due Date'];
+  const rows = tests.map(t => [
+    t.title||'—', t.subject_name||'—', t.class_name||'—',
+    t.academic_year||'—', t.semester?`Semester ${t.semester}`:'—',
+    t.status||'—', t.due_at?new Date(t.due_at).toLocaleDateString('en-GH'):'Open'
+  ]);
+  exportToXLS(`test_completion_${new Date().toISOString().slice(0,10)}`, headers, rows, 'Tests',
+    {school:d.schoolName, rows:[['Report:','Test Completion Report'],['Date:',new Date().toLocaleDateString('en-GH')],
+     ['Total Tests:',String(tests.length)],['Published:',String(tests.filter(t=>t.status==='published').length)]]});
+}
+
+function rptExportGES() {
+  exportGESReport(); // full GES district report (already implemented)
+}
+// Alias — class export button uses this
+function rptExportClass() { rptExportSchool(); }
 
 async function loadATeachers(m) {
   let teachers = [], classes = [], depts = [];
@@ -9192,6 +10182,8 @@ async function openStudentDetail(id) {
     </tr>`;
   }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px">No test results yet.</td></tr>';
 
+  window._sdStudent = s; // cache for report generation
+
   document.getElementById('sd-body').innerHTML = `
   <!-- Header -->
   <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
@@ -9211,6 +10203,7 @@ async function openStudentDetail(id) {
     <div style="text-align:center;flex-shrink:0">
       <div style="font-size:38px;font-weight:900;line-height:1;color:${col(ov)}">${ov}%</div>
       <div style="font-size:11px;color:var(--text-3);margin-top:2px">Overall average</div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px;font-size:11px" onclick="printStudentDetailReport()">📄 Report</button>
     </div>
   </div>
 
@@ -9249,6 +10242,127 @@ async function openStudentDetail(id) {
       <tbody>${histRows}</tbody>
     </table>
   </div>`;
+}
+
+function printStudentDetailReport() {
+  const s = window._sdStudent;
+  if (!s) { notify('No student data loaded', 'error'); return; }
+
+  const schoolName = CURRENT_USER?.school_name || 'Ghana Senior High School';
+  const today = new Date().toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const ov = Math.round(parseFloat(s.avg_pct)||0);
+  const gradeOf = v=>v>=80?'A1':v>=70?'B2':v>=60?'B3':v>=55?'C4':v>=50?'C5':v>=45?'C6':v>=40?'D7':v>=35?'E8':'F9';
+  const remarkOf = v=>v>=80?'Excellent':v>=70?'Very Good':v>=60?'Good':v>=55?'Credit':v>=50?'Credit':v>=40?'Poor':'Failing';
+  const overallGrade = gradeOf(ov);
+  const subjPerf = s.subject_performance || [];
+
+  const subRows = subjPerf.map((r,i)=>{
+    const v=Math.round(parseFloat(r.avg_pct)||0);
+    const g=gradeOf(v);
+    return `<tr style="background:${i%2===0?'#fafafa':'#fff'}">
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:600">${r.subject_name}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:12px">${r.tests_done||0}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:13px;font-weight:800;color:${v>=65?'#15803d':v>=50?'#92400e':'#991b1b'}">${v}%</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:800;font-size:14px;color:${v>=65?'#15803d':v>=50?'#92400e':'#991b1b'}">${g}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#666">${remarkOf(v)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;text-align:center">
+        <span style="font-size:10px;font-weight:700;color:${v>=50?'#15803d':'#991b1b'};background:${v>=50?'#dcfce7':'#fee2e2'};padding:2px 8px;border-radius:12px">${v>=50?'PASS':'FAIL'}</span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const recentRows = (s.recent_attempts||[]).slice(0,10).map(a=>{
+    const v=Math.round(parseFloat(a.pct_score)||0);
+    return `<tr>
+      <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;font-size:11px">${a.title||'—'}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#666">${a.subject_short||a.subject_name||'—'}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;text-align:center;font-weight:700;color:${v>=65?'#15803d':v>=50?'#92400e':'#991b1b'}">${v}%</td>
+      <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;text-align:center"><span style="font-size:10px;color:${v>=50?'#15803d':'#991b1b'}">${v>=50?'Pass':'Fail'}</span></td>
+      <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;font-size:10px;color:#9ca3af">${a.submitted_at?new Date(a.submitted_at).toLocaleDateString('en-GH'):''}</td>
+    </tr>`;
+  }).join('');
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head>
+    <title>Academic Report — ${s.first_name} ${s.last_name}</title>
+    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,Helvetica,sans-serif;color:#111;background:#fff;padding:20px}
+    table{width:100%;border-collapse:collapse}@media print{body{padding:0}}</style>
+  </head><body>
+  <!-- Letterhead -->
+  <div style="background:#1A7A4A;color:#fff;padding:18px 24px;display:flex;align-items:center;gap:14px;margin-bottom:0;border-radius:6px 6px 0 0">
+    <div style="font-size:36px">🎓</div>
+    <div style="flex:1">
+      <div style="font-size:17px;font-weight:700">${schoolName}</div>
+      <div style="font-size:11px;opacity:.8;margin-top:2px">STUDENT ACADEMIC PROGRESS REPORT</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:28px;font-weight:900">${overallGrade}</div>
+      <div style="font-size:10px;opacity:.75">Overall Grade</div>
+    </div>
+  </div>
+
+  <!-- Info row -->
+  <table style="border:1px solid #e5e7eb;margin-bottom:14px;border-top:none"><tr>
+    <td style="padding:10px 14px;border-right:1px solid #e5e7eb">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.08em">Student Name</div>
+      <div style="font-size:14px;font-weight:700;margin-top:2px">${s.first_name} ${s.last_name}</div>
+    </td>
+    <td style="padding:10px 14px;border-right:1px solid #e5e7eb">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.08em">Class</div>
+      <div style="font-size:14px;font-weight:700;margin-top:2px">${s.class_name||'—'}</div>
+    </td>
+    <td style="padding:10px 14px;border-right:1px solid #e5e7eb">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.08em">Average Score</div>
+      <div style="font-size:14px;font-weight:700;margin-top:2px;color:${ov>=65?'#15803d':ov>=50?'#92400e':'#991b1b'}">${ov}% (${overallGrade})</div>
+    </td>
+    <td style="padding:10px 14px">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#6b7280;letter-spacing:.08em">Generated</div>
+      <div style="font-size:11px;margin-top:2px;color:#374151">${today}</div>
+    </td>
+  </tr></table>
+
+  <!-- Subject table -->
+  ${subRows ? `<div style="margin-bottom:16px">
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#374151;border-bottom:2px solid #1A7A4A;padding-bottom:4px;margin-bottom:8px;letter-spacing:.05em">Subject Performance</div>
+    <table><thead><tr style="background:#1A7A4A;color:#fff">
+      <th style="padding:7px 10px;text-align:left;font-size:11px">Subject</th>
+      <th style="padding:7px 10px;text-align:center;font-size:11px">Tests</th>
+      <th style="padding:7px 10px;text-align:center;font-size:11px">Score</th>
+      <th style="padding:7px 10px;text-align:center;font-size:11px">GES Grade</th>
+      <th style="padding:7px 10px;text-align:left;font-size:11px">Remarks</th>
+      <th style="padding:7px 10px;text-align:center;font-size:11px">Status</th>
+    </tr></thead><tbody>${subRows}</tbody></table>
+    <div style="font-size:9px;color:#9ca3af;margin-top:4px;font-style:italic">GES Scale: A1(80–100) B2(70–79) B3(60–69) C4(55–59) C5(50–54) C6(45–49) D7(40–44) E8(35–39) F9(0–34)</div>
+  </div>` : ''}
+
+  <!-- Recent tests -->
+  ${recentRows ? `<div style="margin-bottom:16px">
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#374151;border-bottom:2px solid #1e40af;padding-bottom:4px;margin-bottom:8px;letter-spacing:.05em">Recent Test History</div>
+    <table><thead><tr style="background:#1e40af;color:#fff">
+      <th style="padding:6px 10px;text-align:left;font-size:11px">Test</th>
+      <th style="padding:6px 10px;text-align:left;font-size:11px">Subject</th>
+      <th style="padding:6px 10px;text-align:center;font-size:11px">Score</th>
+      <th style="padding:6px 10px;text-align:center;font-size:11px">Status</th>
+      <th style="padding:6px 10px;text-align:left;font-size:11px">Date</th>
+    </tr></thead><tbody>${recentRows}</tbody></table>
+  </div>` : ''}
+
+  <!-- Signatures -->
+  <div style="display:flex;gap:30px;margin-top:24px;padding-top:14px;border-top:1px solid #e5e7eb">
+    ${['Class Teacher','Head of Department','Headmaster/Mistress'].map(r=>`
+    <div style="flex:1">
+      <div style="border-bottom:1px solid #9ca3af;height:32px;margin-bottom:5px"></div>
+      <div style="font-size:10px;color:#6b7280;text-align:center">${r}</div>
+    </div>`).join('')}
+  </div>
+
+  <div style="text-align:center;margin-top:14px;font-size:9px;color:#9ca3af">
+    Generated by AceICT · Ghana SHS Assessment Platform · ${today}
+  </div>
+
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`);
+  win.document.close();
 }
 
 function openMarkingById(answerId,maxMarks,studentName,subStrand,essayText,aiNote){
@@ -9458,6 +10572,10 @@ async function editQuestion(qid) {
     if (title) title.textContent = 'Edit question #' + qid;
     openModal('qbuilder-modal');
     populateSubjectDropdowns(q.subject_id || null);
+    // Reload strand section for this subject, then restore saved strand values
+    qbReloadStrandSection(q.subject_id || null).then(() => {
+      qbSetStrandValues(q.sub_strand || '');
+    });
   } catch(e) {
     notify('Could not load question: ' + e.message, 'error');
   } finally {
@@ -9508,6 +10626,7 @@ function openNewQBuilder() {
 
   openModal('qbuilder-modal');
   populateSubjectDropdowns(TCTX.subject_id || null);
+  qbReloadStrandSection(TCTX.subject_id || null);
 }
 
 // Update the modal title to show currently selected type
@@ -9560,8 +10679,7 @@ async function saveQuestion(){
     // Store accepted answers as options (each marked correct)
     opts = lines.map((ans,i) => ({ label: String.fromCharCode(65+i), text: ans, correct: 1 }));
   }
-  const rawSub  = document.getElementById('qb-substrand')?.value || 'S2/SS2';
-  const sub     = rawSub.split(' ')[0];
+  const sub     = qbGetSubStrand();
   const rawDiff = document.getElementById('qb-diff')?.value || 'Medium';
   const diff    = rawDiff.split(' ')[0];
   const year    = parseInt(document.getElementById('qb-year')?.value || '') || null;
@@ -13523,17 +14641,77 @@ async function beginTest(testId) {
   }
 }
 
-// ── Curriculum select helpers ─────────────────────────────────
+// ── Strand helpers: subject-aware (replaces hardcoded CURRICULUM calls) ──
 
-// Called when Year changes in question bank filter
+// Load subject-specific strands into question bank strand selects
+async function bankLoadStrands() {
+  const strandEl = document.getElementById('bank-strand');
+  const subEl    = document.getElementById('bank-sub');
+  if (!strandEl || !subEl) return;
+
+  const subjectId = TCTX.subject_id;
+  if (!subjectId) {
+    strandEl.innerHTML = '<option value="">All strands</option>';
+    subEl.innerHTML    = '<option value="">All sub-strands</option>';
+    window._bankStrandMap = {};
+    return;
+  }
+
+  const strands = await fetchSubjectStrands(subjectId);
+  window._bankStrandMap = {};
+  strands.forEach(s => {
+    if (!window._bankStrandMap[s.strand_code])
+      window._bankStrandMap[s.strand_code] = { label: s.strand_label, subs: [] };
+    window._bankStrandMap[s.strand_code].subs.push({ code: s.sub_strand_code, label: s.sub_strand_label });
+  });
+
+  strandEl.innerHTML = '<option value="">All strands</option>' +
+    Object.entries(window._bankStrandMap).map(([code,s])=>`<option value="${code}">${s.label}</option>`).join('');
+  subEl.innerHTML = '<option value="">All sub-strands</option>';
+}
+
+// Load subject-specific strands into AI generator strand selects
+async function aiLoadStrands() {
+  const strandEl = document.getElementById('ai-strand');
+  const subEl    = document.getElementById('ai-sub');
+  if (!strandEl || !subEl) return;
+
+  const subjectId = TCTX.subject_id;
+  if (!subjectId) {
+    strandEl.innerHTML = '<option value="">All strands</option>';
+    subEl.innerHTML    = '<option value="">All sub-strands</option>';
+    return;
+  }
+
+  const strands = await fetchSubjectStrands(subjectId);
+  const aiMap = {};
+  strands.forEach(s => {
+    if (!aiMap[s.strand_code]) aiMap[s.strand_code] = { label: s.strand_label, subs: [] };
+    aiMap[s.strand_code].subs.push({ code: s.sub_strand_code, label: s.sub_strand_label });
+  });
+
+  strandEl.innerHTML = '<option value="">All strands</option>' +
+    Object.entries(aiMap).map(([code,s])=>`<option value="${code}">${s.label}</option>`).join('');
+  subEl.innerHTML = '<option value="">All sub-strands</option>';
+  strandEl.onchange = () => {
+    const subs = aiMap[strandEl.value]?.subs || [];
+    subEl.innerHTML = '<option value="">All sub-strands</option>' +
+      subs.map(s=>`<option value="${s.code}">${s.label}</option>`).join('');
+  };
+}
+
 function bankYearChange() {
-  refreshStrandSelect('bank-year', 'bank-strand', 'bank-sub');
-  bankFilter.sub = 'all';
+  bankFilter.year = document.getElementById('bank-year')?.value || '';
   loadBankQuestions();
 }
 
 function bankStrandChange() {
-  refreshSubSelect('bank-year', 'bank-strand', 'bank-sub');
+  const strandEl = document.getElementById('bank-strand');
+  const subEl    = document.getElementById('bank-sub');
+  if (!subEl) return;
+  const subs = (window._bankStrandMap||{})[strandEl?.value||'']?.subs || [];
+  subEl.innerHTML = '<option value="">All sub-strands</option>' +
+    subs.map(s=>`<option value="${s.code}">${s.label}</option>`).join('');
   bankFilter.sub = 'all';
   loadBankQuestions();
 }
@@ -13544,23 +14722,12 @@ function bankSubChange() {
   tRender('questions');
 }
 
-// Initialise curriculum selects after any panel renders
 function initCurriculumSelects() {
-  // Question builder modal — populate sub-strands on open
-  const modal = document.getElementById('qbuilder-modal');
-  if (modal) {
-    const observer = new MutationObserver(() => {
-      if (modal.classList.contains('open')) {
-        refreshStrandSelect('qb-year', 'qb-strand', 'qb-substrand');
-      }
-    });
-    observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
-  }
-  // AI generator — init strands on page load
-  setTimeout(() => refreshStrandSelect('ai-year', 'ai-strand', 'ai-sub'), 500);
-  // Practice builder — init strands on page load
-  setTimeout(() => refreshStrandSelect('prac-year', 'prac-strand', 'prac-sub'), 500);
-  // Bank strand and sub — wire up
+  // Bank: load subject-specific strands
+  setTimeout(() => bankLoadStrands(), 400);
+  // AI generator: load subject-specific strands
+  setTimeout(() => aiLoadStrands(), 400);
+  // Bank strand/sub wire-up
   setTimeout(() => {
     const bankStrand = document.getElementById('bank-strand');
     if (bankStrand) bankStrand.onchange = bankStrandChange;
@@ -15114,6 +16281,643 @@ function initMobileTableObserver() {
 
 <script>
 // ════════════════════════════════════════════════════════════
+// LEADERBOARD
+// ════════════════════════════════════════════════════════════
+
+async function loadLeaderboard(m) {
+  m.innerHTML = panelLoader();
+  const role     = CURRENT_USER?.role;
+  const isStudent = role === 'student';
+
+  let classes = [];
+  if (!isStudent) {
+    try { classes = await GET('/classes') || []; } catch(e) {}
+  }
+
+  const byYear = {};
+  classes.forEach(c => { (byYear[c.year_group]=byYear[c.year_group]||[]).push(c); });
+  const clsOpts = Object.entries(byYear).sort(([a],[b])=>+a-+b).map(([yr,list])=>
+    `<optgroup label="Year ${yr}">${list.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</optgroup>`
+  ).join('');
+
+  const filterBar = isStudent ? '' : `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px">
+      <div class="form-group" style="margin:0;min-width:180px">
+        <label class="form-label">Filter by class</label>
+        <select id="lb-class" class="form-select" onchange="reloadLeaderboard()">
+          <option value="">All classes</option>${clsOpts}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;min-width:130px">
+        <label class="form-label">Top N students</label>
+        <select id="lb-limit" class="form-select" onchange="reloadLeaderboard()">
+          <option value="10">Top 10</option>
+          <option value="20" selected>Top 20</option>
+          <option value="50">Top 50</option>
+        </select>
+      </div>
+    </div>`;
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">🏆 Leaderboard</div>
+    <div class="topbar-sub">${isStudent ? 'See where you rank in your class' : 'Top performers across the school'}</div>
+  </div>
+</div>
+<div class="page">
+  ${filterBar}
+  <div id="lb-output">${panelLoader()}</div>
+</div>`;
+
+  reloadLeaderboard();
+}
+
+async function reloadLeaderboard() {
+  const out     = document.getElementById('lb-output');
+  if (!out) return;
+  out.innerHTML = panelLoader();
+
+  const classId = document.getElementById('lb-class')?.value || '';
+  const limit   = document.getElementById('lb-limit')?.value  || '20';
+  const params  = {};
+  if (classId) params.class_id = classId;
+  params.limit = limit;
+  if (TCTX?.academic_year) { params.academic_year = TCTX.academic_year; if (TCTX.semester) params.semester = TCTX.semester; }
+
+  let data = null;
+  try { data = await GET('/analytics/leaderboard', params); }
+  catch(e) { out.innerHTML = `<div class="info-box coral">Error: ${e.message}</div>`; return; }
+
+  const { top_students=[], most_improved=[], top_streaks=[] } = data;
+  const myId = CURRENT_USER?.id;
+
+  const medals = ['🥇','🥈','🥉'];
+  const rankColor = i => i===0?'var(--amber)':i===1?'var(--text-3)':i===2?'#cd7f32':'var(--text-3)';
+
+  const topRow = (s, i) => {
+    const initials = ((s.first_name||'?')[0]+(s.last_name||'?')[0]).toUpperCase();
+    const isMe     = s.student_id == myId;
+    const pct      = Math.round(parseFloat(s.avg_pct)||0);
+    return `<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);${isMe?'background:var(--green-lt);margin:0 -12px;padding:12px;border-radius:8px;':''}">
+      <div style="font-size:${i<3?'22px':'14px'};font-weight:800;width:32px;text-align:center;color:${rankColor(i)};flex-shrink:0">${i<3?medals[i]:i+1}</div>
+      <div style="width:36px;height:36px;border-radius:50%;background:${s.avatar_color||'var(--teal)'};color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${initials}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:${isMe?800:600};font-size:14px">${s.first_name} ${s.last_name}${isMe?' <span style="font-size:11px;color:var(--green);background:var(--green-lt);padding:1px 6px;border-radius:8px">You</span>':''}</div>
+        <div style="font-size:11px;color:var(--text-3)">${s.class_name||''}${s.test_count?` · ${s.test_count} test${s.test_count!==1?'s':''}`:''}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:18px;font-weight:800;color:${col(pct)}">${pct}%</div>
+        <div style="font-size:10px;color:var(--text-3)">${s.pass_count||0} passed</div>
+      </div>
+    </div>`;
+  };
+
+  const improvedRow = (s, i) => {
+    const initials = ((s.first_name||'?')[0]+(s.last_name||'?')[0]).toUpperCase();
+    const gain     = Math.round((parseFloat(s.recent_avg)||0) - (parseFloat(s.overall_avg)||0));
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:800;width:24px;text-align:center;color:var(--text-3)">${i+1}</div>
+      <div style="width:32px;height:32px;border-radius:50%;background:${s.avatar_color||'var(--teal)'};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${initials}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${s.first_name} ${s.last_name}</div>
+        <div style="font-size:11px;color:var(--text-3)">${s.class_name||''}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:14px;font-weight:800;color:var(--green)">+${gain}%</div>
+        <div style="font-size:10px;color:var(--text-3)">${Math.round(parseFloat(s.overall_avg)||0)}% → ${Math.round(parseFloat(s.recent_avg)||0)}%</div>
+      </div>
+    </div>`;
+  };
+
+  const streakRow = (s, i) => {
+    const initials = ((s.first_name||'?')[0]+(s.last_name||'?')[0]).toUpperCase();
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:800;width:24px;text-align:center;color:var(--text-3)">${i+1}</div>
+      <div style="width:32px;height:32px;border-radius:50%;background:${s.avatar_color||'var(--purple)'};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${initials}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${s.first_name} ${s.last_name}</div>
+        <div style="font-size:11px;color:var(--text-3)">${s.class_name||''}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:16px;font-weight:800;color:var(--coral)">${s.current_streak} 🔥</div>
+        <div style="font-size:10px;color:var(--text-3)">best: ${s.longest_streak} days</div>
+      </div>
+    </div>`;
+  };
+
+  // Find current user's rank in top list
+  const myRank = top_students.findIndex(s => s.student_id == myId);
+
+  out.innerHTML = `
+    <div class="grid-2" style="gap:16px;margin-bottom:16px">
+
+      <!-- Top performers -->
+      <div class="card" style="grid-column:${most_improved.length||top_streaks.length?'1':'1 / -1'}">
+        <div class="card-header" style="margin-bottom:12px">
+          <div><div class="card-title">🏅 Top performers</div>
+            <div class="card-sub">${top_students.length} student${top_students.length!==1?'s':''} ranked${myRank>=0?` · You are #${myRank+1}`:''}
+            </div>
+          </div>
+        </div>
+        ${top_students.length
+          ? top_students.slice(0, parseInt(limit||20)).map(topRow).join('')
+          : `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Not enough data yet</div><div class="empty-desc">Students need to complete at least 2 tests to appear here.</div></div>`}
+      </div>
+
+      ${most_improved.length ? `
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <!-- Most improved -->
+        <div class="card">
+          <div class="card-header" style="margin-bottom:10px">
+            <div><div class="card-title">📈 Most improved</div><div class="card-sub">Biggest score gain in last 30 days</div></div>
+          </div>
+          ${most_improved.map(improvedRow).join('')}
+        </div>
+
+        ${top_streaks.length ? `
+        <!-- Top streaks -->
+        <div class="card">
+          <div class="card-header" style="margin-bottom:10px">
+            <div><div class="card-title">🔥 Longest streaks</div><div class="card-sub">Most consistent daily study</div></div>
+          </div>
+          ${top_streaks.map(streakRow).join('')}
+        </div>` : ''}
+      </div>` : ''}
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// COMMAND PALETTE  (Ctrl+K / Cmd+K)
+// ════════════════════════════════════════════════════════════
+
+let _cmdIdx = -1;      // currently highlighted result index
+let _cmdItems = [];    // flat list of current result items
+
+// ── Open / close ─────────────────────────────────────────────
+function openCmd() {
+  const overlay = document.getElementById('cmd-overlay');
+  const input   = document.getElementById('cmd-input');
+  if (!overlay || !input) return;
+  overlay.style.display = 'flex';
+  input.value = '';
+  cmdSearch('');      // show default items
+  input.focus();
+}
+
+function closeCmd() {
+  const overlay = document.getElementById('cmd-overlay');
+  if (overlay) overlay.style.display = 'none';
+  _cmdIdx   = -1;
+  _cmdItems = [];
+}
+
+// ── Global keyboard shortcut ─────────────────────────────────
+document.addEventListener('keydown', e => {
+  const isK = e.key === 'k' || e.key === 'K';
+  if ((e.ctrlKey || e.metaKey) && isK && !e.shiftKey) {
+    e.preventDefault();
+    const overlay = document.getElementById('cmd-overlay');
+    if (overlay?.style.display === 'flex') closeCmd();
+    else openCmd();
+    return;
+  }
+  if (e.key === 'Escape') { closeCmd(); return; }
+});
+
+// ── Keyboard nav inside the palette ─────────────────────────
+function cmdKey(e) {
+  const results = document.getElementById('cmd-results');
+  const items   = results?.querySelectorAll('.cmd-item');
+  if (!items?.length) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _cmdIdx = Math.min(_cmdIdx + 1, items.length - 1);
+    cmdHighlight(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _cmdIdx = Math.max(_cmdIdx - 1, 0);
+    cmdHighlight(items);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const active = items[_cmdIdx >= 0 ? _cmdIdx : 0];
+    active?.click();
+  }
+}
+
+function cmdHighlight(items) {
+  items.forEach((el, i) => {
+    el.style.background = i === _cmdIdx ? 'var(--green-lt)' : '';
+    el.style.color      = i === _cmdIdx ? 'var(--green-dk)' : '';
+    if (i === _cmdIdx) el.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+// ── Build the search index for the current role ───────────────
+function cmdBuildIndex() {
+  const role  = CURRENT_USER?.role;
+  const items = [];
+
+  // ── Navigation sections (always available) ────────────────
+  const NAV = {
+    student: [
+      { icon:'📊', label:'Dashboard',        action:()=>{ sNav('dashboard',null);  closeCmd(); } },
+      { icon:'📋', label:'My Tests',          action:()=>{ sNav('my-tests',null);   closeCmd(); } },
+      { icon:'🎯', label:'Practice Mode',     action:()=>{ sNav('practice',null);   closeCmd(); } },
+      { icon:'📈', label:'My Performance',    action:()=>{ sNav('performance',null);closeCmd(); } },
+      { icon:'✅', label:'Results History',   action:()=>{ sNav('history',null);    closeCmd(); } },
+      { icon:'📅', label:'Live Classes',      action:()=>{ sNav('live-classes',null);closeCmd(); } },
+      { icon:'💬', label:'Group Chat',        action:()=>{ sNav('chat',null);       closeCmd(); } },
+      { icon:'✉️', label:'Messages',          action:()=>{ sNav('messages',null);   closeCmd(); } },
+    ],
+    teacher: [
+      { icon:'📊', label:'Dashboard',         action:()=>{ tNav('dashboard',null);  closeCmd(); } },
+      { icon:'📋', label:'Tests',             action:()=>{ tNav('tests',null);      closeCmd(); } },
+      { icon:'📚', label:'Question Bank',     action:()=>{ tNav('questions',null);  closeCmd(); } },
+      { icon:'➕', label:'Create Test',       action:()=>{ tNav('create',null);     closeCmd(); } },
+      { icon:'⚡', label:'Live Quiz',         action:()=>{ tNav('live',null);       closeCmd(); } },
+      { icon:'📅', label:'Meetings',          action:()=>{ tNav('meetings',null);   closeCmd(); } },
+      { icon:'📗', label:'Gradebook',         action:()=>{ tNav('gradebook',null);  closeCmd(); } },
+      { icon:'🚨', label:'At-Risk Students',  action:()=>{ tNav('at-risk',null);    closeCmd(); } },
+      { icon:'🗒️', label:'Report Cards',     action:()=>{ tNav('report-cards',null);closeCmd(); } },
+      { icon:'👥', label:'My Classes',        action:()=>{ tNav('classes',null);    closeCmd(); } },
+      { icon:'✅', label:'Marking Queue',     action:()=>{ tNav('marking',null);    closeCmd(); } },
+      { icon:'📈', label:'Analytics',         action:()=>{ tNav('analytics',null);  closeCmd(); } },
+      { icon:'💬', label:'Group Chat',        action:()=>{ tNav('chat',null);       closeCmd(); } },
+    ],
+    admin: [
+      { icon:'🏫', label:'School Overview',   action:()=>{ aNav('overview',null);    closeCmd(); } },
+      { icon:'🗂️', label:'Classes',          action:()=>{ aNav('classes',null);     closeCmd(); } },
+      { icon:'📖', label:'Subjects',          action:()=>{ aNav('subjects',null);    closeCmd(); } },
+      { icon:'📗', label:'Gradebook',         action:()=>{ aNav('gradebook',null);   closeCmd(); } },
+      { icon:'📅', label:'Meetings',          action:()=>{ aNav('meetings',null);    closeCmd(); } },
+      { icon:'🗒️', label:'Report Cards',     action:()=>{ aNav('report-cards',null);closeCmd(); } },
+      { icon:'🚨', label:'At-Risk Students',  action:()=>{ aNav('at-risk',null);     closeCmd(); } },
+      { icon:'📊', label:'Analytics',         action:()=>{ aNav('analytics',null);   closeCmd(); } },
+      { icon:'📊', label:'Reports',           action:()=>{ aNav('reports',null);     closeCmd(); } },
+      { icon:'✏️', label:'Teachers',         action:()=>{ aNav('teachers',null);    closeCmd(); } },
+      { icon:'🎓', label:'All Students',      action:()=>{ aNav('students',null);    closeCmd(); } },
+      { icon:'⚙️', label:'Settings',         action:()=>{ aNav('settings',null);    closeCmd(); } },
+      { icon:'💬', label:'Group Chat',        action:()=>{ aNav('chat',null);        closeCmd(); } },
+    ],
+  };
+  const navItems = NAV[role] || [];
+  navItems.forEach(n => items.push({ type:'nav', icon:n.icon, label:n.label, sub:'Go to section', action:n.action }));
+
+  // ── Classes (teacher/admin from TCTX) ─────────────────────
+  (TCTX?.classes || []).forEach(c => {
+    items.push({
+      type: 'class', icon:'🗂️', label:c.name,
+      sub: `Year ${c.year_group} · ${c.student_count||''} students`,
+      action: () => {
+        if (role==='teacher') tNav('classes', null);
+        else aNav('classes', null);
+        closeCmd();
+      }
+    });
+  });
+
+  // ── Subjects (teacher/admin) ──────────────────────────────
+  (TCTX?.subjects || []).forEach(s => {
+    items.push({
+      type:'subject', icon:'📖', label:s.name,
+      sub:'Subject · click to filter',
+      action: () => {
+        if (TCTX) {
+          TCTX.subject_id   = s.id;
+          TCTX.subject_name = s.name;
+          if (role==='teacher') tRender(_tCurrentView||'dashboard');
+          closeCmd();
+        }
+      }
+    });
+  });
+
+  return items;
+}
+
+// ── Search + render ───────────────────────────────────────────
+let _cmdIndex = null;  // cached index, rebuilt on first open each session
+let _cmdLastRole = null;
+
+async function cmdSearch(query) {
+  const role = CURRENT_USER?.role;
+  if (!role) return;
+
+  // Rebuild index on role change
+  if (!_cmdIndex || _cmdLastRole !== role) {
+    _cmdIndex    = cmdBuildIndex();
+    _cmdLastRole = role;
+    // Async: add live student/test search results too
+    cmdFetchLive();
+  }
+
+  const q   = query.toLowerCase().trim();
+  const out = document.getElementById('cmd-results');
+  if (!out) return;
+  _cmdIdx = -1;
+
+  let results = q
+    ? _cmdIndex.filter(it =>
+        it.label.toLowerCase().includes(q) ||
+        (it.sub||'').toLowerCase().includes(q)
+      ).slice(0, 12)
+    : _cmdIndex.filter(it => it.type === 'nav').slice(0, 10);
+
+  if (!results.length) {
+    out.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-3);font-size:13px">No results for "${query}"</div>`;
+    return;
+  }
+
+  // Group by type
+  const groups = {};
+  results.forEach(it => { (groups[it.type]=groups[it.type]||[]).push(it); });
+  const typeLabels = { nav:'Navigate', student:'Students', test:'Tests', class:'Classes', subject:'Subjects' };
+
+  let html = '';
+  Object.entries(groups).forEach(([type, items]) => {
+    html += `<div style="padding:6px 16px 2px;font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.07em">${typeLabels[type]||type}</div>`;
+    html += items.map((it, i) => {
+      const globalIdx = results.indexOf(it);
+      return `<div class="cmd-item" data-idx="${globalIdx}"
+        style="display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;border-radius:0;transition:background .1s"
+        onmouseenter="cmdHover(${globalIdx})"
+        onclick="(${it.action.toString()})()">
+        <span style="font-size:18px;width:24px;text-align:center;flex-shrink:0">${it.icon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${highlightMatch(it.label, query)}</div>
+          ${it.sub?`<div style="font-size:11px;color:var(--text-3);margin-top:1px">${it.sub}</div>`:''}
+        </div>
+        ${it.type==='nav'?`<span style="font-size:10px;color:var(--text-3)">→</span>`:''}
+      </div>`;
+    }).join('');
+  });
+
+  out.innerHTML = html;
+}
+
+function cmdHover(idx) {
+  _cmdIdx = idx;
+  const items = document.querySelectorAll('.cmd-item');
+  cmdHighlight(items);
+}
+
+function highlightMatch(text, query) {
+  if (!query) return text;
+  const i = text.toLowerCase().indexOf(query.toLowerCase());
+  if (i < 0) return text;
+  return text.slice(0,i) +
+    `<mark style="background:var(--amber-lt);color:var(--amber);border-radius:2px;padding:0 1px">${text.slice(i,i+query.length)}</mark>` +
+    text.slice(i+query.length);
+}
+
+// Async: fetch students and recent tests, add to index
+async function cmdFetchLive() {
+  const role = CURRENT_USER?.role;
+  if (role === 'student') return; // students don't search other students
+
+  try {
+    const [students, tests] = await Promise.all([
+      GET('/students').catch(()=>[]),
+      GET('/tests').catch(()=>[])
+    ]);
+
+    (students||[]).forEach(s => {
+      const full = (s.first_name||'')+' '+(s.last_name||'');
+      _cmdIndex.push({
+        type:'student', icon:'🎓',
+        label: full,
+        sub: `${s.class_name||'Student'} · ${s.email||''}`,
+        action: () => {
+          if (role==='teacher') { tNav('classes',null); openStudentDetail(s.id); }
+          else { aNav('students',null); openStudentDetail(s.id); }
+          closeCmd();
+        }
+      });
+    });
+
+    (tests||[]).forEach(t => {
+      _cmdIndex.push({
+        type:'test', icon:'📋',
+        label: t.title||'Test',
+        sub: `${t.subject_name||''} · ${t.status||''} · ${t.due_at?'Due '+fmtDate(t.due_at):'No due date'}`,
+        action: () => {
+          if (role==='teacher') tNav('tests',null);
+          else aNav('overview',null);
+          closeCmd();
+        }
+      });
+    });
+  } catch(e) {}
+}
+
+// ════════════════════════════════════════════════════════════
+// GRADEBOOK
+// ════════════════════════════════════════════════════════════
+
+async function loadTGradebook(m) {
+  m.innerHTML = panelLoader();
+  let classes = [], subjData = {};
+  try {
+    [classes, subjData] = await Promise.all([
+      GET('/classes').catch(()=>[]),
+      GET('/subjects').catch(()=>({}))
+    ]);
+  } catch(e) {}
+
+  const allSubjs = [...((subjData?.platform||[]).filter(s=>s.is_enabled==1)), ...(subjData?.custom||[])];
+  const byYear = {};
+  (classes||[]).forEach(c=>{ (byYear[c.year_group]=byYear[c.year_group]||[]).push(c); });
+  const clsOpts = Object.entries(byYear).sort(([a],[b])=>+a-+b).map(([yr,list])=>
+    `<optgroup label="Year ${yr}">${list.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</optgroup>`
+  ).join('');
+  const subjOpts = `<option value="">All subjects</option>`+allSubjs.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  const isAdmin = CURRENT_USER?.role==='admin';
+
+  m.innerHTML = `
+<div class="topbar">
+  <div><div class="topbar-title">Gradebook</div><div class="topbar-sub">Class performance grid · all students × all tests</div></div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" id="gb-export-btn" style="display:none" onclick="exportGradebookXLSX()">⬇ Export Excel</button>
+  </div>
+</div>
+<div class="page">
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px">
+    <div class="form-group" style="margin:0;min-width:200px">
+      <label class="form-label">Class *</label>
+      <select id="gb-class" class="form-select"><option value="">Select class</option>${clsOpts}</select>
+    </div>
+    <div class="form-group" style="margin:0;min-width:160px">
+      <label class="form-label">Subject</label>
+      <select id="gb-subj" class="form-select">${subjOpts}</select>
+    </div>
+    <button class="btn btn-primary" onclick="loadGradebookData()">Load →</button>
+  </div>
+  <div id="gb-output"></div>
+</div>`;
+
+  // Auto-load if context already has a class selected
+  if (TCTX.class_id) {
+    document.getElementById('gb-class').value = TCTX.class_id;
+    if (TCTX.subject_id) document.getElementById('gb-subj').value = TCTX.subject_id;
+    loadGradebookData();
+  }
+}
+
+async function loadGradebookData() {
+  const classId = document.getElementById('gb-class')?.value;
+  const subjId  = document.getElementById('gb-subj')?.value;
+  const out     = document.getElementById('gb-output');
+  if (!classId) { notify('Please select a class', 'error'); return; }
+  if (!out) return;
+  out.innerHTML = panelLoader();
+
+  let data = null;
+  try {
+    const p = { class_id: classId };
+    if (subjId) p.subject_id = subjId;
+    if (TCTX.academic_year) { p.academic_year = TCTX.academic_year; if (TCTX.semester) p.semester = TCTX.semester; }
+    data = await GET('/analytics/gradebook', p);
+  } catch(e) { out.innerHTML = `<div class="info-box coral">Error: ${e.message}</div>`; return; }
+
+  window._gbData = data;
+  const btn = document.getElementById('gb-export-btn');
+  if (btn) btn.style.display = '';
+  renderGradebook(data, out);
+}
+
+function renderGradebook(data, container) {
+  const { students=[], tests=[], attempts={}, class_avg={}, student_avg={}, class:cls } = data;
+
+  if (!tests.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No published tests for this class</div><div class="empty-desc">Assign and publish tests to this class first.</div></div>`;
+    return;
+  }
+  if (!students.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎓</div><div class="empty-title">No students enrolled in this class</div></div>`;
+    return;
+  }
+
+  const bgOf  = p => p===null?'transparent':p>=80?'rgba(26,122,74,.16)':p>=65?'rgba(26,122,74,.08)':p>=50?'rgba(196,125,14,.13)':p>=35?'rgba(184,64,34,.10)':'rgba(184,64,34,.22)';
+  const colOf = p => p===null?'var(--text-3)':p>=65?'var(--green-dk)':p>=50?'var(--amber)':'var(--coral)';
+
+  const testHeaders = tests.map(t=>`
+    <th style="min-width:72px;max-width:90px;padding:8px 4px;text-align:center;font-size:10px;font-weight:700;border-left:1px solid var(--border);white-space:normal;line-height:1.3;vertical-align:bottom;cursor:pointer;position:sticky;top:0;background:var(--surface);z-index:2"
+        title="${t.title}" onclick="openTestAnalytics(${t.id},${JSON.stringify(t.title||'Test')})">
+      ${(t.title||'').substring(0,18)}${(t.title||'').length>18?'…':''}
+      ${t.subject_short?`<div style="font-size:9px;opacity:.6">${t.subject_short}</div>`:''}
+    </th>`).join('');
+
+  const studentRows = students.map(stu=>{
+    const initials = ((stu.first_name||'?')[0]+(stu.last_name||'?')[0]).toUpperCase();
+    const avg = student_avg[stu.id] !== undefined ? student_avg[stu.id] : null;
+    const avgP = avg!==null ? parseFloat(avg) : null;
+    const cells = tests.map(t=>{
+      const att = (attempts[stu.id]||{})[t.id];
+      const pct = att ? parseFloat(att.pct_score) : null;
+      const inner = pct!==null
+        ? `<div style="font-size:12px;font-weight:800;color:${colOf(pct)}">${Math.round(pct)}%</div>`
+        : `<span style="color:var(--text-3);font-size:20px;line-height:1">·</span>`;
+      return `<td style="padding:5px 3px;text-align:center;background:${bgOf(pct)};border-left:1px solid var(--border);${att?'cursor:pointer':''}"
+        ${att?`onclick="openAttemptReview(${att.attempt_id})" title="${stu.first_name} ${stu.last_name} — ${Math.round(pct||0)}%"`:''}>${inner}</td>`;
+    }).join('');
+    return `<tr>
+      <td style="padding:7px 12px;white-space:nowrap;position:sticky;left:0;z-index:1;background:var(--surface);border-right:2px solid var(--border-2)">
+        <div style="display:flex;align-items:center;gap:7px">
+          <div style="width:26px;height:26px;border-radius:50%;background:${stu.avatar_color||'var(--teal)'};color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${initials}</div>
+          <span style="font-size:12px;font-weight:600">${stu.last_name}, ${stu.first_name}</span>
+        </div>
+      </td>
+      ${cells}
+      <td style="padding:5px 8px;text-align:center;background:${bgOf(avgP)};border-left:2px solid var(--border-2);position:sticky;right:0;z-index:1;background:${bgOf(avgP)}">
+        <div style="font-size:13px;font-weight:800;color:${colOf(avgP)}">${avgP!==null?Math.round(avgP)+'%':'—'}</div>
+        <div style="font-size:9px;color:var(--text-3)">avg</div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const avgCells = tests.map(t=>{
+    const p = class_avg[t.id]!==null&&class_avg[t.id]!==undefined ? parseFloat(class_avg[t.id]) : null;
+    return `<td style="padding:5px 4px;text-align:center;border-left:1px solid var(--border);background:var(--bg)">
+      <div style="font-size:12px;font-weight:700;color:${colOf(p)}">${p!==null?Math.round(p)+'%':'—'}</div>
+    </td>`;
+  }).join('');
+
+  const allAvgs  = Object.values(student_avg).filter(v=>v!==null).map(Number);
+  const overall  = allAvgs.length ? Math.round(allAvgs.reduce((a,b)=>a+b,0)/allAvgs.length) : null;
+  const attempted = students.filter(s=>Object.keys(attempts[s.id]||{}).length>0).length;
+  const passCount = students.filter(s=>{const a=student_avg[s.id];return a!==null&&parseFloat(a)>=50;}).length;
+
+  container.innerHTML = `
+    <div class="stats-row" style="margin-bottom:16px">
+      <div class="stat-card"><div class="label">Class avg</div><div class="value" style="color:${colOf(overall)}">${overall!==null?overall+'%':'—'}</div></div>
+      <div class="stat-card"><div class="label">Students</div><div class="value">${students.length}</div></div>
+      <div class="stat-card"><div class="label">Engaged</div><div class="value">${attempted}<span style="font-size:14px;color:var(--text-3)">/${students.length}</span></div></div>
+      <div class="stat-card"><div class="label">Passing</div><div class="value" style="color:var(--green)">${passCount}</div><div class="trend">≥50% overall</div></div>
+    </div>
+    <div style="overflow:auto;max-height:calc(100vh - 320px);border:1px solid var(--border);border-radius:var(--radius);position:relative">
+      <table style="border-collapse:collapse;min-width:${180+tests.length*76}px">
+        <thead>
+          <tr>
+            <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text-3);position:sticky;left:0;top:0;z-index:4;background:var(--surface);border-right:2px solid var(--border-2);min-width:160px;white-space:nowrap">
+              Student (${students.length})
+            </th>
+            ${testHeaders}
+            <th style="padding:10px 8px;text-align:center;font-size:11px;font-weight:700;color:var(--text-3);border-left:2px solid var(--border-2);position:sticky;right:0;top:0;z-index:4;background:var(--surface);white-space:nowrap">
+              Avg
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          ${studentRows}
+          <tr style="border-top:2px solid var(--border-2)">
+            <td style="padding:8px 12px;font-size:10px;font-weight:800;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;position:sticky;left:0;z-index:1;background:var(--bg);border-right:2px solid var(--border-2)">
+              Class average
+            </td>
+            ${avgCells}
+            <td style="padding:5px 8px;text-align:center;border-left:2px solid var(--border-2);position:sticky;right:0;background:var(--bg)">
+              <div style="font-size:13px;font-weight:800;color:${colOf(overall)}">${overall!==null?overall+'%':'—'}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;font-size:11px;color:var(--text-3)">
+      <span>Tap a score to review that student's answers.</span>
+      <span>Tap a test column header to see question analytics.</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <span style="padding:2px 9px;border-radius:4px;font-size:11px;background:rgba(26,122,74,.16);color:var(--green-dk)">■ ≥80</span>
+      <span style="padding:2px 9px;border-radius:4px;font-size:11px;background:rgba(26,122,74,.08);color:var(--green-dk)">■ 65–79</span>
+      <span style="padding:2px 9px;border-radius:4px;font-size:11px;background:rgba(196,125,14,.13);color:var(--amber)">■ 50–64</span>
+      <span style="padding:2px 9px;border-radius:4px;font-size:11px;background:rgba(184,64,34,.10);color:var(--coral)">■ 35–49</span>
+      <span style="padding:2px 9px;border-radius:4px;font-size:11px;background:rgba(184,64,34,.22);color:var(--coral)">■ &lt;35</span>
+      <span style="padding:2px 9px;border-radius:4px;font-size:11px;background:var(--bg);color:var(--text-3)">· not attempted</span>
+    </div>`;
+}
+
+function exportGradebookXLSX() {
+  const data = window._gbData;
+  if (!data) return;
+  const { students=[], tests=[], attempts={}, student_avg={}, class_avg={}, class:cls } = data;
+  const headers = ['Student', ...tests.map(t=>t.title||'Test'), 'Average'];
+  const rows = students.map(stu=>{
+    const cells = tests.map(t=>{
+      const att = (attempts[stu.id]||{})[t.id];
+      return att ? Math.round(parseFloat(att.pct_score))+'%' : '—';
+    });
+    const avg = student_avg[stu.id];
+    return [stu.last_name+', '+stu.first_name, ...cells, avg!==null&&avg!==undefined?Math.round(avg)+'%':'—'];
+  });
+  rows.push(['CLASS AVERAGE', ...tests.map(t=>{const a=class_avg[t.id];return a!==null&&a!==undefined?Math.round(a)+'%':'—'}), '']);
+  exportToXLS(
+    `${(cls?.name||'class').replace(/\s+/g,'_')}_gradebook_${new Date().toISOString().slice(0,10)}`,
+    headers, rows, 'Gradebook',
+    {school:'', rows:[['Class:',cls?.name||''],['Date:',new Date().toLocaleDateString('en-GH')],['Students:',String(students.length)],['Tests:',String(tests.length)]]}
+  );
+}
+
+// ════════════════════════════════════════════════════════════
 // TEST QUESTION ANALYTICS
 // ════════════════════════════════════════════════════════════
 
@@ -15232,102 +17036,223 @@ async function generateStudentSelfReport() {
       GET('/analytics/badges').catch(() => null)
     ]);
   } catch(e) {
-    m.innerHTML = prev;
-    notify('Could not generate report: ' + e.message, 'error');
-    return;
+    m.innerHTML = prev; notify('Could not generate report: ' + e.message, 'error'); return;
   }
 
-  const u         = CURRENT_USER || {};
-  const stats     = data?.stats || {};
-  const avgPct    = Math.round(stats.avg_pct || 0);
-  const streak    = data?.streak?.current_streak || 0;
-  const rank      = data?.class_rank;
+  const u        = CURRENT_USER || {};
+  const stats    = data?.stats || {};
+  const avgPct   = Math.round(stats.avg_pct || 0);
+  const bestPct  = Math.round(stats.best_pct || 0);
+  const streak   = data?.streak?.current_streak || 0;
+  const rank     = data?.class_rank;
+  const compRate = data?.completion_rate || 0;
+  const typeStats = data?.type_stats || [];
+  const semStats  = data?.semester_stats || [];
+  const bloomData = data?.bloom_stats || [];
+  const history   = data?.test_history || [];
   const wPct      = data?.substrand_avg?.length
     ? wassceReadiness({a:data.substrand_avg[0]?.avg_pct||0,b:data.substrand_avg[1]?.avg_pct||0,c:data.substrand_avg[2]?.avg_pct||0,d:data.substrand_avg[3]?.avg_pct||0,e:data.substrand_avg[4]?.avg_pct||0}) : 0;
   const wGrade    = wassceGrade(wPct);
   const today     = new Date().toLocaleDateString('en-GH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   const badgeList = badges?.badges || [];
+  const schoolName = CURRENT_USER?.school_name || 'Ghana Senior High School';
+  const gradeOf   = v => v>=80?'A1':v>=70?'B2':v>=60?'B3':v>=55?'C4':v>=50?'C5':v>=45?'C6':v>=40?'D7':v>=35?'E8':'F9';
+  const remarkOf  = v => v>=80?'Excellent':v>=70?'Very Good':v>=60?'Good':v>=55?'Credit':v>=50?'Credit':v>=40?'Poor':'Failing';
 
-  const subRows = (data?.subject_avg || []).map(r => {
+  // GES subject table
+  const subRows = (data?.subject_avg || []).map((r,i) => {
     const v = Math.round(r.avg_pct || 0);
-    return `<tr>
-      <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:12px">${r.subject_name}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-size:13px;font-weight:700;color:${v>=65?'#15803d':v>=50?'#a16207':'#b91c1c'}">${v}%</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #eee;font-size:12px;color:#666">${v>=80?'Excellent':v>=65?'Good':v>=50?'Pass':'Needs work'}</td>
+    const g = gradeOf(v);
+    const isPass = v >= 50;
+    return `<tr style="background:${i%2===0?'#fafafa':'#fff'}">
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:600">${r.subject_name}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:12px">${r.attempt_count||0}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:13px;font-weight:800;color:${v>=65?'#15803d':v>=50?'#92400e':'#991b1b'}">${v}%</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;text-align:center">
+        <span style="font-weight:800;font-size:14px;color:${v>=65?'#15803d':v>=50?'#92400e':'#991b1b'}">${g}</span>
+      </td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#666">${remarkOf(v)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;text-align:center">
+        <span style="font-size:10px;font-weight:700;color:${isPass?'#15803d':'#991b1b'};background:${isPass?'#dcfce7':'#fee2e2'};padding:2px 8px;border-radius:12px">${isPass?'PASS':'FAIL'}</span>
+      </td>
     </tr>`;
   }).join('');
 
-  const histRows = (data?.test_history || []).slice(-8).reverse().map(h => {
-    const v = Math.round(h.pct_score || 0);
+  // Semester progression
+  const semSorted = [...semStats].sort((a,b)=>a.academic_year.localeCompare(b.academic_year)||a.semester-b.semester);
+  const semRows = semSorted.map(s => {
+    const v = Math.round(s.avg_pct || 0);
+    const g = gradeOf(v);
     return `<tr>
-      <td style="padding:4px 8px;font-size:11px;border-bottom:1px solid #f0f0f0">${h.title}</td>
-      <td style="padding:4px 8px;text-align:center;font-size:12px;font-weight:700;color:${col(v)}">${v}%</td>
-      <td style="padding:4px 8px;font-size:11px;color:#999">${h.submitted_at ? fmtDate(h.submitted_at) : ''}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-size:12px">${s.academic_year} — Semester ${s.semester}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:12px">${s.tests_done||0}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:12px;font-weight:700;color:${v>=65?'#15803d':v>=50?'#92400e':'#991b1b'}">${v}%</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:800;font-size:13px;color:${v>=65?'#15803d':v>=50?'#92400e':'#991b1b'}">${g}</td>
     </tr>`;
   }).join('');
+
+  // Bloom's level
+  const BLOOM_ORDER = ['Remember','Understand','Apply','Analyse','Evaluate','Create'];
+  const bloomRows = BLOOM_ORDER.map(lvl => {
+    const d = bloomData.find(b=>b.bloom_level===lvl);
+    if (!d) return '';
+    const v = Math.round(d.avg_pct||0);
+    return `<tr>
+      <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;font-size:11px">${lvl}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0;font-size:10px;color:#666">${d.total} Qs</td>
+      <td style="padding:5px 10px;border-bottom:1px solid #f0f0f0">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:80px;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden">
+            <div style="width:${v}%;height:100%;background:${v>=65?'#16a34a':v>=50?'#d97706':'#dc2626'};border-radius:3px"></div>
+          </div>
+          <span style="font-size:11px;font-weight:700;color:${v>=65?'#16a34a':v>=50?'#d97706':'#dc2626'}">${v}%</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const overallGrade = gradeOf(avgPct);
+  const passCount = (data?.subject_avg||[]).filter(s=>Math.round(s.avg_pct||0)>=50).length;
+  const totalSubjs = (data?.subject_avg||[]).length;
 
   m.innerHTML = `
-<div class="topbar" id="sr-topbar">
-  <div><div class="topbar-title">My Performance Report</div></div>
-  <div class="topbar-actions">
-    <button class="btn btn-secondary" onclick="sNav('performance',null)">← Back</button>
-    <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save PDF</button>
+<div class="topbar" id="sr-topbar" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border)">
+  <div class="topbar-title">Academic Progress Report</div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-secondary btn-sm" onclick="sNav('performance',null)">← Back</button>
+    <button class="btn btn-primary btn-sm" onclick="window.print()">🖨 Print / Save PDF</button>
   </div>
 </div>
-<style>@media print{#sr-topbar,#offline-bar,#sync-badge,#pwa-install-bar,.btn{display:none!important}}</style>
-<div class="page" id="sr-report" style="max-width:680px;margin:0 auto">
-  <div style="background:#1A7A4A;color:#fff;border-radius:10px;padding:20px 24px;margin-bottom:20px">
-    <div style="font-size:22px;font-weight:800;margin-bottom:4px">${u.first_name} ${u.last_name}</div>
-    <div style="opacity:.85;font-size:13px">${u.class_name||'—'} · Generated ${today}</div>
+<style>
+@media print {
+  #sr-topbar,#offline-bar,#sync-badge,#pwa-install-bar,#s-sidebar,.btn,#s-ctx-bar,#s-mobile-nav {display:none!important}
+  #sr-report {max-width:100%!important;margin:0!important;padding:0!important}
+  .page {padding:0!important}
+  body {background:#fff!important}
+}
+</style>
+<div class="page" style="padding:16px 0">
+<div id="sr-report" style="max-width:740px;margin:0 auto;font-family:Georgia,serif;background:#fff;border:1px solid #d1d5db;border-radius:6px;overflow:hidden">
+
+  <!-- Official letterhead -->
+  <div style="background:#1A7A4A;padding:20px 28px;display:flex;align-items:center;gap:16px">
+    <div style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">🎓</div>
+    <div style="flex:1">
+      <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:.02em">${schoolName}</div>
+      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px">STUDENT ACADEMIC PROGRESS REPORT</div>
+    </div>
+    <div style="text-align:right">
+      <div style="color:#fff;font-size:20px;font-weight:800">${overallGrade}</div>
+      <div style="color:rgba(255,255,255,.7);font-size:10px">Overall Grade</div>
+    </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+  <!-- Student info row -->
+  <div style="display:flex;flex-wrap:wrap;gap:0;border-bottom:2px solid #e5e7eb">
     ${[
-      ['Average', avgPct+'%', col(avgPct)],
-      ['Tests done', stats.tests_done||0, 'inherit'],
-      ['Study streak', streak+' days 🔥', 'var(--purple)'],
-      ['Class rank', rank ? '#'+rank.rank+' / '+rank.total : '—', 'inherit'],
-    ].map(([l,v,c])=>`<div style="background:var(--bg);border-radius:8px;padding:12px;text-align:center">
-      <div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase">${l}</div>
-      <div style="font-size:20px;font-weight:800;margin-top:2px;color:${c}">${v}</div>
+      ['Student Name', `${u.first_name||''} ${u.last_name||''}`],
+      ['Class / Form', u.class_name||'—'],
+      ['Date Generated', today],
+      ['Class Rank', rank ? `#${rank.rank} of ${rank.total} (Top ${100-rank.percentile+1}%)` : '—'],
+    ].map(([l,v])=>`<div style="flex:1;min-width:170px;padding:10px 18px;border-right:1px solid #e5e7eb;last-child:border-right:none">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:3px">${l}</div>
+      <div style="font-size:13px;font-weight:700;color:#111827">${v}</div>
     </div>`).join('')}
   </div>
 
-  ${wPct > 0 ? `<div style="background:${wGrade.c}22;border:1px solid ${wGrade.c};border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
-    <div style="font-size:28px;font-weight:800;color:${wGrade.c}">${wGrade.g}</div>
-    <div><div style="font-weight:700;font-size:13px">Predicted WASSCE grade · ${wPct}% readiness</div>
-      <div style="font-size:12px;color:var(--text-2)">${wGrade.tip}</div></div>
+  <!-- KPI strip -->
+  <div style="display:flex;flex-wrap:wrap;gap:0;background:#f9fafb;border-bottom:2px solid #e5e7eb">
+    ${[
+      ['Avg Score', avgPct+'%', avgPct>=65?'#15803d':avgPct>=50?'#92400e':'#991b1b'],
+      ['Tests Completed', stats.tests_done||0, '#1f2937'],
+      ['Pass Rate', totalSubjs ? Math.round(passCount/totalSubjs*100)+'%' : '—', '#1f2937'],
+      ['Completion Rate', compRate+'%', '#1f2937'],
+      ['Study Streak', streak+' days', '#7c3aed'],
+      ['WASSCE Forecast', wGrade.g, wGrade.c],
+    ].map(([l,v,c])=>`<div style="flex:1;min-width:110px;padding:10px 14px;text-align:center;border-right:1px solid #e5e7eb">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:2px">${l}</div>
+      <div style="font-size:18px;font-weight:800;color:${c}">${v}</div>
+    </div>`).join('')}
+  </div>
+
+  <div style="padding:20px 24px">
+
+  <!-- Subject performance table -->
+  ${subRows ? `
+  <div style="margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151;border-bottom:2px solid #1A7A4A;padding-bottom:5px;margin-bottom:10px">Subject Performance</div>
+    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif">
+      <thead><tr style="background:#1A7A4A;color:#fff">
+        <th style="padding:7px 10px;text-align:left;font-size:11px">Subject</th>
+        <th style="padding:7px 10px;text-align:center;font-size:11px">Tests</th>
+        <th style="padding:7px 10px;text-align:center;font-size:11px">Score</th>
+        <th style="padding:7px 10px;text-align:center;font-size:11px">GES Grade</th>
+        <th style="padding:7px 10px;text-align:left;font-size:11px">Remarks</th>
+        <th style="padding:7px 10px;text-align:center;font-size:11px">Status</th>
+      </tr></thead>
+      <tbody>${subRows}</tbody>
+    </table>
+    <div style="font-size:10px;color:#6b7280;margin-top:6px;font-style:italic">GES Grade Scale: A1 (80–100) • B2 (70–79) • B3 (60–69) • C4 (55–59) • C5 (50–54) • C6 (45–49) • D7 (40–44) • E8 (35–39) • F9 (0–34)</div>
   </div>` : ''}
 
-  ${subRows ? `<div class="card" style="margin-bottom:16px">
-    <div class="card-title" style="margin-bottom:10px">Performance by subject</div>
-    <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#1A7A4A;color:#fff">
-      <th style="padding:6px 8px;text-align:left;font-size:11px">Subject</th>
-      <th style="padding:6px 8px;font-size:11px">Score</th>
-      <th style="padding:6px 8px;text-align:left;font-size:11px">Remarks</th>
-    </tr></thead><tbody>${subRows}</tbody></table>
+  <!-- Semester comparison -->
+  ${semRows ? `
+  <div style="margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151;border-bottom:2px solid #1e40af;padding-bottom:5px;margin-bottom:10px">Semester Progression</div>
+    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif">
+      <thead><tr style="background:#1e40af;color:#fff">
+        <th style="padding:7px 10px;text-align:left;font-size:11px">Academic Period</th>
+        <th style="padding:7px 10px;text-align:center;font-size:11px">Tests</th>
+        <th style="padding:7px 10px;text-align:center;font-size:11px">Average</th>
+        <th style="padding:7px 10px;text-align:center;font-size:11px">Grade</th>
+      </tr></thead>
+      <tbody>${semRows}</tbody>
+    </table>
   </div>` : ''}
 
-  ${histRows ? `<div class="card" style="margin-bottom:16px">
-    <div class="card-title" style="margin-bottom:10px">Recent test history</div>
-    <table style="width:100%;border-collapse:collapse"><thead><tr style="background:#1A4F8A;color:#fff">
-      <th style="padding:5px 8px;text-align:left;font-size:11px">Test</th>
-      <th style="padding:5px 8px;font-size:11px">Score</th>
-      <th style="padding:5px 8px;text-align:left;font-size:11px">Date</th>
-    </tr></thead><tbody>${histRows}</tbody></table>
+  <!-- Bloom's cognitive profile + badges side by side -->
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+
+  ${bloomRows ? `<div style="flex:1;min-width:220px">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151;border-bottom:2px solid #7c3aed;padding-bottom:5px;margin-bottom:10px">Cognitive Skills Profile (Bloom's)</div>
+    <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif"><tbody>${bloomRows}</tbody></table>
   </div>` : ''}
 
-  ${badgeList.length ? `<div class="card">
-    <div class="card-title" style="margin-bottom:10px">Achievements (${badgeList.length})</div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">
-      ${badgeList.map(b=>`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600">${b.icon} ${b.name}</div>`).join('')}
+  ${badgeList.length ? `<div style="flex:1;min-width:180px">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151;border-bottom:2px solid #d97706;padding-bottom:5px;margin-bottom:10px">Achievements (${badgeList.length})</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      ${badgeList.map(b=>`<div style="background:#fefce8;border:1px solid #fde68a;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;font-family:Arial,sans-serif">${b.icon} ${b.name}</div>`).join('')}
     </div>
   </div>` : ''}
 
-  <div style="text-align:center;color:var(--text-3);font-size:11px;margin-top:20px">
-    Generated by AceICT · Ghana SHS Assessment Platform
   </div>
-</div>`;
+
+  <!-- WASSCE Readiness -->
+  ${wPct > 0 ? `
+  <div style="background:${wGrade.c}11;border:1px solid ${wGrade.c}55;border-radius:6px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:14px;font-family:Arial,sans-serif">
+    <div style="font-size:32px;font-weight:900;color:${wGrade.c};line-height:1">${wGrade.g}</div>
+    <div>
+      <div style="font-size:13px;font-weight:700;color:#111827">WASSCE Predicted Grade · ${wPct}% readiness</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:2px">${wGrade.tip}</div>
+    </div>
+  </div>` : ''}
+
+  <!-- Signature block -->
+  <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;display:flex;gap:30px;flex-wrap:wrap;font-family:Arial,sans-serif">
+    ${['Class Teacher','Head of Department','Headmaster/Mistress'].map(role=>`
+    <div style="flex:1;min-width:160px">
+      <div style="border-bottom:1px solid #9ca3af;height:36px;margin-bottom:6px"></div>
+      <div style="font-size:10px;color:#6b7280;text-align:center">${role}</div>
+    </div>`).join('')}
+  </div>
+
+  <div style="text-align:center;margin-top:16px;font-size:10px;color:#9ca3af;font-family:Arial,sans-serif">
+    Generated by AceICT · Ghana SHS Assessment Platform · ${today}
+  </div>
+
+  </div><!-- /padding -->
+</div><!-- /sr-report -->
+</div><!-- /page -->`;
 }
 
 // ════════════════════════════════════════════════════════════

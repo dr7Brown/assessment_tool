@@ -1,719 +1,145 @@
-intitle:"index of" chicago fire +last modified +size -inurl:(html|php|asp)
+2. Strands
+CREATE TABLE subject_strands (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 
-intitle:"index of" [chicago fire season 14] -inurl:(jsp|pl|php|html|aspx|htm|cf|shtml)
+    school_id INT UNSIGNED NOT NULL,
 
-intitle:"index of" [chicago fire season 14] (mp4|mkv|avi)
-indexof:movies chicago fire season 14
+    subject_id INT UNSIGNED NOT NULL,
 
-timer for live quiz should show for both instructor and student dashboard
-learner page stacked on loading quiz, students dont see the live quiz question 
+    strand_code VARCHAR(50) NOT NULL,
 
-i want admin to be able to create and edit a class
+    strand_label VARCHAR(255) NOT NULL,
 
-admin should assign classes to teachers. Teachers should only have access to classes they are assigned to.
+    description TEXT NULL,
 
-Admin should create, edit and delete departments, then he add teachers to departments they belong. a teacher can only belong to one departments.
-one class could be assigned to multiple teachers because of subject teaching. 
-the dialog box for adding teacher to department should have a search bar, that searches teachers by name
+    sort_order SMALLINT UNSIGNED DEFAULT 0,
 
+    is_active TINYINT(1) DEFAULT 1,
 
-create sql to create/Seed the following classes in the database, all for year 1
-5 Science classes (ie. 1 Science1, 1 Science2, etc. )
-10 Gen. Arts classes (ie. 1 GA1, 1 GA2, ...., 1 GA10)
-5 Business classes (ie. 1 Business1, 1 Business2, etc)
-3 Visual Arts classes (ie. 1 VA1, 1 VA2, ...., 1 VA3)
-5 Home Economics classes (ie. 1 HOME ECONS1, 1 HOME ECONS2, ...., 1 HOME ECONS5)
-2 Agricultural classes (ie. 1 AGRIC1, 1 AGRIC2, ...., 1 AGRIC5)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
- all for year 2
-5 Science classes (ie. 1 Science1, 1 Science2, etc. )
-10 Gen. Arts classes (ie. 2 GA1, 2 GA2, ...., 2 GA10)
-5 Business classes (ie. 2 Business1, 2 Business2, etc)
-3 Visual Arts classes (ie. 2 VA1, 2 VA2, ...., 2 VA3)
-5 Home Economics classes (ie. 2 HOME ECONS1, 2 HOME ECONS2, ...., 1 HOME ECONS5)
-2 Agricultural classes (ie. 2 AGRIC1, 2 AGRIC2)
-
- all for year 3
-5 Science classes (ie. 3 Science1, 3 Science2, etc. )
-10 Gen. Arts classes (ie. 3 GA1, 3 GA2, ...., 3 GA10)
-5 Business classes (ie. 3 Business1, 3 Business2, etc)
-3 Visual Arts classes (ie. 3 VA1, 3 VA2, ...., 1 VA3)
-5 Home Economics classes (ie. 3 HOME ECONS1, 3 HOME ECONS2, ...., 1 HOME ECONS5)
-2 Agricultural classes (ie. 3 AGRIC1, 3 AGRIC2)
-
-GEN SQL TO CREATE A SUBJECT TABLE
-SEED WITH THESE GENERAL SUBJECTS. ADMIN TO SELECT THOSE DONE IN HIS SCHOOL.
-ADMIN CAN ALSO ADD NEW SUBJECT, HE CAN ADD, EDIT, DELETE AS WELL. "* Physics
-* Chemistry
-* Biology
-* Elective Mathematics
-* General Agriculture
-* Animal Husbandry
-* Crop Husbandry
-* Horticulture
-* Core Mathematics
-* Further Mathematics
-* Information and Communication Technology (ICT)
-* Computing
-* Robotics
-* Data Processing
-* Programming
-* English Language
-* Literature in English
-* French
-* Twi
-* Ga
-* Ewe
-* Fante
-* Dagbani
-* Nzema
-* Dagaare
-* Gonja
-* Kasem
-* Arabic
-* Social Studies
-* Government
-* History
-* Geography
-* Economics
-* Christian Religious Studies (CRS)
-* Islamic Religious Studies (IRS)
-* Sociology
-* Psychology
-* Financial Accounting
-* Cost Accounting
-* Business Management
-* Principles of Cost Accounting
-* Clerical Office Duties
-* General Knowledge in Art
-* Graphic Design
-* Picture Making
-* Sculpture
-* Ceramics
-* Textiles
-* Leatherwork
-* Basketry
-* Jewellery
-* Graphic Communication
-* Food and Nutrition
-* Management in Living
-* Clothing and Textiles
-* Technical Drawing
-* Building Construction
-* Woodwork
-* Metalwork
-* Auto Mechanics
-* Applied Electricity
-* Electronics
-* Welding and Fabrication
-* Engineering Science
-* Crop Science
-* Fisheries
-* Forestry
-* Physical Education
-* Sports and Recreation
-* Health Education
-"
-
-admin assign subjects to classes. 
-a class will do multiple subjects, like 7 to 12 subjects
-there are some classes where not all students 
-do the same subjects. some classes, part of 
-the students do one subject then the rest do a 
-different subject. 
-
-we are going to do great change in the system. 
-a teacher can teach two or more subjects. 
-tests and question bank should be unique to each subject
-teachers teaching the same subjects should have access to questions and tests 
-for their subject. example: teachers teaching ict should have access to all questions 
-set by any ict teacher.
-
-We are implementing a major improvement to the assessment system’s academic and permission structure.
-
-New Subject-Based Teaching and Access Model
-1. Multi-Subject Teacher Support
-
-A teacher can now teach one or multiple subjects across different classes and year groups.
-
-Examples:
-
-A teacher may teach:
-ICT and Core Mathematics
-Physics and Elective Mathematics
-English Language in multiple classes
-
-The system must support:
-
-many-to-many relationship between teachers and subjects
-many-to-many relationship between teachers and classes
-2. Subject-Based Question Bank
-
-The question bank must now be organized by subject.
-
-Every question must belong to a specific subject.
-
-Examples:
-
-ICT questions → visible to ICT teachers
-Mathematics questions → visible to Mathematics teachers
-Physics questions → visible to Physics teachers
-
-Questions should no longer be isolated to only the teacher who created them.
-
-3. Shared Subject Collaboration
-
-Teachers teaching the same subject should collaborate through a shared question bank and shared tests.
+    FOREIGN KEY (subject_id)
+        REFERENCES subjects(id)
+        ON DELETE CASCADE
+);
 
 Example:
 
-All ICT teachers can:
-view ICT questions
-use ICT questions
-edit permitted ICT questions
-create ICT tests
-reuse ICT assessments
+ICT
+ ├─ Computer Systems
+ ├─ Networking
+ ├─ Data Security
+ └─ Programming
+3. Sub-Strands
+CREATE TABLE subject_sub_strands (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 
-Another example:
+    strand_id INT UNSIGNED NOT NULL,
 
-A Mathematics teacher should NOT access ICT questions unless assigned to ICT.
-4. Subject-Level Access Control
+    sub_strand_code VARCHAR(50),
 
-Access permissions should be determined primarily by subject assignment.
+    sub_strand_label VARCHAR(255) NOT NULL,
 
-A teacher should only access:
+    description TEXT NULL,
 
-subjects assigned to them
-questions for those subjects
-tests created under those subjects
+    sort_order SMALLINT UNSIGNED DEFAULT 0,
 
-Example:
+    is_active TINYINT(1) DEFAULT 1,
 
-Teacher A teaches:
-- ICT
-- Computing
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-Teacher A can access:
-- all ICT questions
-- all Computing questions
-- ICT tests
-- Computing tests
-5. Shared Test Visibility
-
-Tests and examinations should also become subject-based.
+    FOREIGN KEY (strand_id)
+        REFERENCES subject_strands(id)
+        ON DELETE CASCADE
+);
 
 Example:
 
-All ICT teachers can see:
-ICT quizzes
-ICT tests
-ICT exams
-
-This allows:
-
-collaboration
-standardization
-moderation
-easier assessment preparation
-6. Ownership and Audit Tracking
-
-Even though resources are shared, the system must still track:
-
-who created the question
-who edited it
-when it was modified
-
-Add fields such as:
-
-created_by
-updated_by
-created_at
-updated_at
-7. Recommended Permission Logic
-Teachers CAN:
-access all questions for subjects they teach
-reuse questions from other teachers within the same subject
-collaborate on assessments
-Teachers CANNOT:
-access questions for subjects they are not assigned to
-modify restricted or locked assessments
-access administrative controls unless permitted
-
-
-When saving questions to question bank, the bank 
-should have these classifications so that the 
-question types dont mix up. each question type is saved 
-in its category
-so that the teacher or any user can use dropdown to select 
-or view questions in the bank in that category in addition 
-to the existing categories
-the question types: Multiple choice, Multi-select, Short answer, Essay,
-Fill in blank and True / False 
-
-Server error: resolveStudentClass(): Argument #2 ($schoolId) must be of type int, string given, called in /home/royayfxh/expresslabgh.com/apps/aceict/api/index.php on line 888
-
-add another  menu item on the sidebar with the name "Subjects" 
-when clicked, should display all registered subjects in the schoo. 
-should have dropdown to help filter them into categories like year, 
-classes, and or department. i wanted you to do it under admin page, not the teacher page
-The focus is that, when a subject is clicked, it should show all 
-students registered for that subject, and the admin can click on 
-each student to see their performance in that subject, including 
-their scores on tests and quizzes, and which topics they are 
-struggling with.
-Also, the subject should have a way of showing all the questions, tests and quizzes 
-under that subject,
-
-
-
-all the questions under that subject, and the teacher 
-can select which question to assign to a test or quiz.
-
-Lets go to the teacher dashboard, Teacher should only work 
-about the subjects and classes assigned to them, not the whole school.
-teacher should not get access to questions or students outside of their subjects and classes.
-so before he sets questions, he should be able 
-to select the subject and class he wants to set questions for, and then only see the students in that class when he wants to assign the test.
-except the quiz where students can join with a code, then the teacher can see all students who joined that quiz regardless of class.
-
-Work on the marking queue on the teacher dashboard, 
-so that when a teacher clicks on the marking queue, 
-they can only see the tests and quizzes that are assigned to 
-their subjects and classes, and not the whole school.
-
-also complete the marking queue so that when a teacher 
-clicks on a test or quiz in the queue, they can see all 
-the students who took that test or quiz, and their scores, 
-and then click on each student to see their answers and 
-assign marks for any open-ended questions.
-
-there is a button under create test on teacher 
-dashboard that allow the teacher to create different 
-type of test. the following seems not completed on 
-the pop up that allow you to create test: Multi-select, 
-Essay, Fill in blank. Complete the ones i have listed above, 
-the rest seem to be working. 
-unless you want to add some more functionalities.
-
-allow student to see their past attempts on a test, and their scores, 
-and also allow them to review their answers after 
-they have completed a test, so that they can learn
-
-students should also have the context menu bar with 
-dropdown to filter their entire dashboard content
-including tests by subject, 
-and due date, so they can easily find the tests 
-they need to take or review.
-
-my test always show the number 3 on student dashboard,
- even when i have no tests created, or when i have 
- created more than 3 tests. it should show the 
- correct number of tests that are assigned and due to 
- the students. student due test too only show on the student 
- dashboard, but should also show under student dashboard under the due menu
-
-add a footer to the student, instructor 
-and admin dashboard with the text 
-"Powered by Expresslab" and a link 
-to the Expresslab website "https://www.expresslabgh.com".
+Networking
+ ├─ Network Types
+ ├─ Transmission Media
+ ├─ Internet Services
+ └─ Wireless Communication
+4. Topics
 
-Template for WASSCE Paper 1- Objectives: Section A: Answer ALL 40  
-multiple choice questions (40 marks). Paper 2— Theory Section B: 
-Answer ANY 3 of the 5 questions (60 marks). 
-Time allowed: 2 hours.
-
-
-Add more question type under the "test settings"
-ie. Exercise , Quiz, Assignment, Mid-sem,
- End of Semester, Mock Exam,
-and also add the option to set a custom name for the test instead of just "Test 1", "Test 2" etc.
-
-subject dropdown on students context menu bar
-should show all subjects the student does in his class
-9339
-
-admin: 
-email: admin@demo.aceict.app
-password: demo1234
+This is where most systems stop too early. You should definitely have a Topics table.
 
-Teacher: 
-email: samuel@gmail.com
-password: asdf1234
+CREATE TABLE subject_topics (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 
-Student: 
-email: akotoi@school.edu.gh
-password: asdf1234
+    sub_strand_id INT UNSIGNED NOT NULL,
 
-Add feature to enable admin to promote learners 
-they should be promoted to the next year class.
-such that if learner is in 1 science 1, he is promoted
-to 2 science 1, those in 1 GA 3 moves to 2 GA 3 in that order
-Student in Year 3, ie. 3  GA * should be Graduated on promotion. 
-Past students matter for:
-transcripts
-result checking
-WAEC records
-
-should have these options: 
-✅ Promote all
-✅ Promote selected
-✅ Repeat class
-✅ Transfer class
-✅ Graduate
-NB: Promotions create new enrollment records
-History is never overwritten
-Reports remain accurate forever
-
-
-
-
-
-# Admin portal to have access to all questions
-
-Administrators should access:
-question bank by subjects
-all subjects
-all questions
-all tests
-all assessments
-all teachers
-all classes
-
-Including:
-who created each question
-subject ownership
-
-What Admin Should Be Able To Do
-Question Management
-
-Admin can:
-view all questions
-search all subjects
-filter by teacher
-edit questions
-delete questions
-Monitoring
-
-Admin should see:
-
-total questions per teacher
-total questions per subject
-question difficulty distribution
-
-
-
-i want us to implement video conferencing with jitsi:
-features:
-live online classes
-staff meetings
-oral assessments
-student consultations
-screen sharing
-recorded lessons
-
-
-
-in addition to the existing test features, i want teacher to see tests given to learners, when a test in clicked, he should see all students who did the test and could be export as csv, and anyother feature.
-Teachers and admin should not only create tests, but also:
-monitor participation
-analyze performance
-track submissions
-export results
-manage test history
-identify weak learners
-review answer statistics
-
-Submission time
-Time spent
-Attempt status
-completed students
-absent students
-
-generated csv for tests should contain the 
-teacher name, class, test name, add sn as the first column too
-
-SN	Test Name	Subject	Teacher	Student	Class	Score %	Score	Max Score	Pass/Fail	Status	Submitted At	Time Spent (min)	Attempt #	Essays Pending
-
-
-
-working fine but this header data should be in merged column A and B instead
-"Test Name:
-Teacher:
-Date Exported:
-Submitted:
-Average Score:"
-
-then the corresponding results should be in merged
-column c to f.
-
-then the below data should also be in merged column G to H
-"Subject:				
-Class:				
-Total Students:				
-Absent:				
-Pass Rate:				
-"
-then their corresponding results should be in merged
-column i to k.
-
-
-1.
-when student submits an essay question, 
-the feedback contains " Needs improvement
-Review the highlighted topics and try the practice quiz."
- it should be something like "Work submitted, you will get your score
- when teacher marks"
-
-2. 
-the system submits responses for each input entered for essay 
-response student enters, it should not be so. just one final
-response, when the student has entered all the texts for the 
-answer. meaning i want just one response per question
-
-3. the marking queue also shows static 5 on the 
-sidebar. want the number to dinamically reflect the number 
-of essay tests unmarked. not the questions.
-
-4. the marking queue data should be filtered by the class dropdown on the
-context bar.
-
-5. administrator should have access to marking queue 
-of all teachers for all subjects
-
-
-next: all done
-1. Questions in question bank should not be ordered as appear in the db
-it should be randomised and mixed. so i dont always see the same sets 
-of questions: done
-2. when i create and add the "Fill in" test to question bank, 
-it saves in db but does not show in our list of questions: not fixed
-3. Lock the all popup modals so that clicking outside does not close it 
-   until the close button is pressed: fixed
-4. students cannot multi select for "multi select" types of questions. 
-they can only single select. fix it: done
-5. multi select questions should be auto marked ones student submit: done
-6. When students submit "Short answers" type of questions
-teacher do not see their responses when he clicks on "mark" Teacher
-must see so that he marks them, as he does for the essay type of questions.:fixed
-7. Analytics data on the teacher dashboard should reflect
-the subject on the context bar.:not fixed
-Analytics should also show on admin dashboard.
-8. "Save and Next Student" to show spinner when click until next item loads: done
-
-
-
-upnext: all done
-1. "Save and Next Student" only saves last students marks: not fixed
-2. Teacher be given a feature to auto mark all 
-"Fill in" questions and also allow him to self mark
-just as he does for the "essay" type of questions.
-3.  when student go to previous question when answering test questions, 
-additional marks are awarded. fix that:done
-4. Teacher should be able to republish an existing test as a new test: done
-
-upnext:all done
-1. Tests should be filtered by semesters (for all users of
-the system). 
-we have 2 semesters in an academic year.
- (semester 1 and semester 2)
-2. Not all bank questions in db are loaded when "Question Bank"
-tab is pressed. Maximum about 60 questions are loaded at a time, 
-add a button below named "Load more" that loads more when end of list is reached
-3. when i create and add the "Fill in" test to question bank, 
-it does not show under "fill in" drop down under question type. but when "All type"
-is selected, it shows. fix it.
-4. when "All diff, Easy, Medium, Hard" item are click on the question bank, 
-it works but the selected item does not recieve focus. the focus will still 
-be on the first item selected.
-5. "Save and Next Student" only saves last students marks. "save and done" does
-not save students work, unless i press "save all marks"
-6. by default, "Assign to classes" drop down should check "All Classes" when creating a test
-7. Marking queue should sort students responses by Classes dropdown on the context bar.
-currently, if you select "All classes" it works, but selecting Individual classes shows empty queue.
-
-next: major upgrade: done
-1. i want admin to set the academic year and semester, 
-such that all test and records entered by users 
-"admin, teachers, students" goes into the 
-current year and semester selected. 
-Students and teachers should be able to 
-view past data, they select year and semester to 
-view tests, exercises done in the past.
-Admin to set semester unique for each of the 3 year group
-since they all dont run the same semester at the same time.
-Therefore any assessment record entered by teacher or student goes 
-to the current year and semeter set by admin. 
-add all nessary functionalities needed for the above to function
-properly. update the codebase and db so that the existing data
-would be upgraded to match these major upgrade
-
-next: done
-0. move Academic year from sidebar and put it in settings.
-when setting academic year and semester,  allow admin to
-choose start date and end date for the semester. 
-
-1. Remove "Create Test" and "Question Bank" from the side bar
-Fix "Tests" on the side bar instead.
-When Tests is clicked, the dashbord to show "Create Test" and "Question Bank" 
-buttons or tabs at the top, then below are the test filters then 
-below are the tests. 
-2. on group chats: default group chat for each of the Classes
- admin can activate or disactivate any of the classes under his settings
- allow admin to add or remove teachers to groups created for "specific class"
- 3. only admin be allowed to delete messages in group chat, when message is 
- deleted, message body should show as deleted by admin in the chat whilst keeping
- the sender's name.
- 4. categorize the chat messages under day dates like it appears in whatsapp application
- 5. Allow reply to a message in a chat, as done in whatsapp application.
- 6. add features of whatsapp application that you can and would make the chat feature rubost.
- 7. admin can select group admins for each group, they can also delete messages.
- 8. admin can edit each group settings to disable someone or group of people
-  from sending message
-
-
-next: All done
-1. all messages come as "This message was deleted by admin"
-it should come only when admin deletes that particular message.
-2. allow admin to delete a message in a chat, after he deletes 
-before that particular message be replaced by "This message was deleted by admin_name"
-3. Create all class groups button does not work, it shows this notification
-when clicked "Group name is required"
-Activate button too does not work.
-4. Activate button does not work
-5. Mute function does not work
-6. fix other chat functions that are not completed
-
-1. next fixes: all done
-1. the emoji batch shows on all messages on the fly, fix: should show
-only when the message is clicked: done
-2. when i create a new department,  and i want to add subjects to this
-new department, i dont see the newly created department in the list, under 
-admin settings >subjects.:done
-3. dont allow teacher to change year when setting test.
-4. when teacher sets "Fill in" questions, they only show under "All types" question type, they dont
-show under "Fill in" in question bank.: done
-
-
-
-2. next: sent
-1. Add more robust Analytics data to the students analytics. Analytics on the teacher dashboard should reflect
-the subject on the context bar as well as semester based or overall based.
-2. Create teacher analytics too on admin dashboard, should be semester, year or overall analytics
-
-next: entered
-1. when setting test, the current semester should be the default, unless teacher changes it
-2. school data under admin >settings >general not saved
-3. admin unable to set academic year and semester periods. 
-when i click on "set period" under settings> academic year, nothing happens
-4.complete the components of the report on admin dashboard. should be School, year, semester, subject, teacher, students, class based.
-add all feature that a good assessment management must have
-
-next: all done
-1. Allow admin to edit, delete, activate as current, deactivate existing academic semester
-2. allow only one active semester in a year group. rest should be inactive.  any time a semester is marked
-active, all others in the same year group should be marked inactive.
-3. add other functionality a good assessment platform for ghana shs school should have
+    topic_code VARCHAR(50),
 
-next: all done
-1. add "join live quiz" to student side bar item
-2. why am i getting undefined when i open result sheet on table heading (#	Student	undefined	undefined	undefined	undefined	undefined	undefined	undefined	undefined	undefined	Overall	Grade)
-and below too, the grades (A1: 80–100% (undefined)
-B2: 70–79% (undefined)
-B3: 60–69% (undefined)
-C4: 55–59% (undefined)
-C5: 50–54% (undefined)
-C6: 45–49% (undefined)
-D7: 40–44% (undefined)
-E8: 35–39% (undefined)
-F9: 0–34% (undefined))
+    topic_label VARCHAR(255) NOT NULL,
 
-next: 
-the grading are in decimals, i want it in integers. (A1: 80.00–100.00% (Excellent)
-B2: 70.00–79.00% (Very Good)
-B3: 60.00–69.00% (Good)
-C4: 55.00–59.00% (Credit)
-C5: 50.00–54.00% (Credit)
-C6: 45.00–49.00% (Credit)
-D7: 40.00–44.00% (Pass)
-E8: 35.00–39.00% (Pass)
-F9: 0.00–34.00% (Fail))
+    description TEXT NULL,
 
-fix it under settings "Grade boundaries" too
+    sort_order SMALLINT UNSIGNED DEFAULT 0,
 
-next: done
-1. bulk upload for question bank works but for only MCQ, i want you
-to do that to allow all question type, use drop down to select the 
-question type, then it do that 
+    is_active TINYINT(1) DEFAULT 1,
 
-next: 
-students live class and teacher Meetings sidebar items do not reflect subject
-selected on context bar. currently showing all meetings irrespective of the subject
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-next: 
-take yourself to be the owner of the system, and you want it to be one of its kind
-best to catch the attention of all school administrators.
-what features would you have added?
+    FOREIGN KEY (sub_strand_id)
+        REFERENCES subject_sub_strands(id)
+        ON DELETE CASCADE
+);
 
-next: 
-1. add analytics of meeting attendance to already attendance analytics.
-3. Offline-First Mode
-Rural schools have unreliable internet. Students download a test, 
-complete it offline, and it syncs when they reconnect. 
-A small badge on the topbar shows "3 results pending sync." 
-This removes the biggest objection administrators have.
+Example:
 
-next: 
-error when i run analysis on at risk students on teachers dashboard
-"Error: Database error: SQLSTATE[HY093]: Invalid parameter number"
+Transmission Media
+ ├─ Twisted Pair Cable
+ ├─ Coaxial Cable
+ ├─ Fibre Optic Cable
+ ├─ Guided Media
+ └─ Unguided Media
+5. Questions
 
-when i do it on admin dashboard, i get the error
-"Error: Database error: SQLSTATE[42000]: Syntax error or access violation: 1235 This version of MariaDB doesn't yet support 'LIMIT & IN/ALL/ANY/SOME subquery'"
+Instead of storing only text labels, store the IDs.
 
-fix all and continue with the upgrades
+CREATE TABLE questions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
 
+    school_id INT UNSIGNED NOT NULL,
 
-next: done
-error when i run analysis on at risk students on teachers dashboard
-"Error: Database error: SQLSTATE[42S22]: Column not found: 1247 Reference 'overall_avg' not supported (reference to group function)"
-when i do it on admin dashboard, i get the error
-"Error: Database error: SQLSTATE[42S22]: Column not found: 1247 Reference 'overall_avg' not supported (reference to group function)"
-fix all and continue with the upgrades
+    subject_id INT UNSIGNED NOT NULL,
 
+    strand_id INT UNSIGNED NOT NULL,
 
-next:
+    sub_strand_id INT UNSIGNED NOT NULL,
 
+    topic_id INT UNSIGNED NULL,
 
+    author_id INT UNSIGNED NOT NULL,
 
+    type VARCHAR(50) NOT NULL,
 
+    bloom_level TINYINT DEFAULT 1,
 
+    difficulty ENUM('easy','medium','hard'),
 
+    year_group TINYINT NOT NULL,
 
+    marks DECIMAL(5,2) DEFAULT 1,
 
+    question_text LONGTEXT NOT NULL,
 
+    explanation LONGTEXT NULL,
 
+    is_active TINYINT(1) DEFAULT 1,
 
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+    FOREIGN KEY (subject_id)
+        REFERENCES subjects(id),
 
+    FOREIGN KEY (strand_id)
+        REFERENCES subject_strands(id),
 
+    FOREIGN KEY (sub_strand_id)
+        REFERENCES subject_sub_strands(id),
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    FOREIGN KEY (topic_id)
+        REFERENCES subject_topics(id)
+);

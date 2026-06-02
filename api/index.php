@@ -1965,7 +1965,205 @@ function handleAnalytics(string $method, ?string $sub, array $body): void {
         respond(compact('teachers', 'schoolAvg', 'bySubject', 'semTrend'));
     }
 
+    // GET /analytics/matrix — admin: subject × class performance pivot (heat map)
+    if ($sub === 'matrix') {
+        require_role($auth, 'admin');
+        $filterSemM  = isset($_GET['semester'])      ? (int)$_GET['semester']    : 0;
+        $filterYearM = isset($_GET['academic_year']) ? trim($_GET['academic_year']) : '';
+        $filterSubjM = isset($_GET['subject_id'])    ? (int)$_GET['subject_id']  : 0;
+        $semFM  = $filterSemM  ? 'AND t.semester=?'      : '';
+        $semPM  = $filterSemM  ? [$filterSemM]  : [];
+        $yearFM = $filterYearM ? 'AND t.academic_year=?' : '';
+        $yearPM = $filterYearM ? [$filterYearM] : [];
+        $subjFM = $filterSubjM ? 'AND s.id=?'           : '';
+        $subjPM = $filterSubjM ? [$filterSubjM] : [];
+        $pFM    = "$semFM $yearFM $subjFM";
+        $pPM    = array_merge($semPM, $yearPM, $subjPM);
+
+        $matrix = DB::fetchAll(
+            "SELECT s.id AS subject_id, s.name AS subject_name,
+                    COALESCE(s.short_name, LEFT(s.name,10)) AS subject_short,
+                    c.id AS class_id, c.name AS class_name, c.year_group,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    COUNT(DISTINCT t.id) AS test_count,
+                    COUNT(DISTINCT a.student_id) AS student_count
+             FROM tests t
+             JOIN subjects s ON s.id=t.subject_id
+             JOIN attempts a ON a.test_id=t.id AND a.status IN ('submitted','marked')
+             JOIN class_students cs ON cs.student_id=a.student_id
+             JOIN classes c ON c.id=cs.class_id AND c.school_id=?
+             WHERE t.school_id=? $pFM
+             GROUP BY s.id, s.name, s.short_name, c.id, c.name, c.year_group
+             ORDER BY s.name, c.year_group, c.name",
+            array_merge([$sid, $sid], $pPM)
+        );
+        respond(['matrix' => $matrix]);
+    }
+
     // GET /analytics/alerts — pending action alerts for dashboard badge
+    // GET /analytics/gradebook?class_id=N&subject_id=N&academic_year=&semester=N
+    // GET /analytics/leaderboard?class_id=N&academic_year=&semester=N&limit=20
+    if ($sub === 'leaderboard') {
+        $classId = (int)($_GET['class_id']     ?? 0);
+        $acYear  = trim($_GET['academic_year'] ?? '');
+        $semNum  = (int)($_GET['semester']     ?? 0);
+        $limit   = max(5, min(50, (int)($_GET['limit'] ?? 20)));
+
+        $classWhere = $classId ? 'AND cs.class_id=?' : '';
+        $classParam = $classId ? [$classId] : [];
+        $acWhere    = $acYear  ? 'AND t.academic_year=?' : '';
+        $semWhere   = $semNum  ? 'AND t.semester=?'      : '';
+        $pPeriod    = array_merge($acYear?[$acYear]:[], $semNum?[$semNum]:[]);
+
+        // Top students by average score
+        $top = DB::fetchAll(
+            "SELECT u.id AS student_id, u.first_name, u.last_name, u.avatar_color,
+                    c.name AS class_name, c.year_group,
+                    ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS avg_pct,
+                    COUNT(DISTINCT a.id) AS test_count,
+                    SUM(IF(a.max_score>0 AND (a.score_auto+a.score_manual)/a.max_score>=0.5,1,0)) AS pass_count
+             FROM users u
+             JOIN class_students cs ON cs.student_id=u.id
+             JOIN classes c ON c.id=cs.class_id AND c.school_id=?
+             JOIN attempts a ON a.student_id=u.id AND a.status IN ('submitted','marked')
+             JOIN tests t ON t.id=a.test_id $acWhere $semWhere
+             WHERE u.school_id=? $classWhere
+             GROUP BY u.id, u.first_name, u.last_name, u.avatar_color, c.name, c.year_group
+             HAVING test_count >= 2
+             ORDER BY avg_pct DESC
+             LIMIT ?",
+            array_merge([$sid], $pPeriod, [$sid], $classParam, [$limit])
+        );
+
+        // Most improved (best avg in last 30 days vs overall)
+        $improved = DB::fetchAll(
+            "SELECT * FROM (
+                SELECT u.id AS student_id, u.first_name, u.last_name, u.avatar_color,
+                       c.name AS class_name,
+                       ROUND(AVG(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0)),1) AS overall_avg,
+                       ROUND(AVG(IF(a.submitted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) AND a.max_score>0,
+                           (a.score_auto+a.score_manual)/a.max_score*100, NULL)),1) AS recent_avg,
+                       SUM(a.submitted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) AS recent_count
+                FROM users u
+                JOIN class_students cs ON cs.student_id=u.id
+                JOIN classes c ON c.id=cs.class_id AND c.school_id=?
+                JOIN attempts a ON a.student_id=u.id AND a.status IN ('submitted','marked')
+                WHERE u.school_id=? $classWhere
+                GROUP BY u.id, u.first_name, u.last_name, u.avatar_color, c.name
+             ) sub
+             WHERE sub.recent_count >= 1 AND sub.recent_avg IS NOT NULL
+               AND sub.recent_avg > sub.overall_avg
+             ORDER BY (sub.recent_avg - sub.overall_avg) DESC
+             LIMIT 10",
+            array_merge([$sid, $sid], $classParam)
+        );
+
+        // Top streaks
+        $streaks = DB::fetchAll(
+            "SELECT u.id AS student_id, u.first_name, u.last_name, u.avatar_color,
+                    c.name AS class_name, str.current_streak, str.longest_streak, str.total_xp
+             FROM streaks str
+             JOIN users u ON u.id=str.student_id
+             JOIN class_students cs ON cs.student_id=u.id
+             JOIN classes c ON c.id=cs.class_id AND c.school_id=?
+             WHERE u.school_id=? $classWhere AND str.current_streak > 0
+             ORDER BY str.current_streak DESC
+             LIMIT 10",
+            array_merge([$sid, $sid], $classParam)
+        );
+
+        respond(['top_students'=>$top, 'most_improved'=>$improved, 'top_streaks'=>$streaks]);
+    }
+
+    if ($sub === 'gradebook') {
+        require_role($auth, 'teacher', 'admin');
+        $classId = (int)($_GET['class_id']     ?? 0);
+        $subjId  = (int)($_GET['subject_id']   ?? 0);
+        $acYear  = trim($_GET['academic_year'] ?? '');
+        $semNum  = (int)($_GET['semester']     ?? 0);
+        if (!$classId) err('class_id required');
+
+        $cls = DB::fetchOne('SELECT id, name FROM classes WHERE id=? AND school_id=?', [$classId, $sid]);
+        if (!$cls) err('Class not found', 404);
+
+        // Students in class
+        $students = DB::fetchAll(
+            'SELECT u.id, u.first_name, u.last_name, u.avatar_color
+             FROM users u JOIN class_students cs ON cs.student_id=u.id
+             WHERE cs.class_id=? AND u.is_active=1
+             ORDER BY u.last_name, u.first_name',
+            [$classId]
+        );
+
+        // Published tests assigned to this class
+        $subjWhere = $subjId ? 'AND t.subject_id=?' : '';
+        $acWhere   = $acYear  ? 'AND t.academic_year=?' : '';
+        $semWhere  = $semNum  ? 'AND t.semester=?'      : '';
+        $tParams   = array_merge([$classId], $subjId?[$subjId]:[], $acYear?[$acYear]:[], $semNum?[$semNum]:[]);
+
+        $tests = DB::fetchAll(
+            "SELECT t.id, t.title, t.subject_id, t.semester, t.academic_year,
+                    s.short_name AS subject_short, s.name AS subject_name,
+                    (SELECT COUNT(*) FROM test_questions WHERE test_id=t.id) AS question_count
+             FROM tests t
+             JOIN test_assignments ta ON ta.test_id=t.id AND ta.class_id=?
+             LEFT JOIN subjects s ON s.id=t.subject_id
+             WHERE t.status='published' $subjWhere $acWhere $semWhere
+             ORDER BY t.created_at ASC",
+            $tParams
+        );
+
+        if (empty($students) || empty($tests)) {
+            respond(['class'=>$cls,'students'=>$students,'tests'=>$tests,'attempts'=>[],'class_avg'=>[],'student_avg'=>[]]);
+        }
+
+        $stuIds  = array_column($students, 'id');
+        $testIds = array_column($tests,    'id');
+        $stuPh   = implode(',', array_fill(0, count($stuIds),  '?'));
+        $tstPh   = implode(',', array_fill(0, count($testIds), '?'));
+
+        // Best attempt per student per test
+        $attRows = DB::fetchAll(
+            "SELECT a.student_id, a.test_id, a.id AS attempt_id,
+                    ROUND(IF(a.max_score>0,(a.score_auto+a.score_manual)/a.max_score*100,0),1) AS pct_score,
+                    a.status, a.submitted_at
+             FROM attempts a
+             WHERE a.student_id IN ($stuPh) AND a.test_id IN ($tstPh)
+               AND a.status IN ('submitted','marked')
+             ORDER BY a.submitted_at DESC",
+            array_merge($stuIds, $testIds)
+        );
+
+        // Keep only best attempt per (student, test)
+        $best = [];
+        foreach ($attRows as $a) {
+            $k = $a['student_id'] . '_' . $a['test_id'];
+            if (!isset($best[$k]) || (float)$a['pct_score'] > (float)$best[$k]['pct_score']) $best[$k] = $a;
+        }
+
+        // Restructure: student_id → test_id → attempt
+        $attempts = [];
+        foreach ($best as $a) { $attempts[$a['student_id']][$a['test_id']] = $a; }
+
+        // Class average per test
+        $class_avg = [];
+        foreach ($tests as $t) {
+            $scores = [];
+            foreach ($students as $s) { $att = $attempts[$s['id']][$t['id']] ?? null; if ($att) $scores[] = (float)$att['pct_score']; }
+            $class_avg[$t['id']] = $scores ? round(array_sum($scores)/count($scores), 1) : null;
+        }
+
+        // Student average across all tests
+        $student_avg = [];
+        foreach ($students as $s) {
+            $scores = [];
+            foreach ($tests as $t) { $att = $attempts[$s['id']][$t['id']] ?? null; if ($att) $scores[] = (float)$att['pct_score']; }
+            $student_avg[$s['id']] = $scores ? round(array_sum($scores)/count($scores), 1) : null;
+        }
+
+        respond(['class'=>$cls,'students'=>$students,'tests'=>$tests,'attempts'=>$attempts,'class_avg'=>$class_avg,'student_avg'=>$student_avg]);
+    }
+
     if ($sub === 'alerts') {
         $alerts = [];
         if ($role === 'teacher') {
@@ -4035,6 +4233,50 @@ function handleSubjects(string $method, ?int $id, ?string $sub, array $body): vo
         respond(['scores' => $scores, 'topics' => $topics]);
     }
 
+    // ── Subject strand/sub-strand CRUD ────────────────────────────
+    // GET /subjects/{id}/strands
+    if ($method === 'GET' && $id && $sub === 'strands') {
+        ensureSubjectStrandsSchema();
+        $rows = DB::fetchAll(
+            'SELECT id, strand_code, strand_label, sub_strand_code, sub_strand_label, sort_order
+             FROM subject_strands
+             WHERE school_id=? AND subject_id=?
+             ORDER BY sort_order, strand_code, sub_strand_code',
+            [$sid, $id]
+        );
+        respond($rows);
+    }
+
+    // POST /subjects/{id}/strands — add a strand/sub-strand pair
+    if ($method === 'POST' && $id && $sub === 'strands') {
+        require_role($auth, 'admin', 'teacher');
+        ensureSubjectStrandsSchema();
+        $d = need($body, 'strand_code', 'strand_label', 'sub_strand_code', 'sub_strand_label');
+        $newId = DB::insert(
+            'INSERT INTO subject_strands
+               (school_id, subject_id, strand_code, strand_label, sub_strand_code, sub_strand_label, sort_order)
+             VALUES (?,?,?,?,?,?,?)',
+            [
+                $sid, $id,
+                trim($d['strand_code']),    trim($d['strand_label']),
+                trim($d['sub_strand_code']), trim($d['sub_strand_label']),
+                (int)($body['sort_order'] ?? 0),
+            ]
+        );
+        // Invalidate client-side cache hint via response flag
+        respond(['id' => $newId, 'message' => 'Sub-strand added'], 201);
+    }
+
+    // DELETE /subjects/{id}/strands — remove one sub-strand entry by strand_id
+    if ($method === 'DELETE' && $id && $sub === 'strands') {
+        require_role($auth, 'admin', 'teacher');
+        ensureSubjectStrandsSchema();
+        $strandId = (int)($body['strand_id'] ?? $_GET['strand_id'] ?? 0);
+        if (!$strandId) err('strand_id required');
+        DB::execute('DELETE FROM subject_strands WHERE id=? AND school_id=?', [$strandId, $sid]);
+        respond(['deleted' => true]);
+    }
+
     // POST /subjects — admin adds a custom subject
     if ($method === 'POST' && !$id) {
         require_role($auth, 'admin');
@@ -4836,6 +5078,29 @@ function handleMeetings(string $method, array $parts, array $body): void {
     }
 
     err('Not found', 404);
+}
+
+function ensureSubjectStrandsSchema(): void {
+    static $done = false;
+    if ($done) return;
+    try {
+        DB::execute(
+            "CREATE TABLE IF NOT EXISTS subject_strands (
+               id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+               school_id        INT UNSIGNED NOT NULL,
+               subject_id       INT UNSIGNED NOT NULL,
+               strand_code      VARCHAR(50)  NOT NULL,
+               strand_label     VARCHAR(200) NOT NULL,
+               sub_strand_code  VARCHAR(50)  NOT NULL,
+               sub_strand_label VARCHAR(200) NOT NULL,
+               sort_order       TINYINT UNSIGNED DEFAULT 0,
+               KEY idx_ss (school_id, subject_id, sort_order),
+               FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            []
+        );
+        $done = true;
+    } catch (Throwable $e) {}
 }
 
 function ensureSubjectSchema(): void {
