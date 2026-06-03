@@ -857,6 +857,7 @@ input:checked+.switch-slider{background:var(--green);}input:checked+.switch-slid
         <div class="nav-item" onclick="aNav('teachers',this)"><div class="ni-icon">✏️</div>Teachers</div>
         <div class="nav-item" onclick="aNav('students',this)"><div class="ni-icon">🎓</div>All students</div>
         <div class="nav-item" onclick="aNav('settings',this)"><div class="ni-icon">⚙️</div>Settings</div>
+        <div class="nav-item" onclick="aNav('activity-log',this)"><div class="ni-icon">📋</div>Activity log</div>
         <div class="nav-item" onclick="aNav('messages',this)"><div class="ni-icon">✉️</div>Messages<span class="nav-badge" id="a-msg-badge" style="display:none"></span></div>
         <div class="nav-item" onclick="aNav('chat',this)"><div class="ni-icon">💬</div>Group chat</div>
         <div class="nav-item" onclick="aNav('promotion',this)"><div class="ni-icon">🎓</div>Promotions</div>
@@ -1840,11 +1841,13 @@ async function populateSubjectDropdowns(selectedId = null) {
 const _subjStrandsCache = {};   // subjectId → [{strand_code, strand_label, sub_strand_code, sub_strand_label}]
 window._qbStrandMap = {};       // current strand → {label, subs[]} for the open modal
 
+// Fetch full Subject→Strand→Sub-strand→Topic tree for a subject
 async function fetchSubjectStrands(subjectId) {
   if (!subjectId) return [];
   const k = String(subjectId);
   if (_subjStrandsCache[k] !== undefined) return _subjStrandsCache[k];
   try {
+    // Returns [{id, strand_code, strand_label, sub_strands:[{id, sub_strand_label, topics:[]}]}]
     const rows = await GET(`/subjects/${subjectId}/strands`);
     _subjStrandsCache[k] = Array.isArray(rows) ? rows : [];
   } catch(e) { _subjStrandsCache[k] = []; }
@@ -1864,10 +1867,11 @@ async function qbReloadStrandSection(subjectId) {
   const container = document.getElementById('qb-strand-container');
   if (!container) return;
 
+  // strands is now an array of {id, strand_code, strand_label, sub_strands:[{id, sub_strand_label, topics:[]}]}
   const strands = subjectId ? await fetchSubjectStrands(subjectId) : [];
 
   if (!strands.length) {
-    window._qbStrandMap = {};
+    window._qbStrandTree = [];
     container.innerHTML = `
       <div class="grid-2">
         <div class="form-group">
@@ -1880,26 +1884,17 @@ async function qbReloadStrandSection(subjectId) {
         </div>
       </div>
       ${subjectId ? `<div style="font-size:11px;color:var(--text-3);margin-top:2px">
-        No strands configured for this subject yet.
-        <a href="#" onclick="event.preventDefault();aNav('subjects',null)" style="color:var(--green)">Admin → Subjects → Manage strands</a>.
+        No curriculum configured for this subject yet.
+        <a href="#" onclick="event.preventDefault();aNav('subjects',null)" style="color:var(--green)">Admin → Subjects → Strands</a>.
       </div>` : ''}`;
     return;
   }
 
-  // Build strand → sub-strand map
-  window._qbStrandMap = {};
-  strands.forEach(s => {
-    if (!window._qbStrandMap[s.strand_code]) {
-      window._qbStrandMap[s.strand_code] = { label: s.strand_label, subs: [] };
-    }
-    window._qbStrandMap[s.strand_code].subs.push({ code: s.sub_strand_code, label: s.sub_strand_label });
-  });
-
-  const strandOpts = Object.entries(window._qbStrandMap)
-    .map(([code, s]) => `<option value="${code}">${s.label}</option>`).join('');
+  window._qbStrandTree = strands;
+  const strandOpts = strands.map(s => `<option value="${s.id}">${s.strand_code ? s.strand_code+' — ' : ''}${s.strand_label}</option>`).join('');
 
   container.innerHTML = `
-    <div class="grid-2">
+    <div class="grid-3">
       <div class="form-group">
         <label class="form-label">Strand</label>
         <select class="form-select" id="qb-strand-sel" onchange="qbUpdateSubSel(this.value)">
@@ -1909,66 +1904,109 @@ async function qbReloadStrandSection(subjectId) {
       </div>
       <div class="form-group">
         <label class="form-label">Sub-strand</label>
-        <select class="form-select" id="qb-substrand-sel">
+        <select class="form-select" id="qb-substrand-sel" onchange="qbUpdateTopicSel(this.value)">
           <option value="">— select strand first —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Topic <span style="font-size:11px;color:var(--text-3)">(optional)</span></label>
+        <select class="form-select" id="qb-topic-sel">
+          <option value="">— select sub-strand first —</option>
         </select>
       </div>
     </div>`;
 }
 
-function qbUpdateSubSel(strandCode) {
-  const subEl = document.getElementById('qb-substrand-sel');
+// Called when strand select changes — populate sub-strand dropdown
+function qbUpdateSubSel(strandId) {
+  const subEl   = document.getElementById('qb-substrand-sel');
+  const topicEl = document.getElementById('qb-topic-sel');
   if (!subEl) return;
-  const subs = (window._qbStrandMap||{})[strandCode]?.subs || [];
-  subEl.innerHTML = `<option value="">All sub-strands</option>` +
-    subs.map(s => `<option value="${s.code}">${s.label}</option>`).join('');
+  const strand = (window._qbStrandTree||[]).find(s=>String(s.id)===String(strandId));
+  const subs   = strand?.sub_strands || [];
+  subEl.innerHTML = `<option value="">— Select sub-strand —</option>` +
+    subs.map(s=>`<option value="${s.id}">${s.sub_strand_code?s.sub_strand_code+' — ':''}${s.sub_strand_label}</option>`).join('');
+  if (topicEl) topicEl.innerHTML = '<option value="">— select sub-strand first —</option>';
 }
 
-// Read the active sub_strand value from whichever UI is shown
-function qbGetSubStrand() {
-  // Structured select (DB strands configured)
-  const subSel = document.getElementById('qb-substrand-sel');
-  if (subSel) {
-    const strandSel = document.getElementById('qb-strand-sel');
-    // Use substrand code if picked; otherwise fall back to strand code
-    return subSel.value || strandSel?.value || '';
+// Called when sub-strand changes — populate topic dropdown
+function qbUpdateTopicSel(subStrandId) {
+  const topicEl = document.getElementById('qb-topic-sel');
+  if (!topicEl) return;
+  let topics = [];
+  for (const strand of (window._qbStrandTree||[])) {
+    const ss = (strand.sub_strands||[]).find(s=>String(s.id)===String(subStrandId));
+    if (ss) { topics = ss.topics || []; break; }
   }
-  // Free-text inputs
-  const freeStrand = (document.getElementById('qb-strand-free')?.value || '').trim();
-  const freeSub    = (document.getElementById('qb-substrand-free')?.value || '').trim();
-  if (freeSub && freeStrand) return `${freeStrand} / ${freeSub}`;
-  return freeSub || freeStrand || 'General';
+  topicEl.innerHTML = `<option value="">No specific topic</option>` +
+    topics.map(t=>`<option value="${t.id}">${t.topic_code?t.topic_code+' — ':''}${t.topic_label}</option>`).join('');
 }
 
-// Restore strand values when editing an existing question
-function qbSetStrandValues(savedSubStrand) {
-  if (!savedSubStrand) return;
-  // Try structured select
-  const subSel = document.getElementById('qb-substrand-sel');
-  if (subSel) {
-    // Look for the saved code in all strand options
-    const strandSel = document.getElementById('qb-strand-sel');
-    // Find which strand this sub-strand belongs to
-    for (const [strandCode, strandData] of Object.entries(window._qbStrandMap||{})) {
-      const found = strandData.subs.find(s => s.code === savedSubStrand);
-      if (found) {
-        if (strandSel) { strandSel.value = strandCode; qbUpdateSubSel(strandCode); }
-        setTimeout(() => { const s2=document.getElementById('qb-substrand-sel'); if(s2) s2.value=savedSubStrand; }, 50);
-        return;
+// Return {strand_id, sub_strand_id, topic_id, sub_strand_text} from active UI
+function qbGetCurriculumIds() {
+  const strandId    = parseInt(document.getElementById('qb-strand-sel')?.value||'') || null;
+  const subStrandId = parseInt(document.getElementById('qb-substrand-sel')?.value||'') || null;
+  const topicId     = parseInt(document.getElementById('qb-topic-sel')?.value||'') || null;
+
+  // Legacy sub_strand text
+  let subText = '';
+  if (subStrandId) {
+    for (const strand of (window._qbStrandTree||[])) {
+      const ss = (strand.sub_strands||[]).find(s=>s.id===subStrandId);
+      if (ss) { subText = ss.sub_strand_label; break; }
+    }
+  }
+
+  // Free-text fallback
+  const freeStrand = (document.getElementById('qb-strand-free')?.value||'').trim();
+  const freeSub    = (document.getElementById('qb-substrand-free')?.value||'').trim();
+  if (!subText) subText = freeSub && freeStrand ? `${freeStrand} / ${freeSub}` : (freeSub || freeStrand || 'General');
+
+  return { strand_id: strandId, sub_strand_id: subStrandId, topic_id: topicId, sub_strand: subText };
+}
+
+// Read the active sub_strand text (for legacy compat)
+function qbGetSubStrand() {
+  return qbGetCurriculumIds().sub_strand;
+}
+
+// Restore strand/sub-strand/topic values when editing an existing question
+function qbSetStrandValues(savedSubStrand, strandId, subStrandId, topicId) {
+  const strandSel = document.getElementById('qb-strand-sel');
+  if (strandSel) {
+    // Use FK IDs if available
+    if (strandId) {
+      strandSel.value = strandId;
+      qbUpdateSubSel(strandId);
+      setTimeout(() => {
+        const ss = document.getElementById('qb-substrand-sel');
+        if (ss && subStrandId) { ss.value = subStrandId; qbUpdateTopicSel(subStrandId); }
+        setTimeout(() => {
+          const t = document.getElementById('qb-topic-sel');
+          if (t && topicId) t.value = topicId;
+        }, 60);
+      }, 60);
+    } else if (savedSubStrand) {
+      // Fall back: try to match sub_strand text in tree
+      for (const strand of (window._qbStrandTree||[])) {
+        const ss = (strand.sub_strands||[]).find(s => s.sub_strand_label === savedSubStrand || s.sub_strand_code === savedSubStrand);
+        if (ss) {
+          strandSel.value = strand.id; qbUpdateSubSel(strand.id);
+          setTimeout(() => { const el=document.getElementById('qb-substrand-sel'); if(el) el.value=ss.id; }, 60);
+          return;
+        }
       }
     }
     return;
   }
-  // Free-text: parse "Strand / Sub-strand" or just put it all in substrand
-  const parts = savedSubStrand.split(' / ');
+  // Free-text fallback
+  const parts = (savedSubStrand||'').split(' / ');
   const freeStrand = document.getElementById('qb-strand-free');
   const freeSub    = document.getElementById('qb-substrand-free');
   if (parts.length >= 2) {
     if (freeStrand) freeStrand.value = parts.slice(0,-1).join(' / ');
     if (freeSub)    freeSub.value    = parts[parts.length-1];
-  } else {
-    if (freeSub) freeSub.value = savedSubStrand;
-  }
+  } else if (freeSub) freeSub.value = savedSubStrand || '';
 }
 
 async function loadQBCache(force = false) {
@@ -6084,6 +6122,7 @@ function aRender(v){
   else if(v==='leaderboard')   loadLeaderboard(m);
   else if(v==='report-cards')  loadAReportCards(m);
   else if(v==='at-risk')       loadAAtRisk(m);
+  else if(v==='activity-log')  loadAActivityLog(m);
 }
 
 // ── Admin Question Bank ────────────────────────────────────────
@@ -7785,105 +7824,277 @@ async function aDeleteSubject(id, name) {
   } catch(e) { notify(e.message, 'error'); }
 }
 
-// ── Subject strand management modal ───────────────────────────
+// ══════════════════════════════════════════════════════════════
+// CURRICULUM MANAGEMENT MODAL
+// Full CRUD — Subject → Strands → Sub-strands → Topics
+// No prompt() dialogs — all inline forms
+// ══════════════════════════════════════════════════════════════
 async function openSubjectStrandsModal(subjectId, subjectName) {
-  adminModal(
-    `📚 ${subjectName} — Strands & Sub-strands`,
-    '<div style="padding:20px;text-align:center;color:var(--text-3)">Loading…</div>',
-    null, 'Close'
-  );
-  document.getElementById('adm-modal-save').style.display = 'none';
+  adminModal(`📚 ${subjectName} — Curriculum`, panelLoader(), null, 'Close');
+  const modal = document.getElementById('adm-modal');
+  if (modal) {
+    const inner = modal.querySelector('.modal');
+    if (inner) Object.assign(inner.style, {maxWidth:'780px', maxHeight:'90vh', display:'flex', flexDirection:'column'});
+    const mbody = modal.querySelector('.modal-body');
+    if (mbody) mbody.style.overflow = 'auto';
+  }
+  document.getElementById('adm-modal-save').onclick = () => modal?.remove();
+  clearSubjectStrandsCache(subjectId);
+  await _renderCurrTree(subjectId, subjectName);
+}
 
-  const renderStrandsModal = async () => {
-    const rows = await fetchSubjectStrands(subjectId);
-    clearSubjectStrandsCache(subjectId); // force re-fetch on next use
+// ── Tree renderer ─────────────────────────────────────────────
+async function _renderCurrTree(subjectId, subjectName) {
+  const body = document.getElementById('adm-modal-body');
+  if (!body) return;
+  body.innerHTML = panelLoader();
+  clearSubjectStrandsCache(subjectId);
+  const strands = await fetchSubjectStrands(subjectId);
 
-    // Group by strand for display
-    const strandGroups = {};
-    rows.forEach(r => {
-      if (!strandGroups[r.strand_code]) strandGroups[r.strand_code] = { label: r.strand_label, subs: [] };
-      strandGroups[r.strand_code].subs.push(r);
-    });
+  const e = s => (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;');
 
-    const strandTable = rows.length ? `
-      <table class="data-table" style="margin-bottom:16px">
-        <thead><tr><th>Strand</th><th>Sub-strand code</th><th>Sub-strand label</th><th></th></tr></thead>
-        <tbody>
-          ${Object.entries(strandGroups).map(([sCode, sData]) =>
-            sData.subs.map((sub, i) => `<tr>
-              <td>${i===0?`<b>${sData.label}</b><div style="font-size:10px;color:var(--text-3)">${sCode}</div>`:''}</td>
-              <td><code style="font-size:11px">${sub.sub_strand_code}</code></td>
-              <td>${sub.sub_strand_label}</td>
-              <td><button class="btn btn-ghost btn-sm" style="color:var(--coral);padding:2px 6px" onclick="deleteSubjectStrand(${subjectId},'${subjectName.replace(/'/g,"\\'")}',${sub.id})">×</button></td>
-            </tr>`).join('')
-          ).join('')}
-        </tbody>
-      </table>` : `<div class="info-box blue" style="margin-bottom:16px;font-size:13px">
-        No strands configured yet. Add your first strand below.<br>
-        <span style="color:var(--text-3)">Example — ICT: Strand code <code>S1</code>, label <code>Strand 1 — ICTs in Society</code>, sub-strand code <code>S1/SS1</code>, label <code>Productivity Tools</code>.</span>
-      </div>`;
-
-    const body = document.getElementById('adm-modal-body');
-    if (!body) return;
-    body.innerHTML = `
-      ${strandTable}
-      <div style="font-size:13px;font-weight:700;margin-bottom:10px">Add new sub-strand</div>
-      <div class="grid-2" style="margin-bottom:8px">
-        <div class="form-group">
-          <label class="form-label">Strand code <span style="font-size:10px;color:var(--text-3)">(e.g. S1 or Strand1)</span></label>
-          <input class="form-input" id="ss-strand-code" placeholder="e.g. S1">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Strand label</label>
-          <input class="form-input" id="ss-strand-label" placeholder="e.g. Strand 1 — ICTs in Society">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Sub-strand code <span style="font-size:10px;color:var(--text-3)">(e.g. S1/SS1)</span></label>
-          <input class="form-input" id="ss-sub-code" placeholder="e.g. S1/SS1">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Sub-strand label</label>
-          <input class="form-input" id="ss-sub-label" placeholder="e.g. Productivity Tools">
+  // ── Topic row ──────────────────────────────────────────────
+  const topicRow = (t, ssId) => `
+    <div id="curr-topic-${t.id}" style="padding:4px 0;border-bottom:1px dashed var(--border)">
+      <!-- View mode -->
+      <div id="curr-topic-view-${t.id}" style="display:flex;align-items:center;gap:6px">
+        <span style="color:var(--amber)">🔸</span>
+        <span style="font-size:12px;flex:1">${e(t.topic_label)}</span>
+        ${t.topic_code?`<code style="font-size:9px;color:var(--text-3)">${e(t.topic_code)}</code>`:''}
+        <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="_currToggleEdit('topic',${t.id})">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--coral)" onclick="_currDelete('topic',${t.id},${subjectId},'${e(subjectName)}')">Delete</button>
+      </div>
+      <!-- Edit mode -->
+      <div id="curr-topic-edit-${t.id}" style="display:none;padding:6px 0">
+        <div style="display:flex;gap:6px;align-items:center">
+          <input class="form-input" id="curr-t-code-${t.id}" value="${e(t.topic_code||'')}" placeholder="Code (opt.)" style="width:90px;font-size:12px">
+          <input class="form-input" id="curr-t-label-${t.id}" value="${e(t.topic_label)}" placeholder="Topic label *" style="flex:1;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="_currSave('topic',${t.id},${subjectId},'${e(subjectName)}')">Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="_currToggleEdit('topic',${t.id})">Cancel</button>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="addSubjectStrand(${subjectId},'${subjectName.replace(/'/g,"\\'")}')">Add sub-strand →</button>`;
-  };
+    </div>`;
 
-  await renderStrandsModal();
+  // ── Sub-strand block ───────────────────────────────────────
+  const subStrandBlock = (ss, stId) => `
+    <div id="curr-sub-${ss.id}" style="border-left:3px solid var(--green);margin:6px 0 6px 16px;padding:0 0 0 10px">
+      <!-- View mode -->
+      <div id="curr-sub-view-${ss.id}" style="display:flex;align-items:center;gap:6px;padding:5px 0">
+        <div style="flex:1">
+          <span style="font-size:12px;font-weight:700">${e(ss.sub_strand_label)}</span>
+          ${ss.sub_strand_code?`<code style="font-size:10px;color:var(--text-3);margin-left:5px">${e(ss.sub_strand_code)}</code>`:''}
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--green)" onclick="_currShowAddForm('curr-add-topic-${ss.id}','curr-new-t-label-${ss.id}')">+ Topic</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="_currToggleEdit('sub',${ss.id})">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--coral)" onclick="_currDelete('sub',${ss.id},${subjectId},'${e(subjectName)}')">Delete</button>
+      </div>
+      <!-- Edit mode -->
+      <div id="curr-sub-edit-${ss.id}" style="display:none;padding:6px 0 8px">
+        <div style="display:flex;gap:6px">
+          <input class="form-input" id="curr-ss-code-${ss.id}" value="${e(ss.sub_strand_code||'')}" placeholder="Code (opt.)" style="width:90px;font-size:12px">
+          <input class="form-input" id="curr-ss-label-${ss.id}" value="${e(ss.sub_strand_label)}" placeholder="Sub-strand label *" style="flex:1;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="_currSave('sub',${ss.id},${subjectId},'${e(subjectName)}')">Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="_currToggleEdit('sub',${ss.id})">Cancel</button>
+        </div>
+      </div>
+      <!-- Topics -->
+      <div id="curr-topics-${ss.id}" style="padding-left:4px">
+        ${(ss.topics||[]).map(t=>topicRow(t,ss.id)).join('')}
+        ${!(ss.topics||[]).length?`<div style="font-size:11px;color:var(--text-3);padding:4px 0">No topics yet — click + Topic to add.</div>`:''}
+      </div>
+      <!-- Add topic inline form (hidden) -->
+      <div id="curr-add-topic-${ss.id}" style="display:none;padding:6px 0;border-top:1px dashed var(--border)">
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="color:var(--amber);font-size:12px">🔸</span>
+          <input class="form-input" id="curr-new-t-code-${ss.id}" placeholder="Code (opt.)" style="width:90px;font-size:12px">
+          <input class="form-input" id="curr-new-t-label-${ss.id}" placeholder="Topic label *" style="flex:1;font-size:12px">
+          <button class="btn btn-primary btn-sm" onclick="_currAdd('topic',${ss.id},${subjectId},'${e(subjectName)}')">Add</button>
+          <button class="btn btn-ghost btn-sm" onclick="_currHideForm('curr-add-topic-${ss.id}')">✕</button>
+        </div>
+      </div>
+    </div>`;
 
-  window._renderStrandsModal = renderStrandsModal;
+  // ── Strand card ────────────────────────────────────────────
+  const strandCard = st => `
+    <div id="curr-strand-${st.id}" style="border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden">
+      <!-- View header -->
+      <div id="curr-strand-view-${st.id}" style="background:var(--bg);padding:10px 14px;display:flex;align-items:center;gap:8px">
+        <div style="flex:1">
+          <span style="font-size:14px;font-weight:800">${e(st.strand_label)}</span>
+          ${st.strand_code?`<code style="font-size:10px;color:var(--text-3);margin-left:6px;font-weight:400">${e(st.strand_code)}</code>`:''}
+          ${st.description?`<div style="font-size:11px;color:var(--text-3);margin-top:2px">${e(st.description)}</div>`:''}
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--green)" onclick="_currShowAddForm('curr-add-sub-${st.id}','curr-new-sub-label-${st.id}')">+ Sub-strand</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_currToggleEdit('strand',${st.id})">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--coral)" onclick="_currDelete('strand',${st.id},${subjectId},'${e(subjectName)}')">Delete</button>
+      </div>
+      <!-- Edit header form -->
+      <div id="curr-strand-edit-${st.id}" style="display:none;padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--border)">
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <input class="form-input" id="curr-st-code-${st.id}" value="${e(st.strand_code||'')}" placeholder="Code (e.g. S1)" style="width:110px">
+          <input class="form-input" id="curr-st-label-${st.id}" value="${e(st.strand_label)}" placeholder="Strand label *" style="flex:1">
+        </div>
+        <input class="form-input" id="curr-st-desc-${st.id}" value="${e(st.description||'')}" placeholder="Description (optional)" style="width:100%;margin-bottom:8px">
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-primary btn-sm" onclick="_currSave('strand',${st.id},${subjectId},'${e(subjectName)}')">Save changes</button>
+          <button class="btn btn-ghost btn-sm" onclick="_currToggleEdit('strand',${st.id})">Cancel</button>
+        </div>
+      </div>
+      <!-- Sub-strands body -->
+      <div id="curr-subs-${st.id}" style="padding:4px 14px 8px">
+        ${(st.sub_strands||[]).map(ss=>subStrandBlock(ss,st.id)).join('')}
+        ${!(st.sub_strands||[]).length?`<div style="font-size:12px;color:var(--text-3);padding:10px 0">No sub-strands yet — click + Sub-strand to add one.</div>`:''}
+      </div>
+      <!-- Add sub-strand inline form (hidden) -->
+      <div id="curr-add-sub-${st.id}" style="display:none;padding:8px 14px;border-top:1px dashed var(--border);background:var(--bg)">
+        <div style="font-size:11px;font-weight:600;color:var(--text-3);margin-bottom:5px">New sub-strand in "${e(st.strand_label)}"</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input class="form-input" id="curr-new-sub-code-${st.id}" placeholder="Code (opt.)" style="width:100px">
+          <input class="form-input" id="curr-new-sub-label-${st.id}" placeholder="Sub-strand label *" style="flex:1">
+          <button class="btn btn-primary btn-sm" onclick="_currAdd('sub',${st.id},${subjectId},'${e(subjectName)}')">Add</button>
+          <button class="btn btn-ghost btn-sm" onclick="_currHideForm('curr-add-sub-${st.id}')">✕</button>
+        </div>
+      </div>
+    </div>`;
+
+  body.innerHTML = `
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">
+      Manage the curriculum for <b>${e(subjectName)}</b>.
+      Strands → Sub-strands → Topics form a 3-level hierarchy that structures questions in the bank.
+    </div>
+    <div id="curr-tree" style="flex:1;overflow-y:auto;min-height:100px">
+      ${strands.length ? strands.map(strandCard).join('') : `
+        <div class="info-box blue" style="font-size:13px">
+          No strands yet. Add your first strand below.<br>
+          <span style="color:var(--text-3);font-size:11px;line-height:2">
+            Example hierarchy:<br>
+            📚 <b>Strand:</b> Computer Systems &nbsp;→&nbsp;
+            📋 <b>Sub-strand:</b> Hardware Components &nbsp;→&nbsp;
+            🔸 <b>Topic:</b> CPU Architecture
+          </span>
+        </div>`}
+    </div>
+    <!-- Add new strand form -->
+    <div style="border-top:2px solid var(--border);padding-top:14px;margin-top:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+        <span>+ Add new strand</span>
+        <span style="font-size:10px;font-weight:400;color:var(--text-3)">(top-level grouping for this subject)</span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input class="form-input" id="curr-new-strand-code" placeholder="Code (e.g. S1 — optional)" style="width:160px">
+        <input class="form-input" id="curr-new-strand-label" placeholder="Strand label (e.g. Computer Systems) *" style="flex:1">
+        <button class="btn btn-primary" onclick="_currAdd('strand',${subjectId},${subjectId},'${e(subjectName)}')">+ Add strand</button>
+      </div>
+    </div>`;
 }
 
-async function addSubjectStrand(subjectId, subjectName) {
-  const strandCode  = (document.getElementById('ss-strand-code')?.value||'').trim();
-  const strandLabel = (document.getElementById('ss-strand-label')?.value||'').trim();
-  const subCode     = (document.getElementById('ss-sub-code')?.value||'').trim();
-  const subLabel    = (document.getElementById('ss-sub-label')?.value||'').trim();
-  if (!strandCode||!strandLabel||!subCode||!subLabel) {
-    notify('Fill in all 4 fields', 'error'); return;
+// ── Generic helpers ───────────────────────────────────────────
+function _currShowAddForm(formId, focusId) {
+  const form = document.getElementById(formId);
+  if (form) { form.style.display = ''; const f = document.getElementById(focusId); if (f) setTimeout(()=>f.focus(),50); }
+}
+function _currHideForm(formId) {
+  const form = document.getElementById(formId);
+  if (form) form.style.display = 'none';
+}
+
+function _currToggleEdit(type, id) {
+  const view = document.getElementById(`curr-${type}-view-${id}`);
+  const edit = document.getElementById(`curr-${type}-edit-${id}`);
+  if (!view || !edit) return;
+  const showing = edit.style.display !== 'none';
+  view.style.display = showing ? '' : 'none';
+  edit.style.display = showing ? 'none' : '';
+  if (!showing) {
+    // Focus first input in edit form
+    const inp = edit.querySelector('input');
+    if (inp) setTimeout(() => inp.focus(), 30);
+  }
+}
+
+// ── Add (create) ──────────────────────────────────────────────
+async function _currAdd(type, parentId, subjectId, subjectName) {
+  let endpoint, payload;
+  if (type === 'strand') {
+    const code  = (document.getElementById('curr-new-strand-code')?.value||'').trim();
+    const label = (document.getElementById('curr-new-strand-label')?.value||'').trim();
+    if (!label) { notify('Strand label is required','error'); return; }
+    endpoint = `/subjects/${parentId}/strands`;
+    payload  = { strand_code: code, strand_label: label };
+  } else if (type === 'sub') {
+    const code  = (document.getElementById(`curr-new-sub-code-${parentId}`)?.value||'').trim();
+    const label = (document.getElementById(`curr-new-sub-label-${parentId}`)?.value||'').trim();
+    if (!label) { notify('Sub-strand label is required','error'); return; }
+    endpoint = `/strands/${parentId}/sub-strands`;
+    payload  = { sub_strand_code: code, sub_strand_label: label };
+  } else if (type === 'topic') {
+    const code  = (document.getElementById(`curr-new-t-code-${parentId}`)?.value||'').trim();
+    const label = (document.getElementById(`curr-new-t-label-${parentId}`)?.value||'').trim();
+    if (!label) { notify('Topic label is required','error'); return; }
+    endpoint = `/sub-strands/${parentId}/topics`;
+    payload  = { topic_code: code, topic_label: label };
   }
   try {
-    await POST(`/subjects/${subjectId}/strands`, {
-      strand_code: strandCode, strand_label: strandLabel,
-      sub_strand_code: subCode, sub_strand_label: subLabel,
-    });
+    await POST(endpoint, payload);
     clearSubjectStrandsCache(subjectId);
-    notify('Sub-strand added', 'success');
-    if (window._renderStrandsModal) await window._renderStrandsModal();
-  } catch(e) { notify(e.message, 'error'); }
+    const labelMap = {strand:'Strand',sub:'Sub-strand',topic:'Topic'};
+    notify(`${labelMap[type]} added`, 'success');
+    await _renderCurrTree(subjectId, subjectName);
+  } catch(e) { notify(e.message,'error'); }
 }
 
-async function deleteSubjectStrand(subjectId, subjectName, strandRowId) {
+// ── Save (update) ─────────────────────────────────────────────
+async function _currSave(type, id, subjectId, subjectName) {
+  let endpoint, payload;
+  if (type === 'strand') {
+    const code  = (document.getElementById(`curr-st-code-${id}`)?.value||'').trim();
+    const label = (document.getElementById(`curr-st-label-${id}`)?.value||'').trim();
+    const desc  = (document.getElementById(`curr-st-desc-${id}`)?.value||'').trim();
+    if (!label) { notify('Strand label is required','error'); return; }
+    endpoint = `/strands/${id}`;
+    payload  = { strand_code: code, strand_label: label, description: desc };
+  } else if (type === 'sub') {
+    const code  = (document.getElementById(`curr-ss-code-${id}`)?.value||'').trim();
+    const label = (document.getElementById(`curr-ss-label-${id}`)?.value||'').trim();
+    if (!label) { notify('Sub-strand label is required','error'); return; }
+    endpoint = `/sub-strands/${id}`;
+    payload  = { sub_strand_code: code, sub_strand_label: label };
+  } else if (type === 'topic') {
+    const code  = (document.getElementById(`curr-t-code-${id}`)?.value||'').trim();
+    const label = (document.getElementById(`curr-t-label-${id}`)?.value||'').trim();
+    if (!label) { notify('Topic label is required','error'); return; }
+    endpoint = `/topics/${id}`;
+    payload  = { topic_code: code, topic_label: label };
+  }
   try {
-    await fetch(`${API_BASE}/subjects/${subjectId}/strands?strand_id=${strandRowId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + AUTH_TOKEN, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ strand_id: strandRowId }),
+    await fetch(`${API_BASE}${endpoint}`, {
+      method: 'PUT',
+      headers: { 'Authorization':'Bearer '+AUTH_TOKEN, 'Content-Type':'application/json' },
+      body: JSON.stringify(payload)
     });
     clearSubjectStrandsCache(subjectId);
-    notify('Sub-strand removed', 'success');
-    if (window._renderStrandsModal) await window._renderStrandsModal();
-  } catch(e) { notify(e.message, 'error'); }
+    const labelMap = {strand:'Strand',sub:'Sub-strand',topic:'Topic'};
+    notify(`${labelMap[type]} updated`, 'success');
+    await _renderCurrTree(subjectId, subjectName);
+  } catch(e) { notify(e.message,'error'); }
+}
+
+// ── Delete ────────────────────────────────────────────────────
+async function _currDelete(type, id, subjectId, subjectName) {
+  const msgs = {
+    strand: 'Delete this strand? All its sub-strands and topics will also be deleted.',
+    sub:    'Delete this sub-strand? All its topics will also be deleted.',
+    topic:  'Delete this topic?'
+  };
+  if (!confirm(msgs[type]||'Delete?')) return;
+  const endpoints = { strand:`/strands/${id}`, sub:`/sub-strands/${id}`, topic:`/topics/${id}` };
+  try {
+    await fetch(`${API_BASE}${endpoints[type]}`, { method:'DELETE', headers:{'Authorization':'Bearer '+AUTH_TOKEN} });
+    clearSubjectStrandsCache(subjectId);
+    const labelMap = {strand:'Strand',sub:'Sub-strand',topic:'Topic'};
+    notify(`${labelMap[type]} deleted`, 'success');
+    await _renderCurrTree(subjectId, subjectName);
+  } catch(e) { notify(e.message,'error'); }
 }
 
 // ── Class subjects management ──────────────────────────────────
@@ -10572,9 +10783,8 @@ async function editQuestion(qid) {
     if (title) title.textContent = 'Edit question #' + qid;
     openModal('qbuilder-modal');
     populateSubjectDropdowns(q.subject_id || null);
-    // Reload strand section for this subject, then restore saved strand values
     qbReloadStrandSection(q.subject_id || null).then(() => {
-      qbSetStrandValues(q.sub_strand || '');
+      qbSetStrandValues(q.sub_strand || '', q.strand_id || null, q.sub_strand_id || null, q.topic_id || null);
     });
   } catch(e) {
     notify('Could not load question: ' + e.message, 'error');
@@ -10679,17 +10889,23 @@ async function saveQuestion(){
     // Store accepted answers as options (each marked correct)
     opts = lines.map((ans,i) => ({ label: String.fromCharCode(65+i), text: ans, correct: 1 }));
   }
-  const sub     = qbGetSubStrand();
-  const rawDiff = document.getElementById('qb-diff')?.value || 'Medium';
-  const diff    = rawDiff.split(' ')[0];
-  const year    = parseInt(document.getElementById('qb-year')?.value || '') || null;
-  const marks   = Math.max(1, parseInt(document.getElementById('qb-marks')?.value || '1'));
-  const exp     = document.getElementById('qb-explanation')?.value?.trim() || null;
-  const bloomMap  = { Easy:'Remember', Medium:'Apply', Hard:'Analyse' };
+  const currIds  = qbGetCurriculumIds();
+  const rawDiff  = document.getElementById('qb-diff')?.value || 'Medium';
+  const diff     = rawDiff.split(' ')[0];
+  const year     = parseInt(document.getElementById('qb-year')?.value || '') || null;
+  const marks    = Math.max(1, parseInt(document.getElementById('qb-marks')?.value || '1'));
+  const exp      = document.getElementById('qb-explanation')?.value?.trim() || null;
+  const bloomMap = { Easy:'Remember', Medium:'Apply', Hard:'Analyse' };
   const subjectId = parseInt(document.getElementById('qb-subject')?.value || '0') || null;
   const payload = {
-    type: currentQType, sub_strand: sub, topic: sub, year_group: year,
-    bloom_level: bloomMap[diff]||'Remember',
+    type: currentQType,
+    sub_strand:    currIds.sub_strand,
+    topic:         currIds.sub_strand,
+    strand_id:     currIds.strand_id,
+    sub_strand_id: currIds.sub_strand_id,
+    topic_id:      currIds.topic_id,
+    year_group:    year,
+    bloom_level:   bloomMap[diff]||'Remember',
     difficulty: diff, marks, question_text: text,
     explanation: exp, rubric, options: opts,
     subject_id: subjectId
@@ -14653,20 +14869,16 @@ async function bankLoadStrands() {
   if (!subjectId) {
     strandEl.innerHTML = '<option value="">All strands</option>';
     subEl.innerHTML    = '<option value="">All sub-strands</option>';
-    window._bankStrandMap = {};
+    window._bankStrandTree = [];
     return;
   }
 
+  // strands now returns tree: [{id, strand_label, sub_strands:[{id, sub_strand_label}]}]
   const strands = await fetchSubjectStrands(subjectId);
-  window._bankStrandMap = {};
-  strands.forEach(s => {
-    if (!window._bankStrandMap[s.strand_code])
-      window._bankStrandMap[s.strand_code] = { label: s.strand_label, subs: [] };
-    window._bankStrandMap[s.strand_code].subs.push({ code: s.sub_strand_code, label: s.sub_strand_label });
-  });
+  window._bankStrandTree = strands;
 
   strandEl.innerHTML = '<option value="">All strands</option>' +
-    Object.entries(window._bankStrandMap).map(([code,s])=>`<option value="${code}">${s.label}</option>`).join('');
+    strands.map(s=>`<option value="${s.id}">${s.strand_label}</option>`).join('');
   subEl.innerHTML = '<option value="">All sub-strands</option>';
 }
 
@@ -14684,19 +14896,14 @@ async function aiLoadStrands() {
   }
 
   const strands = await fetchSubjectStrands(subjectId);
-  const aiMap = {};
-  strands.forEach(s => {
-    if (!aiMap[s.strand_code]) aiMap[s.strand_code] = { label: s.strand_label, subs: [] };
-    aiMap[s.strand_code].subs.push({ code: s.sub_strand_code, label: s.sub_strand_label });
-  });
-
   strandEl.innerHTML = '<option value="">All strands</option>' +
-    Object.entries(aiMap).map(([code,s])=>`<option value="${code}">${s.label}</option>`).join('');
+    strands.map(s=>`<option value="${s.id}">${s.strand_label}</option>`).join('');
   subEl.innerHTML = '<option value="">All sub-strands</option>';
   strandEl.onchange = () => {
-    const subs = aiMap[strandEl.value]?.subs || [];
+    const strand = strands.find(s=>String(s.id)===String(strandEl.value));
+    const subs   = strand?.sub_strands || [];
     subEl.innerHTML = '<option value="">All sub-strands</option>' +
-      subs.map(s=>`<option value="${s.code}">${s.label}</option>`).join('');
+      subs.map(s=>`<option value="${s.sub_strand_label}">${s.sub_strand_label}</option>`).join('');
   };
 }
 
@@ -14709,9 +14916,11 @@ function bankStrandChange() {
   const strandEl = document.getElementById('bank-strand');
   const subEl    = document.getElementById('bank-sub');
   if (!subEl) return;
-  const subs = (window._bankStrandMap||{})[strandEl?.value||'']?.subs || [];
+  const strandId = strandEl?.value || '';
+  const strand   = (window._bankStrandTree||[]).find(s=>String(s.id)===String(strandId));
+  const subs     = strand?.sub_strands || [];
   subEl.innerHTML = '<option value="">All sub-strands</option>' +
-    subs.map(s=>`<option value="${s.code}">${s.label}</option>`).join('');
+    subs.map(s=>`<option value="${s.sub_strand_label}">${s.sub_strand_label}</option>`).join('');
   bankFilter.sub = 'all';
   loadBankQuestions();
 }
@@ -17640,6 +17849,244 @@ async function generateReportCards() {
     </div>
     <style>@media print{.topbar,.page>div:first-child,.btn,#offline-bar,#sync-badge,#pwa-install-bar{display:none!important}.report-card-print{page-break-after:always;border:2px solid #1A7A4A!important}}</style>
     ${cardHTML}`;
+}
+
+// ════════════════════════════════════════════════════════════
+// ACTIVITY LOG — Admin view
+// ════════════════════════════════════════════════════════════
+let _logFilter = { action:'', search:'', from:'', to:'', offset:0, limit:100 };
+
+async function loadAActivityLog(m) {
+  m.innerHTML = panelLoader();
+  let res = null;
+  try { res = await GET('/activity-log', { limit:100 }); } catch(e) {
+    m.innerHTML = `<div class="page"><div class="info-box coral"><b>Error:</b> ${e.message}</div></div>`; return;
+  }
+  _logFilter = { action:'', search:'', from:'', to:'', offset:0, limit:100 };
+  window._activityLogRes = res;
+  renderActivityLogPage(m, res);
+}
+
+function renderActivityLogPage(m, res) {
+  const logs       = res?.logs || [];
+  const total      = res?.total || 0;
+  const summary    = res?.summary || [];
+  const activeToday= res?.active_today || 0;
+
+  // Action colour + icon map
+  const ACTION_META = {
+    'auth':       { col:'var(--blue)',   icon:'🔑', label:'Login / Auth' },
+    'test':       { col:'var(--green)',  icon:'📋', label:'Tests' },
+    'question':   { col:'var(--purple)', icon:'❓', label:'Questions' },
+    'attempt':    { col:'var(--teal,var(--green))',   icon:'✍️', label:'Attempts' },
+    'user':       { col:'var(--blue)',   icon:'👤', label:'Users' },
+    'class':      { col:'var(--amber)',  icon:'🗂️', label:'Classes' },
+    'settings':   { col:'var(--text-3)', icon:'⚙️', label:'Settings' },
+    'strand':     { col:'var(--green)',  icon:'📚', label:'Strands' },
+    'sub_strand': { col:'var(--green)',  icon:'📋', label:'Sub-strands' },
+    'topic':      { col:'var(--green)',  icon:'🔸', label:'Topics' },
+    'meeting':    { col:'var(--blue)',   icon:'📅', label:'Meetings' },
+    'promotion':  { col:'var(--purple)', icon:'🎓', label:'Promotion' },
+  };
+
+  const actionBadge = (action) => {
+    const cat = action.split('.')[0];
+    const verb = action.split('.')[1] || '';
+    const meta = ACTION_META[cat] || { col:'var(--text-3)', icon:'📌', label:cat };
+    const verbCol = verb==='deleted'?'var(--coral)':verb==='created'?'var(--green)':verb==='login'?'var(--blue)':'var(--amber)';
+    return `<span style="display:inline-flex;align-items:center;gap:4px;background:${meta.col}18;color:${meta.col};border:1px solid ${meta.col}44;border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap">
+      ${meta.icon} ${action}
+    </span>`;
+  };
+
+  const roleCol  = r => r==='admin'?'var(--coral)':r==='teacher'?'var(--blue)':'var(--green)';
+  const timeStr  = d => {
+    if (!d) return '—';
+    const dt = new Date(d);
+    const now = new Date();
+    const diff = Math.floor((now-dt)/1000);
+    if (diff<60) return 'just now';
+    if (diff<3600) return Math.floor(diff/60)+'m ago';
+    if (diff<86400) return Math.floor(diff/3600)+'h ago';
+    return dt.toLocaleDateString('en-GH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  };
+
+  const logRows = logs.map(l => `<tr>
+    <td style="font-size:11px;color:var(--text-3);white-space:nowrap" title="${l.created_at}">${timeStr(l.created_at)}</td>
+    <td>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div style="width:26px;height:26px;border-radius:50%;background:${l.avatar_color||'var(--green-dk)'};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0">
+          ${(l.user_name||'?').split(' ').map(w=>w[0]||'').join('').slice(0,2).toUpperCase()}
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600">${l.user_name||'System'}</div>
+          ${l.user_role?`<span style="font-size:9px;font-weight:700;color:${roleCol(l.user_role)};text-transform:uppercase">${l.user_role}</span>`:''}
+        </div>
+      </div>
+    </td>
+    <td>${actionBadge(l.action)}</td>
+    <td style="font-size:12px">
+      ${l.entity_type?`<span style="font-size:10px;color:var(--text-3)">${l.entity_type}${l.entity_id?' #'+l.entity_id:''}</span><br>`:''}
+      ${l.entity_label?`<span style="font-size:12px;font-weight:600">${l.entity_label}</span>`:'<span style="color:var(--text-3)">—</span>'}
+    </td>
+    <td style="font-size:12px;color:var(--text-2);max-width:200px">${l.description||'—'}</td>
+    <td style="font-size:10px;color:var(--text-3)">${l.ip_address||'—'}</td>
+  </tr>`).join('');
+
+  const summaryCards = summary.slice(0,6).map(s => {
+    const meta = ACTION_META[s.category] || {col:'var(--text-3)',icon:'📌',label:s.category};
+    return `<div class="stat-card" style="cursor:pointer" onclick="actLogSetFilter('action','${s.category}')">
+      <div class="label">${meta.icon} ${meta.label||s.category}</div>
+      <div class="value" style="font-size:20px;color:${meta.col}">${s.n}</div>
+    </div>`;
+  }).join('');
+
+  m.innerHTML = `
+<div class="topbar">
+  <div>
+    <div class="topbar-title">Activity Log</div>
+    <div class="topbar-sub">${total.toLocaleString()} total events · ${activeToday} active user${activeToday!==1?'s':''} today</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary btn-sm" onclick="exportActivityLog()">⬇ Export CSV</button>
+    <button class="btn btn-ghost btn-sm" style="color:var(--coral)" onclick="clearOldLogs()">🗑 Clear old logs</button>
+  </div>
+</div>
+<div class="page" id="actlog-page">
+
+  <!-- Summary cards -->
+  <div class="stats-row" style="margin-bottom:20px">${summaryCards}</div>
+
+  <!-- Filters -->
+  <div class="card" style="padding:12px 16px;margin-bottom:16px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <label class="form-label" style="font-size:11px">Action category</label>
+        <select class="form-select" style="font-size:12px" id="actlog-action" onchange="actLogSetFilter('action',this.value)">
+          <option value="">All actions</option>
+          <option value="auth">🔑 Auth (login)</option>
+          <option value="test">📋 Tests</option>
+          <option value="question">❓ Questions</option>
+          <option value="attempt">✍️ Attempts</option>
+          <option value="user">👤 Users</option>
+          <option value="class">🗂️ Classes</option>
+          <option value="strand">📚 Strands</option>
+          <option value="sub_strand">📋 Sub-strands</option>
+          <option value="topic">🔸 Topics</option>
+          <option value="settings">⚙️ Settings</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">Search</label>
+        <input class="form-input" id="actlog-search" placeholder="Name, entity, description…" style="width:200px;font-size:12px"
+          oninput="debounce(()=>actLogSetFilter('search',document.getElementById('actlog-search').value),400)">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">From</label>
+        <input class="form-input" type="date" id="actlog-from" style="font-size:12px" onchange="actLogSetFilter('from',this.value)">
+      </div>
+      <div>
+        <label class="form-label" style="font-size:11px">To</label>
+        <input class="form-input" type="date" id="actlog-to" style="font-size:12px" onchange="actLogSetFilter('to',this.value)">
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="actLogClearFilters()">✕ Clear</button>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-3)" id="actlog-count">${total.toLocaleString()} events</span>
+    </div>
+  </div>
+
+  <!-- Log table -->
+  <div class="card">
+    <div class="tbl-scroll">
+      <table class="data-table" id="actlog-table">
+        <thead>
+          <tr>
+            <th style="min-width:100px">Time</th>
+            <th style="min-width:160px">User</th>
+            <th style="min-width:140px">Action</th>
+            <th style="min-width:160px">Entity</th>
+            <th style="min-width:180px">Description</th>
+            <th style="min-width:100px">IP Address</th>
+          </tr>
+        </thead>
+        <tbody id="actlog-tbody">
+          ${logRows||'<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:24px">No activity recorded yet. Actions will appear here as users interact with the system.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    ${total>100?`<div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--text-3)">Showing ${Math.min(logs.length,total)} of ${total.toLocaleString()} events</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" id="actlog-prev" onclick="actLogPage(-1)" ${_logFilter.offset===0?'disabled':''}>← Prev</button>
+        <button class="btn btn-ghost btn-sm" id="actlog-next" onclick="actLogPage(1)" ${logs.length<_logFilter.limit?'disabled':''}>Next →</button>
+      </div>
+    </div>`:''}
+  </div>
+</div>`;
+}
+
+async function actLogSetFilter(key, val) {
+  _logFilter[key] = val || '';
+  _logFilter.offset = 0;
+  await actLogRefresh();
+}
+
+async function actLogClearFilters() {
+  _logFilter = { action:'', search:'', from:'', to:'', offset:0, limit:100 };
+  document.getElementById('actlog-action')?.value && (document.getElementById('actlog-action').value = '');
+  document.getElementById('actlog-search') && (document.getElementById('actlog-search').value = '');
+  document.getElementById('actlog-from') && (document.getElementById('actlog-from').value = '');
+  document.getElementById('actlog-to')   && (document.getElementById('actlog-to').value = '');
+  await actLogRefresh();
+}
+
+async function actLogPage(dir) {
+  _logFilter.offset = Math.max(0, _logFilter.offset + dir * _logFilter.limit);
+  await actLogRefresh();
+}
+
+async function actLogRefresh() {
+  const tbody   = document.getElementById('actlog-tbody');
+  const countEl = document.getElementById('actlog-count');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-3)">Loading…</td></tr>';
+
+  const params = {};
+  if (_logFilter.action) params.action  = _logFilter.action;
+  if (_logFilter.search) params.search  = _logFilter.search;
+  if (_logFilter.from)   params.from    = _logFilter.from;
+  if (_logFilter.to)     params.to      = _logFilter.to;
+  params.offset = _logFilter.offset;
+  params.limit  = _logFilter.limit;
+
+  let res = null;
+  try { res = await GET('/activity-log', params); } catch(e) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="color:var(--coral);padding:16px">${e.message}</td></tr>`;
+    return;
+  }
+  window._activityLogRes = res;
+
+  const m = document.getElementById('a-main');
+  if (m && !document.getElementById('actlog-page')) { loadAActivityLog(m); return; }
+  renderActivityLogPage(m || document.createElement('div'), res);
+}
+
+async function clearOldLogs() {
+  const days = parseInt(prompt('Delete logs older than how many days? (min 7)', '90') || '90');
+  if (!days || days < 7) { notify('Minimum 7 days','error'); return; }
+  try {
+    await fetch(`${API_BASE}/activity-log`, {method:'DELETE',headers:{'Authorization':'Bearer '+AUTH_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({days})});
+    notify(`Logs older than ${days} days cleared`,'success');
+    const m=document.getElementById('a-main');
+    if(m) loadAActivityLog(m);
+  } catch(e) { notify(e.message,'error'); }
+}
+
+function exportActivityLog() {
+  const logs = (window._activityLogRes?.logs||[]);
+  if (!logs.length) { notify('No logs to export','warn'); return; }
+  const headers = ['Timestamp','User','Role','Action','Entity Type','Entity ID','Entity Label','Description','IP Address'];
+  const rows    = logs.map(l=>[l.created_at,l.user_name||'',l.user_role||'',l.action,l.entity_type||'',l.entity_id||'',l.entity_label||'',l.description||'',l.ip_address||'']);
+  exportToXLS(`activity_log_${new Date().toISOString().slice(0,10)}`, headers, rows, 'Activity Log',
+    {school:CURRENT_USER?.school_name, rows:[['Report:','Activity Log'],['Generated:',new Date().toLocaleDateString('en-GH')],['Total events:',String(window._activityLogRes?.total||0)]]});
 }
 
 // ════════════════════════════════════════════════════════════

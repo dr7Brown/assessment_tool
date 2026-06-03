@@ -107,8 +107,13 @@ try {
         case 'teachers':    handleTeachers($method, $id, $sub, $body); break;
         case 'users-bulk':  handleUsersBulk($method, $body); break;
         case 'departments': handleDepartments($method, $id, $parts, $body); break;
-        case 'subjects':    handleSubjects($method, $id, $parts[2] ?? null, $body); break;
-        case 'sync':        handleSync($method); break;
+        case 'subjects':     handleSubjects($method, $id, $parts[2] ?? null, $body); break;
+        case 'curriculum':    handleCurriculum($method, $body); break;
+        case 'strands':       handleStrandsResource($method, $id, $parts[2] ?? null, $body); break;
+        case 'sub-strands':   handleSubStrandsResource($method, $id, $parts[2] ?? null, $body); break;
+        case 'topics':        handleTopicsResource($method, $id, $body); break;
+        case 'activity-log':  handleActivityLog($method, $body); break;
+        case 'sync':          handleSync($method); break;
         default:
             err("Endpoint not found: '$resource' (path: $path)", 404);
     }
@@ -148,8 +153,8 @@ function handleAuth(string $method, array $parts, array $body): void {
             'exp'       => time() + JWT_EXPIRY,
         ]);
         DB::execute('UPDATE users SET last_login = NOW() WHERE id = ?', [$user['id']]);
+        logActivity(['user_id'=>$user['id'],'school_id'=>$user['school_id'],'role'=>$user['role']], 'auth.login', 'user', (int)$user['id'], trim($user['first_name'].' '.$user['last_name']), 'Logged in');
         unset($user['password_hash']);
-        // Cast to proper types
         $user['must_change_password'] = (int)$user['must_change_password'];
         respond(['token' => $token, 'user' => $user]);
     }
@@ -277,17 +282,28 @@ function handleQuestions(string $method, ?int $id, ?string $sub, array $body): v
 
     if ($method === 'POST') {
         require_role($auth, 'teacher', 'admin');
-        $d = need($body, 'type', 'sub_strand', 'topic', 'question_text');
-        $subjectId = isset($body['subject_id']) ? (int)$body['subject_id'] : null;
+        $d = need($body, 'type', 'question_text');
+        if (empty($body['sub_strand']) && empty($body['sub_strand_id'])) err("Missing field: sub_strand or sub_strand_id");
+        $subjectId   = isset($body['subject_id'])    ? (int)$body['subject_id']    : null;
+        $strandId    = isset($body['strand_id'])     ? (int)$body['strand_id']     : null;
+        $subStrandId = isset($body['sub_strand_id']) ? (int)$body['sub_strand_id'] : null;
+        $topicId     = isset($body['topic_id'])      ? (int)$body['topic_id']      : null;
+        // Legacy text field: use sub_strand label or code for display
+        $subStrandText = trim($body['sub_strand'] ?? $body['topic'] ?? '');
+        if (!$subStrandText && $subStrandId) {
+            $ss = DB::fetchOne('SELECT sub_strand_label FROM subject_sub_strands WHERE id=?', [$subStrandId]);
+            $subStrandText = $ss['sub_strand_label'] ?? '';
+        }
         DB::beginTransaction();
         try {
             $qid = DB::insert(
-                'INSERT INTO questions (school_id,author_id,type,sub_strand,topic,bloom_level,difficulty,year_group,marks,question_text,explanation,rubric,subject_id,is_active)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)',
-                [$auth['school_id'],$auth['user_id'],$d['type'],$d['sub_strand'],
-                 $d['topic'],$body['bloom_level']??'Remember',$body['difficulty']??'Medium',
+                'INSERT INTO questions (school_id,author_id,type,sub_strand,topic,bloom_level,difficulty,year_group,marks,question_text,explanation,rubric,subject_id,strand_id,sub_strand_id,topic_id,is_active)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)',
+                [$auth['school_id'],$auth['user_id'],$d['type'],$subStrandText,
+                 $subStrandText,$body['bloom_level']??'Remember',$body['difficulty']??'Medium',
                  (int)($body['year_group']??1),(int)($body['marks']??1),
-                 $d['question_text'],$body['explanation']??null,$body['rubric']??null,$subjectId]
+                 $d['question_text'],$body['explanation']??null,$body['rubric']??null,
+                 $subjectId,$strandId,$subStrandId,$topicId]
             );
             if (!empty($body['options'])) {
                 $letters = ['A','B','C','D','E','F'];
@@ -299,18 +315,18 @@ function handleQuestions(string $method, ?int $id, ?string $sub, array $body): v
                 }
             }
             DB::commit();
+            logActivity($auth, 'question.created', 'question', (int)$qid, mb_substr($d['question_text'],0,80), 'Added question to bank');
             respond(['question_id' => $qid], 201);
         } catch (Throwable $e) { DB::rollback(); throw $e; }
     }
 
     if ($method === 'PUT' && $id) {
         require_role($auth, 'teacher', 'admin');
-        $d = need($body, 'question_text', 'sub_strand', 'topic');
+        $d = need($body, 'question_text');
 
         $existing = DB::fetchOne('SELECT id, author_id, subject_id FROM questions WHERE id=?', [$id]);
         if (!$existing) err('Question not found', 404);
 
-        // Access: author, admin, or any teacher assigned to the question's subject
         if ($auth['role'] !== 'admin' && (int)$existing['author_id'] !== $auth['user_id']) {
             $sid = (int)($existing['subject_id'] ?? 0);
             if (!$sid || !DB::fetchOne(
@@ -319,19 +335,29 @@ function handleQuestions(string $method, ?int $id, ?string $sub, array $body): v
             )) err('You do not have permission to edit this question', 403);
         }
 
-        $newSubjectId = isset($body['subject_id']) ? (int)$body['subject_id'] : ($existing['subject_id'] ? (int)$existing['subject_id'] : null);
+        $newSubjectId   = isset($body['subject_id'])    ? (int)$body['subject_id']    : ($existing['subject_id'] ? (int)$existing['subject_id'] : null);
+        $newStrandId    = isset($body['strand_id'])     ? (int)$body['strand_id']     : null;
+        $newSubStrandId = isset($body['sub_strand_id']) ? (int)$body['sub_strand_id'] : null;
+        $newTopicId     = isset($body['topic_id'])      ? (int)$body['topic_id']      : null;
+        $subStrandText  = trim($body['sub_strand'] ?? $body['topic'] ?? '');
+        if (!$subStrandText && $newSubStrandId) {
+            $ss = DB::fetchOne('SELECT sub_strand_label FROM subject_sub_strands WHERE id=?', [$newSubStrandId]);
+            $subStrandText = $ss['sub_strand_label'] ?? '';
+        }
+
         DB::execute(
             'UPDATE questions SET question_text=?, sub_strand=?, topic=?, bloom_level=?,
              difficulty=?, year_group=?, marks=?, explanation=?, rubric=?, type=?,
-             subject_id=?, updated_by=?, updated_at=NOW()
+             subject_id=?, strand_id=?, sub_strand_id=?, topic_id=?, updated_by=?, updated_at=NOW()
              WHERE id=?',
             [
-                $d['question_text'], $d['sub_strand'], $d['topic'],
+                $d['question_text'], $subStrandText, $subStrandText,
                 $body['bloom_level'] ?? 'Remember', $body['difficulty'] ?? 'Medium',
                 (int)($body['year_group'] ?? 1), (int)($body['marks'] ?? 1),
                 $body['explanation'] ?? null, $body['rubric'] ?? null,
                 $body['type'] ?? 'mcq',
-                $newSubjectId, $auth['user_id'], $id,
+                $newSubjectId, $newStrandId ?: null, $newSubStrandId ?: null, $newTopicId ?: null,
+                $auth['user_id'], $id,
             ]
         );
 
@@ -353,9 +379,10 @@ function handleQuestions(string $method, ?int $id, ?string $sub, array $body): v
     if ($method === 'DELETE' && $id) {
         require_role($auth, 'teacher', 'admin');
         // Soft delete — mark inactive
-        $existing = DB::fetchOne('SELECT id FROM questions WHERE id=?', [$id]);
+        $existing = DB::fetchOne('SELECT id, question_text FROM questions WHERE id=?', [$id]);
         if (!$existing) err('Question not found', 404);
         DB::execute('UPDATE questions SET is_active=0 WHERE id=?', [$id]);
+        logActivity($auth, 'question.deleted', 'question', (int)$id, mb_substr($existing['question_text']??'',0,80));
         respond(['message' => 'Question deleted']);
     }
 
@@ -731,6 +758,7 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
             foreach ($body['class_ids'] as $cid)
                 DB::execute('INSERT INTO test_assignments (test_id,class_id) VALUES (?,?)', [$tid,(int)$cid]);
         }
+        logActivity($auth, 'test.created', 'test', (int)$tid, trim($d['title']), 'Created test: '.trim($d['title']));
         respond(['test_id'=>$tid,'message'=>'Test created'], 201);
     }
 
@@ -780,10 +808,12 @@ function handleTests(string $method, ?int $id, ?string $sub, array $body): void 
         if ($auth['role'] === 'teacher' && (int)$test['creator_id'] !== (int)$auth['user_id'])
             err('You can only delete tests you created', 403);
         // Cascade: remove assignments, questions, attempts (answers cascade from attempts)
+        $delTest = DB::fetchOne('SELECT title FROM tests WHERE id=?', [$id]);
         DB::execute('DELETE FROM test_assignments WHERE test_id=?', [$id]);
         DB::execute('DELETE FROM test_questions   WHERE test_id=?', [$id]);
         DB::execute('DELETE FROM attempts         WHERE test_id=?', [$id]);
         DB::execute('DELETE FROM tests            WHERE id=?',      [$id]);
+        logActivity($auth, 'test.deleted', 'test', (int)$id, $delTest['title']??'', 'Test deleted');
         respond(['message' => 'Test deleted']);
     }
 
@@ -938,6 +968,8 @@ function handleAttempts(string $method, ?int $id, ?string $sub, array $body): vo
              FROM attempts WHERE id=?', [$id]
         );
         $testRow = DB::fetchOne('SELECT show_feedback, title FROM tests WHERE id=?', [$a['test_id']]);
+        $pct = round((float)($result['pct_score'] ?? 0), 1);
+        logActivity($auth, 'attempt.submitted', 'test', (int)$a['test_id'], $testRow['title']??'', "Score: {$pct}%");
         respond(array_merge($result??[], [
             'message'         => 'Submitted',
             'attempt_id'      => (int)$id,
@@ -4233,48 +4265,50 @@ function handleSubjects(string $method, ?int $id, ?string $sub, array $body): vo
         respond(['scores' => $scores, 'topics' => $topics]);
     }
 
-    // ── Subject strand/sub-strand CRUD ────────────────────────────
-    // GET /subjects/{id}/strands
+    // ── GET /subjects/{id}/strands — list strands with sub-strands tree ──
     if ($method === 'GET' && $id && $sub === 'strands') {
-        ensureSubjectStrandsSchema();
-        $rows = DB::fetchAll(
-            'SELECT id, strand_code, strand_label, sub_strand_code, sub_strand_label, sort_order
+        ensureCurriculumSchema();
+        $strands = DB::fetchAll(
+            'SELECT id, strand_code, strand_label, description, sort_order, is_active
              FROM subject_strands
-             WHERE school_id=? AND subject_id=?
-             ORDER BY sort_order, strand_code, sub_strand_code',
+             WHERE school_id=? AND subject_id=? AND is_active=1
+             ORDER BY sort_order, strand_code',
             [$sid, $id]
         );
-        respond($rows);
+        foreach ($strands as &$st) {
+            $st['sub_strands'] = DB::fetchAll(
+                'SELECT id, sub_strand_code, sub_strand_label, description, sort_order, is_active
+                 FROM subject_sub_strands
+                 WHERE strand_id=? AND is_active=1
+                 ORDER BY sort_order, sub_strand_code',
+                [$st['id']]
+            );
+            foreach ($st['sub_strands'] as &$ss) {
+                $ss['topics'] = DB::fetchAll(
+                    'SELECT id, topic_code, topic_label, description, sort_order, is_active
+                     FROM subject_topics
+                     WHERE sub_strand_id=? AND is_active=1
+                     ORDER BY sort_order, topic_code',
+                    [$ss['id']]
+                );
+            }
+        }
+        respond($strands);
     }
 
-    // POST /subjects/{id}/strands — add a strand/sub-strand pair
+    // ── POST /subjects/{id}/strands — create a strand ────────────
     if ($method === 'POST' && $id && $sub === 'strands') {
         require_role($auth, 'admin', 'teacher');
-        ensureSubjectStrandsSchema();
-        $d = need($body, 'strand_code', 'strand_label', 'sub_strand_code', 'sub_strand_label');
+        ensureCurriculumSchema();
+        $d = need($body, 'strand_code', 'strand_label');
         $newId = DB::insert(
-            'INSERT INTO subject_strands
-               (school_id, subject_id, strand_code, strand_label, sub_strand_code, sub_strand_label, sort_order)
-             VALUES (?,?,?,?,?,?,?)',
-            [
-                $sid, $id,
-                trim($d['strand_code']),    trim($d['strand_label']),
-                trim($d['sub_strand_code']), trim($d['sub_strand_label']),
-                (int)($body['sort_order'] ?? 0),
-            ]
+            'INSERT INTO subject_strands (school_id, subject_id, strand_code, strand_label, description, sort_order)
+             VALUES (?,?,?,?,?,?)',
+            [$sid, $id, trim($d['strand_code']), trim($d['strand_label']),
+             trim($body['description'] ?? ''), (int)($body['sort_order'] ?? 0)]
         );
-        // Invalidate client-side cache hint via response flag
-        respond(['id' => $newId, 'message' => 'Sub-strand added'], 201);
-    }
-
-    // DELETE /subjects/{id}/strands — remove one sub-strand entry by strand_id
-    if ($method === 'DELETE' && $id && $sub === 'strands') {
-        require_role($auth, 'admin', 'teacher');
-        ensureSubjectStrandsSchema();
-        $strandId = (int)($body['strand_id'] ?? $_GET['strand_id'] ?? 0);
-        if (!$strandId) err('strand_id required');
-        DB::execute('DELETE FROM subject_strands WHERE id=? AND school_id=?', [$strandId, $sid]);
-        respond(['deleted' => true]);
+        logActivity($auth, 'strand.created', 'strand', (int)$newId, trim($d['strand_label']), "Added strand to subject #$id");
+        respond(['id' => $newId, 'message' => 'Strand created'], 201);
     }
 
     // POST /subjects — admin adds a custom subject
@@ -4332,6 +4366,185 @@ function handleSubjects(string $method, ?int $id, ?string $sub, array $body): vo
     }
 
     err('Subjects endpoint error', 404);
+}
+
+// ══════════════════════════════════════════════════════════════
+// CURRICULUM — full tree + strand/sub-strand/topic CRUD
+// GET /curriculum?subject_id=N  — full Subject→Strand→Sub-strand→Topic tree
+// ══════════════════════════════════════════════════════════════
+function handleCurriculum(string $method, array $body): void {
+    $auth = require_auth();
+    require_role($auth, 'admin', 'teacher');
+    $sid = $auth['school_id'];
+    ensureCurriculumSchema();
+
+    if ($method === 'GET') {
+        $subjectId = (int)($_GET['subject_id'] ?? 0);
+        if (!$subjectId) err('subject_id required');
+        $strands = DB::fetchAll(
+            'SELECT id, strand_code, strand_label, description, sort_order, is_active
+             FROM subject_strands
+             WHERE school_id=? AND subject_id=?
+             ORDER BY sort_order, strand_code',
+            [$sid, $subjectId]
+        );
+        foreach ($strands as &$st) {
+            $st['sub_strands'] = DB::fetchAll(
+                'SELECT id, sub_strand_code, sub_strand_label, description, sort_order, is_active
+                 FROM subject_sub_strands WHERE strand_id=? ORDER BY sort_order, sub_strand_code',
+                [$st['id']]
+            );
+            foreach ($st['sub_strands'] as &$ss) {
+                $ss['topics'] = DB::fetchAll(
+                    'SELECT id, topic_code, topic_label, description, sort_order, is_active
+                     FROM subject_topics WHERE sub_strand_id=? ORDER BY sort_order, topic_code',
+                    [$ss['id']]
+                );
+            }
+        }
+        respond(['strands' => $strands]);
+    }
+    err('Method not allowed', 405);
+}
+
+// ── Strands resource: PUT/DELETE /strands/{id}
+//                     GET/POST /strands/{id}/sub-strands
+function handleStrandsResource(string $method, ?int $id, ?string $sub, array $body): void {
+    $auth = require_auth();
+    require_role($auth, 'admin', 'teacher');
+    $sid = $auth['school_id'];
+    ensureCurriculumSchema();
+
+    // GET /strands/{id}/sub-strands — list sub-strands for a strand
+    if ($method === 'GET' && $id && $sub === 'sub-strands') {
+        $rows = DB::fetchAll(
+            'SELECT id, sub_strand_code, sub_strand_label, description, sort_order, is_active
+             FROM subject_sub_strands WHERE strand_id=? ORDER BY sort_order, sub_strand_code',
+            [$id]
+        );
+        foreach ($rows as &$ss) {
+            $ss['topics'] = DB::fetchAll(
+                'SELECT id, topic_code, topic_label, description, sort_order, is_active
+                 FROM subject_topics WHERE sub_strand_id=? ORDER BY sort_order',
+                [$ss['id']]
+            );
+        }
+        respond($rows);
+    }
+
+    // POST /strands/{id}/sub-strands — create sub-strand
+    if ($method === 'POST' && $id && $sub === 'sub-strands') {
+        $d = need($body, 'sub_strand_label');
+        $newId = DB::insert(
+            'INSERT INTO subject_sub_strands (strand_id, sub_strand_code, sub_strand_label, description, sort_order)
+             VALUES (?,?,?,?,?)',
+            [$id, trim($body['sub_strand_code'] ?? ''), trim($d['sub_strand_label']),
+             trim($body['description'] ?? ''), (int)($body['sort_order'] ?? 0)]
+        );
+        logActivity($auth, 'sub_strand.created', 'sub_strand', (int)$newId, trim($d['sub_strand_label']), "Added sub-strand to strand #$id");
+        respond(['id' => $newId, 'message' => 'Sub-strand created'], 201);
+    }
+
+    // PUT /strands/{id} — update strand
+    if ($method === 'PUT' && $id && !$sub) {
+        $sets = []; $params = [];
+        foreach (['strand_code','strand_label','description','sort_order','is_active'] as $f) {
+            if (array_key_exists($f, $body)) { $sets[] = "$f=?"; $params[] = $body[$f]; }
+        }
+        if ($sets) { $params[] = $id; $params[] = $sid;
+            DB::execute('UPDATE subject_strands SET '.implode(',',$sets).' WHERE id=? AND school_id=?', $params); }
+        respond(['updated' => true]);
+    }
+
+    // DELETE /strands/{id} — delete strand (cascades to sub-strands and topics)
+    if ($method === 'DELETE' && $id && !$sub) {
+        $st = DB::fetchOne('SELECT strand_label FROM subject_strands WHERE id=?', [$id]);
+        DB::execute('DELETE FROM subject_strands WHERE id=? AND school_id=?', [$id, $sid]);
+        logActivity($auth, 'strand.deleted', 'strand', (int)$id, $st['strand_label']??'');
+        respond(['deleted' => true]);
+    }
+
+    err('Strands endpoint error', 404);
+}
+
+// ── Sub-strands resource: PUT/DELETE /sub-strands/{id}
+//                          GET/POST /sub-strands/{id}/topics
+function handleSubStrandsResource(string $method, ?int $id, ?string $sub, array $body): void {
+    $auth = require_auth();
+    require_role($auth, 'admin', 'teacher');
+    ensureCurriculumSchema();
+
+    // GET /sub-strands/{id}/topics — list topics
+    if ($method === 'GET' && $id && $sub === 'topics') {
+        $rows = DB::fetchAll(
+            'SELECT id, topic_code, topic_label, description, sort_order, is_active
+             FROM subject_topics WHERE sub_strand_id=? ORDER BY sort_order, topic_code',
+            [$id]
+        );
+        respond($rows);
+    }
+
+    // POST /sub-strands/{id}/topics — create topic
+    if ($method === 'POST' && $id && $sub === 'topics') {
+        $d = need($body, 'topic_label');
+        $newId = DB::insert(
+            'INSERT INTO subject_topics (sub_strand_id, topic_code, topic_label, description, sort_order)
+             VALUES (?,?,?,?,?)',
+            [$id, trim($body['topic_code'] ?? ''), trim($d['topic_label']),
+             trim($body['description'] ?? ''), (int)($body['sort_order'] ?? 0)]
+        );
+        logActivity($auth, 'topic.created', 'topic', (int)$newId, trim($d['topic_label']), "Added topic to sub-strand #$id");
+        respond(['id' => $newId, 'message' => 'Topic created'], 201);
+    }
+
+    // PUT /sub-strands/{id} — update sub-strand
+    if ($method === 'PUT' && $id && !$sub) {
+        $sets = []; $params = [];
+        foreach (['sub_strand_code','sub_strand_label','description','sort_order','is_active'] as $f) {
+            if (array_key_exists($f, $body)) { $sets[] = "$f=?"; $params[] = $body[$f]; }
+        }
+        if ($sets) { $params[] = $id;
+            DB::execute('UPDATE subject_sub_strands SET '.implode(',',$sets).' WHERE id=?', $params); }
+        respond(['updated' => true]);
+    }
+
+    // DELETE /sub-strands/{id} — delete sub-strand (cascades to topics)
+    if ($method === 'DELETE' && $id && !$sub) {
+        $ss = DB::fetchOne('SELECT sub_strand_label FROM subject_sub_strands WHERE id=?', [$id]);
+        DB::execute('DELETE FROM subject_sub_strands WHERE id=?', [$id]);
+        logActivity($auth, 'sub_strand.deleted', 'sub_strand', (int)$id, $ss['sub_strand_label']??'');
+        respond(['deleted' => true]);
+    }
+
+    err('Sub-strands endpoint error', 404);
+}
+
+// ── Topics resource: PUT/DELETE /topics/{id}
+function handleTopicsResource(string $method, ?int $id, array $body): void {
+    $auth = require_auth();
+    require_role($auth, 'admin', 'teacher');
+    ensureCurriculumSchema();
+
+    // PUT /topics/{id} — update topic
+    if ($method === 'PUT' && $id) {
+        $sets = []; $params = [];
+        foreach (['topic_code','topic_label','description','sort_order','is_active'] as $f) {
+            if (array_key_exists($f, $body)) { $sets[] = "$f=?"; $params[] = $body[$f]; }
+        }
+        if ($sets) { $params[] = $id;
+            DB::execute('UPDATE subject_topics SET '.implode(',',$sets).' WHERE id=?', $params); }
+        respond(['updated' => true]);
+    }
+
+    // DELETE /topics/{id} — delete topic
+    if ($method === 'DELETE' && $id) {
+        $tp = DB::fetchOne('SELECT topic_label FROM subject_topics WHERE id=?', [$id]);
+        DB::execute('DELETE FROM subject_topics WHERE id=?', [$id]);
+        logActivity($auth, 'topic.deleted', 'topic', (int)$id, $tp['topic_label']??'');
+        respond(['deleted' => true]);
+    }
+
+    err('Topics endpoint error', 404);
 }
 
 // Ensure the student has a row in class_students based on their users.class_name.
@@ -5080,28 +5293,171 @@ function handleMeetings(string $method, array $parts, array $body): void {
     err('Not found', 404);
 }
 
-function ensureSubjectStrandsSchema(): void {
+// ── Activity log ─────────────────────────────────────────────
+function ensureActivityLogSchema(): void {
     static $done = false;
     if ($done) return;
     try {
-        DB::execute(
-            "CREATE TABLE IF NOT EXISTS subject_strands (
-               id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-               school_id        INT UNSIGNED NOT NULL,
-               subject_id       INT UNSIGNED NOT NULL,
-               strand_code      VARCHAR(50)  NOT NULL,
-               strand_label     VARCHAR(200) NOT NULL,
-               sub_strand_code  VARCHAR(50)  NOT NULL,
-               sub_strand_label VARCHAR(200) NOT NULL,
-               sort_order       TINYINT UNSIGNED DEFAULT 0,
-               KEY idx_ss (school_id, subject_id, sort_order),
-               FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
-             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-            []
-        );
+        DB::execute("CREATE TABLE IF NOT EXISTS activity_log (
+            id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            school_id    INT UNSIGNED    NOT NULL,
+            user_id      INT UNSIGNED    NULL,
+            user_role    VARCHAR(20)     NULL,
+            user_name    VARCHAR(200)    NULL,
+            action       VARCHAR(100)    NOT NULL,
+            entity_type  VARCHAR(50)     NULL,
+            entity_id    INT UNSIGNED    NULL,
+            entity_label VARCHAR(300)    NULL,
+            description  TEXT            NULL,
+            ip_address   VARCHAR(45)     NULL,
+            created_at   TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_school_date (school_id, created_at),
+            KEY idx_user        (user_id),
+            KEY idx_action      (action(50))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci", []);
         $done = true;
     } catch (Throwable $e) {}
 }
+
+function logActivity(array $auth, string $action, ?string $entityType = null, ?int $entityId = null, ?string $entityLabel = null, ?string $description = null): void {
+    static $nameCache = [];
+    ensureActivityLogSchema();
+    $uid  = isset($auth['user_id']) ? (int)$auth['user_id'] : null;
+    $sid  = isset($auth['school_id']) ? (int)$auth['school_id'] : null;
+    $role = $auth['role'] ?? null;
+    if ($uid && !isset($nameCache[$uid])) {
+        try {
+            $u = DB::fetchOne('SELECT first_name, last_name FROM users WHERE id=?', [$uid]);
+            $nameCache[$uid] = $u ? trim(($u['first_name']??'').' '.($u['last_name']??'')) : '';
+        } catch (Throwable $e) { $nameCache[$uid] = ''; }
+    }
+    $name = $uid ? ($nameCache[$uid] ?? '') : 'System';
+    $ip   = $_SERVER['REMOTE_ADDR'] ?? null;
+    try {
+        DB::insert(
+            'INSERT INTO activity_log (school_id,user_id,user_role,user_name,action,entity_type,entity_id,entity_label,description,ip_address)
+             VALUES (?,?,?,?,?,?,?,?,?,?)',
+            [$sid, $uid, $role, $name, $action, $entityType, $entityId,
+             $entityLabel ? mb_substr($entityLabel, 0, 290) : null,
+             $description, $ip]
+        );
+    } catch (Throwable $e) { /* never break the app for logging */ }
+}
+
+// ── Activity log endpoint ─────────────────────────────────────
+function handleActivityLog(string $method, array $body): void {
+    $auth = require_auth();
+    require_role($auth, 'admin');
+    ensureActivityLogSchema();
+    $sid = $auth['school_id'];
+
+    if ($method === 'GET') {
+        $limit   = min(500, max(20, (int)($_GET['limit']   ?? 100)));
+        $offset  = max(0,           (int)($_GET['offset']  ?? 0));
+        $action  = trim($_GET['action']  ?? '');
+        $userId  = (int)($_GET['user_id'] ?? 0);
+        $from    = trim($_GET['from']    ?? '');
+        $to      = trim($_GET['to']      ?? '');
+        $search  = trim($_GET['search']  ?? '');
+
+        $where  = ['l.school_id=?'];
+        $params = [$sid];
+        if ($action)  { $where[] = 'l.action LIKE ?';           $params[] = $action.'%'; }
+        if ($userId)  { $where[] = 'l.user_id=?';               $params[] = $userId; }
+        if ($from)    { $where[] = 'l.created_at>=?';           $params[] = $from.' 00:00:00'; }
+        if ($to)      { $where[] = 'l.created_at<=?';           $params[] = $to.' 23:59:59'; }
+        if ($search)  { $where[] = '(l.entity_label LIKE ? OR l.description LIKE ? OR l.user_name LIKE ?)';
+                        $params[] = "%$search%"; $params[] = "%$search%"; $params[] = "%$search%"; }
+
+        $w     = implode(' AND ', $where);
+        $total = (int)(DB::fetchOne("SELECT COUNT(*) AS n FROM activity_log l WHERE $w", $params)['n'] ?? 0);
+        $rows  = DB::fetchAll(
+            "SELECT l.*, u.avatar_color
+             FROM activity_log l
+             LEFT JOIN users u ON u.id=l.user_id
+             WHERE $w ORDER BY l.created_at DESC LIMIT ? OFFSET ?",
+            array_merge($params, [$limit, $offset])
+        );
+
+        // Summary counts for dashboard
+        $summary = DB::fetchAll(
+            "SELECT SUBSTRING_INDEX(action,'.',1) AS category, COUNT(*) AS n
+             FROM activity_log WHERE school_id=?
+             GROUP BY category ORDER BY n DESC LIMIT 15",
+            [$sid]
+        );
+        // Active users today
+        $activeToday = (int)(DB::fetchOne(
+            "SELECT COUNT(DISTINCT user_id) AS n FROM activity_log WHERE school_id=? AND DATE(created_at)=CURDATE()",
+            [$sid]
+        )['n'] ?? 0);
+
+        respond(['logs'=>$rows,'total'=>$total,'limit'=>$limit,'offset'=>$offset,'summary'=>$summary,'active_today'=>$activeToday]);
+    }
+
+    if ($method === 'DELETE') {
+        $days = max(7, (int)($body['days'] ?? 90));
+        DB::execute('DELETE FROM activity_log WHERE school_id=? AND created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [$sid, $days]);
+        respond(['message' => "Logs older than $days days deleted"]);
+    }
+
+    err('Method not allowed', 405);
+}
+
+function ensureCurriculumSchema(): void {
+    static $done = false;
+    if ($done) return;
+    try {
+        DB::execute("CREATE TABLE IF NOT EXISTS subject_strands (
+            id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            school_id    INT UNSIGNED NOT NULL,
+            subject_id   INT UNSIGNED NOT NULL,
+            strand_code  VARCHAR(50)  NOT NULL,
+            strand_label VARCHAR(255) NOT NULL,
+            description  TEXT         NULL,
+            sort_order   SMALLINT UNSIGNED DEFAULT 0,
+            is_active    TINYINT(1)   DEFAULT 1,
+            created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_strands (school_id, subject_id, sort_order),
+            FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci", []);
+
+        DB::execute("CREATE TABLE IF NOT EXISTS subject_sub_strands (
+            id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            strand_id        INT UNSIGNED NOT NULL,
+            sub_strand_code  VARCHAR(50)  NULL,
+            sub_strand_label VARCHAR(255) NOT NULL,
+            description      TEXT         NULL,
+            sort_order       SMALLINT UNSIGNED DEFAULT 0,
+            is_active        TINYINT(1)   DEFAULT 1,
+            created_at       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_subs (strand_id, sort_order),
+            FOREIGN KEY (strand_id) REFERENCES subject_strands(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci", []);
+
+        DB::execute("CREATE TABLE IF NOT EXISTS subject_topics (
+            id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            sub_strand_id INT UNSIGNED NOT NULL,
+            topic_code    VARCHAR(50)  NULL,
+            topic_label   VARCHAR(255) NOT NULL,
+            description   TEXT         NULL,
+            sort_order    SMALLINT UNSIGNED DEFAULT 0,
+            is_active     TINYINT(1)   DEFAULT 1,
+            created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_topics (sub_strand_id, sort_order),
+            FOREIGN KEY (sub_strand_id) REFERENCES subject_sub_strands(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci", []);
+
+        // Add FK columns to questions if not present
+        try { DB::execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS strand_id INT UNSIGNED NULL", []); } catch(Throwable $e2) {}
+        try { DB::execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS sub_strand_id INT UNSIGNED NULL", []); } catch(Throwable $e2) {}
+        try { DB::execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS topic_id INT UNSIGNED NULL", []); } catch(Throwable $e2) {}
+
+        $done = true;
+    } catch (Throwable $e) {}
+}
+// backwards-compat alias
+function ensureSubjectStrandsSchema(): void { ensureCurriculumSchema(); }
 
 function ensureSubjectSchema(): void {
     try {
