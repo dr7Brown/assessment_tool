@@ -4,3 +4,63 @@ items do not stay, the dropdowns alway show their
 default items, though their functions work.
 2. i am not seeing where admin can view and manage the strands with the substrands and Topics
 3. complete necessary upgrades
+
+
+next: 
+1. when setting test too and i click "Browse bank"
+i expect to see all the filters on the question bank, but only few show.
+i dont see Year, strand, substrand, topic.
+2. when setting questions too, the subject dropdown, should 
+not contain General(optional), strictly one of the subjects the 
+teacher teachers, the first on his list should show by default if not is selected, 
+better still you can make it a mandatory field
+3. update the csv (.xlsx) for bulk upload to question bank to
+match the strand updates done. it must also ask for year, 
+strand, sub strand and optional topic
+4. when setting new question too, it must allow drop down
+of year, strand, sub strand and optional topic. so questions 
+get saved with the right properties.
+5. update the offline first too to reflect the current update, especially db updates 
+
+next:
+1. "At risk students" tab does not seem to work. any time i
+run Analysis, always no data is populated
+ie. "No at-risk students found
+All students are performing above the 80% threshold"
+2.upgrade the "Practice mode" to reflect the updates done. 
+so students can practice any topic uploaded on the subjects he does
+3. continue any upgrade necessary
+
+next: 
+1. the header font and font styles, 
+makes reading difficult. change all thoughout the website.
+2. create abbreviation tab on the side bar for all user, 
+when clicked, shows abbreviations used in the system and their meanings.
+3. Allow admin to assign roles to teachers. 
+
+Next: 
+1. allow admin to asign or resign admin role to users
+2. i want user names to be given names and last name, throughout the system and db
+not  first name and last name.
+3. add these abbreviations as well:
+Y1S1 - Year 1, Strand 1
+Y2S2 - Year 2, Strand 2
+SS - substrand
+allow admin to add, edit abreviations
+4. Side bar items getting plenty, 
+Categorize them so their children drop when parents are clicked 
+
+
+Next:
+1. can the system effectively handle, 100,000 to 1,000,000 concurrent
+user? if no how can we enhance it to efficiently do that?
+
+
+
+
+
+
+
+
+
+

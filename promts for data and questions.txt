@@ -1,0 +1,7 @@
+# prompt for data extraction
+"i want you to extract the strand, substrand then Learning Outcomes or Content standands with their codes. i would be later inserting them into db"
+
+#
+
+
+
